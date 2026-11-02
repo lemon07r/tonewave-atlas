@@ -11,9 +11,13 @@ export function rigLabel(
 	if (partition === 'headphone-4128') return 'B&K 4128';
 	if (partition === 'headphone-ears-pro') return 'miniDSP EARS Pro';
 	if (partition === 'headphone-ears') return 'miniDSP EARS';
-	if (partition.startsWith('headphone-source-')) {
+	for (const [prefix, kind] of [
+		['headphone-source-', 'Headphone rig'],
+		['iem-source-', 'Unconfirmed IEM rig']
+	] as const) {
+		if (!partition.startsWith(prefix)) continue;
 		const source = sources.find((item) => sourcePartitions(item).includes(partition));
-		return `Headphone rig · ${source?.name ?? partition.slice('headphone-source-'.length)}`;
+		return `${kind} · ${source?.name ?? partition.slice(prefix.length)}`;
 	}
 	return partition;
 }
