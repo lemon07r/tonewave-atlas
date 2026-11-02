@@ -186,7 +186,7 @@
 				axes: [
 					{
 						stroke: ink,
-						grid: { show: false },
+						grid: { show: current.length === 0, stroke: line, width: 1 },
 						ticks: { stroke: line, width: 1, size: 5 },
 						splits: () => FREQUENCY_TICKS,
 						// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
@@ -387,9 +387,11 @@
 	<div class="plot-wrap">
 		<div class="plot" bind:this={host} aria-hidden="true"></div>
 		{#if series.length === 0}<div class="plot-empty">
-				<Icon name="chart" size={32} />
-				<h3>Your listening, mapped.</h3>
-				<p>Add a measured product to see its response here.</p>
+				<div class="empty-label">
+					<Icon name="chart" size={32} />
+					<h3>Your listening, mapped.</h3>
+					<p>Add a measured product to see its response here.</p>
+				</div>
 			</div>{/if}
 	</div>
 	<div class="x-label">Frequency (Hz)</div>
@@ -559,13 +561,19 @@
 	.plot-empty {
 		position: absolute;
 		inset: 16px 18px 36px 42px;
-		background: var(--surface);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		text-align: center;
 		gap: 12px;
+	}
+	.empty-label {
+		display: grid;
+		justify-items: center;
+		gap: 12px;
+		padding: 16px;
+		background: var(--surface);
 	}
 	.plot-empty :global(svg) {
 		color: var(--strong-line);

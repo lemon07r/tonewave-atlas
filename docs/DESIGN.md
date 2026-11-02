@@ -100,6 +100,7 @@ not the surrounding layout. The fixture page has no production counterpart: use
 - Logarithmic 20 Hz–20 kHz x axis; explicit 20/50/100/200/500/1k/2k/5k/10k/20k labels.
   Axis, table and export labels use Level (dB) / Frequency (Hz), or Difference (dB) in difference mode.
   Adaptive y bounds include supplied envelopes, with outward 5 dB boundaries and padding.
+  Empty charts retain a faint frequency/level grid, with no invented curve.
 - Difference view subtracts the selected baseline pointwise. It performs no extra alignment and
   retains missing baseline coverage. Supplied envelopes are shifted by that same fixed baseline;
   this does not propagate baseline uncertainty or manufacture a confidence interval.
