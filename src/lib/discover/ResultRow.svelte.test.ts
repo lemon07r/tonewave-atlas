@@ -10,6 +10,36 @@ vi.mock('#lib/atlas.ts', () => {
 	return { analysis: () => worker };
 });
 
+test('keeps small reference and band headers readable with normal tracking and explicit kerning', async () => {
+	const screen = await render(ResultRow, {
+		candidate: {
+			id: 'candidate',
+			product: { id: 'studio-4', brand: 'Softears', model: 'Studio 4', form: 'iem' },
+			kind: 'default',
+			variantLabel: null,
+			measurementIds: [],
+			sources: [],
+			prices: [],
+			priceUsd: null
+		},
+		rank: 1,
+		distance: 0.8,
+		bands: [{ band: 'sub-bass', meanDb: 1, rmsDb: 1, contribution: 0.3, coverage: 1 }],
+		tradeoff: { distances: [0.76, 0.84], mean: 0.8, minimax: 0.84, pareto: true },
+		referenceNames: ['CrinEar Reference', 'Softears Volume S'],
+		onshow: vi.fn()
+	});
+	const headers = screen.container.querySelectorAll('.data-table th');
+	expect([...headers].map((header) => header.firstChild?.textContent)).toContain('Softears Volume S');
+	expect([...headers].map((header) => header.textContent)).toContain('sub-bass');
+	for (const header of headers) {
+		const style = getComputedStyle(header);
+		expect(style.letterSpacing).toBe('normal');
+		expect(style.fontKerning).toBe('normal');
+		expect(Number.parseFloat(style.fontSize)).toBeGreaterThanOrEqual(12);
+	}
+});
+
 test('preserves tuning/form actions, visible ranking score and source links through retry', async () => {
 	const candidate: CandidateInfo = {
 		id: 'candidate',

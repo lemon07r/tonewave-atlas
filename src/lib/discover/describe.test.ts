@@ -60,7 +60,23 @@ test('never converts raw prices or prints an unattributed amount', () => {
 	expect(priceLines(candidate)).toEqual([]);
 });
 
-test('marks exact objective extremes in text, including ties and missing coverage', () => {
-	expect(distanceExtremes([2, null, 1, 3])).toEqual(['', 'No coverage', 'Best', 'Worst']);
-	expect(distanceExtremes([1, 1])).toEqual(['Best / worst (tie)', 'Best / worst (tie)']);
+test('labels closest and furthest references without making quality judgements', () => {
+	expect(distanceExtremes([2, null, 1, 3])).toEqual(['', 'No coverage', 'closest', 'furthest']);
+});
+
+test('omits extrema when distances tie at the displayed one-decimal precision', () => {
+	expect(distanceExtremes([0.76, 0.84])).toEqual(['', '']);
+	expect(distanceExtremes([1, 1])).toEqual(['', '']);
+	expect(distanceExtremes([1, null, NaN, Infinity])).toEqual([
+		'',
+		'No coverage',
+		'No coverage',
+		'No coverage'
+	]);
+	expect(distanceExtremes([])).toEqual([]);
+});
+
+test('compares the displayed rounded values rather than using a fixed tolerance', () => {
+	expect(distanceExtremes([0.84, 0.86])).toEqual(['closest', 'furthest']);
+	expect(distanceExtremes([0.86, 0.84])).toEqual(['furthest', 'closest']);
 });

@@ -92,6 +92,9 @@ tasteId. Multi-reference charts group candidates with the returned alignment ref
 reference in its own panel. Null-aligned candidates are omitted from both ranked response and Difference
 views with a note; no new level alignment is applied. Each objective's distance independently fits
 its own offset. Expandable band tables explain each reference separately.
+Distance headers use “closest” / “furthest” at the displayed one-decimal precision, with no labels
+when the distances round to a tie. Reference and band headers use 12px text with normal tracking and
+explicit kerning. Empty charts distinguish missing rig coverage from references still awaiting a rating.
 
 Detail measurements are an explicit alternate view, labelled uncorrected and display-aligned.
 Compare, product charts and EQ use their own uncorrected detail measurements. Missing bins remain

@@ -54,18 +54,22 @@ export function priceLines(candidate: CandidateInfo, now = Date.now()): string[]
 }
 
 export function distanceExtremes(distances: readonly (number | null)[]): string[] {
-	const finite = distances.filter((n): n is number => n !== null && Number.isFinite(n));
-	const best = Math.min(...finite),
-		worst = Math.max(...finite);
-	return distances.map((value) =>
-		value === null || !Number.isFinite(value)
+	// Match the one-decimal precision displayed by dbLabel in the distance cells.
+	const rounded = distances.map((value) =>
+		value === null || !Number.isFinite(value) ? null : Number(value.toFixed(1))
+	);
+	const finite = rounded.filter((value): value is number => value !== null);
+	const closest = Math.min(...finite),
+		furthest = Math.max(...finite);
+	return rounded.map((value) =>
+		value === null
 			? 'No coverage'
-			: value === best && value === worst
-				? 'Best / worst (tie)'
-				: value === best
-					? 'Best'
-					: value === worst
-						? 'Worst'
+			: closest === furthest
+				? ''
+				: value === closest
+					? 'closest'
+					: value === furthest
+						? 'furthest'
 						: ''
 	);
 }

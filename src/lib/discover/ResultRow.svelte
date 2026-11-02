@@ -342,7 +342,11 @@
 		color: var(--muted);
 	}
 	.data-table {
-		font-size: 11px;
+		font-size: var(--text-xs);
+	}
+	.data-table th {
+		letter-spacing: normal;
+		font-kerning: normal;
 	}
 	.data-table th,
 	.data-table td {

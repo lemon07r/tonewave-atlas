@@ -600,7 +600,21 @@
 						{overlays}
 						{nameFor}
 					/>{:else}<div class="empty-state">
-						<h2>Choose a rating to draw your reference.</h2>
+						<h2>
+							{#if queryError?.error === 'not-measured-on-rig'}
+								{queryError.partitions?.length
+									? 'This rig doesn’t cover every reference. Choose a rig below.'
+									: 'No rig covers every reference. Change a reference or variant.'}
+							{:else if queryError?.error === 'partition-required'}
+								Choose a rig below to draw your references.
+							{:else if queryError || networkError || catalogError}
+								Chart unavailable. Check the matching message below.
+							{:else if loading}
+								Drawing your reference chart…
+							{:else}
+								Choose a rating to draw your reference.
+							{/if}
+						</h2>
 						<p>The chart will use the exact smoothed, level-aligned values used for ranking.</p>
 					</div>{/if}
 			</aside>

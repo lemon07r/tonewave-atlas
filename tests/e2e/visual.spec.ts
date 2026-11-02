@@ -61,6 +61,7 @@ for (const theme of ['light', 'dark'] as const) {
 			const item = page.getByRole('region', { name: 'CrinEar Reference', exact: true });
 			await expect(item.getByRole('radio', { name: 'Not rated', exact: true })).toBeChecked();
 			await search.press('Escape');
+			await expect(page.locator('.chart-column h2')).toHaveText('Choose a rating to draw your reference.');
 			await capture('discover-unrated');
 			await item.getByRole('radio', { name: 'Like', exact: true }).check();
 			await ready();
@@ -86,6 +87,9 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect(page.locator('.legend-row')).toHaveCount(3);
 			await capture('discover-multi');
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
+			const firstTradeoff = page.locator('.result-row').first().locator('.tradeoff');
+			await expect(firstTradeoff.locator('td')).toHaveText(['0.8', '0.8']);
+			await expect(firstTradeoff.locator('.extreme')).toHaveText(['', '']);
 			await capture('discover-multi-evidence', '.result-row');
 			await page.goto(`/?ref=${reference}&rig=iem-711&sources=aden-iems-f0687e07&sourceMode=only`);
 			await ready();
@@ -117,6 +121,15 @@ for (const theme of ['light', 'dark'] as const) {
 				`/?${new URLSearchParams({ rig: 'iem-5128', ratings: JSON.stringify([positive(reference), { ...positive(volume), measurementId: 'm-016c491c5c1e659cc5ac' }]) })}`
 			);
 			await expect(page.locator('.diagnostics')).toContainText('(High Impedance Setting)');
+			await expect(
+				page.getByRole('radio', { name: 'Like', exact: true }).and(page.locator(':checked'))
+			).toHaveCount(2);
+			await expect(page.locator('.chart-column h2')).toHaveText(
+				'This rig doesn’t cover every reference. Choose a rig below.'
+			);
+			await expect(
+				page.locator('.compatible-rigs').getByRole('button', { name: 'Use 711-family coupler', exact: true })
+			).toBeVisible();
 			await capture('discover-missing-variant', '.results');
 			await page.goto('/method');
 			await expect(page.getByRole('region', { name: 'iem-711 validation', exact: true })).toBeVisible();

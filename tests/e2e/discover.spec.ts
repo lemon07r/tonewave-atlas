@@ -204,6 +204,9 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 		'selected variant (High Impedance Setting): not measured on B&K 5128. Available on 711-family coupler.'
 	);
 	await expect(page.locator('.result-row')).toHaveCount(0);
+	await expect(page.locator('.chart-column h2')).toHaveText(
+		'This rig doesn’t cover every reference. Choose a rig below.'
+	);
 	await expect(page.locator('.results')).not.toContainText(
 		/p-9104c8bb39d66e906811|m-016c491c5c1e659cc5ac|iem-5128/
 	);
