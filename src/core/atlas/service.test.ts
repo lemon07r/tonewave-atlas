@@ -277,6 +277,109 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 }
 
 describe('atlas service', () => {
+	it('keeps an exact redirected measurement parent even if the former parent still exists', async () => {
+		const { service, catalog, files } = fixture();
+		files.set(
+			'v1/catalog-iem.json.gz',
+			new TextEncoder().encode(
+				JSON.stringify({ ...catalog, redirects: { products: {}, measurements: { 'old-b-tune': 'a-tune' } } })
+			)
+		);
+		expect(await service.similar({ productId: 'b', measurementId: 'old-b-tune' })).toMatchObject({
+			ok: true,
+			reference: { productId: 'a', measurementIds: ['a-tune'] },
+			resolvedIds: [
+				{
+					productId: 'b',
+					measurementId: 'old-b-tune',
+					canonicalProductId: 'a',
+					canonicalMeasurementId: 'a-tune'
+				}
+			]
+		});
+	});
+	it('resolves a saved profile measurement across a fold and reports canonical ids', async () => {
+		const { service, catalog, files } = fixture();
+		files.set(
+			'v1/catalog-iem.json.gz',
+			new TextEncoder().encode(
+				JSON.stringify({
+					...catalog,
+					redirects: { products: { old: 'b' }, measurements: { 'old-tune': 'a-tune' } }
+				})
+			)
+		);
+		const result = await service.taste({
+			items: [
+				{ productId: 'old', measurementId: 'old-tune', rating: 'like', strength: 1, soundRelated: true }
+			]
+		});
+		expect(result).toMatchObject({
+			ok: true,
+			resolvedIds: [
+				{
+					productId: 'old',
+					measurementId: 'old-tune',
+					canonicalProductId: 'a',
+					canonicalMeasurementId: 'a-tune'
+				}
+			]
+		});
+		if (!result.ok) throw new Error(result.message);
+		expect(result.model.tastes[0]?.members).toEqual(['a-tune']);
+	});
+	it('resolves compare references, product lookups and explicit measurements across a fold', async () => {
+		const { service, catalog, files } = fixture();
+		files.set(
+			'v1/catalog-iem.json.gz',
+			new TextEncoder().encode(
+				JSON.stringify({
+					...catalog,
+					redirects: { products: { old: 'a' }, measurements: { 'old-tune': 'a-tune' } }
+				})
+			)
+		);
+		expect(
+			await service.compare({
+				references: [{ productId: 'old', measurementId: 'old-tune' }, { productId: 'b' }],
+				harmonise: false
+			})
+		).toMatchObject({
+			ok: true,
+			references: [{ productId: 'a', measurementIds: ['a-tune'] }, { productId: 'b' }],
+			resolvedIds: [
+				{
+					productId: 'old',
+					measurementId: 'old-tune',
+					canonicalProductId: 'a',
+					canonicalMeasurementId: 'a-tune'
+				}
+			]
+		});
+		expect(await service.productDetail('old')).toMatchObject({ ok: true, product: { id: 'a' } });
+		expect(await service.measurements(['old-tune'])).toMatchObject([{ id: 'a-tune', productId: 'a' }]);
+		expect(await service.curves(['old-tune'])).toMatchObject([{ measurementId: 'a-tune' }]);
+		const similar = await service.similar({
+			productId: 'old',
+			measurementId: 'old-tune',
+			filters: { includeTunings: true },
+			harmonise: false
+		});
+		expect(similar).toMatchObject({
+			ok: true,
+			reference: { productId: 'a', measurementIds: ['a-tune'] },
+			resolvedIds: [{ canonicalProductId: 'a' }]
+		});
+		if (!similar.ok) throw new Error(similar.message);
+		expect(similar.results.some((r) => r.candidate.measurementIds.includes('a-tune'))).toBe(false);
+		expect(await service.similar({ productId: 'b', measurementId: 'a-tune' })).toMatchObject({
+			ok: false,
+			error: 'unknown-measurement'
+		});
+		expect(
+			await service.peq({ productId: 'old', target: { kind: 'product', productId: 'b' }, maxFilters: 1 })
+		).toMatchObject({ ok: true, resolvedIds: [{ productId: 'old', canonicalProductId: 'a' }] });
+	});
 	it.each(['similar', 'compare'] as const)(
 		'reviewer: automatic %s rig selection checks default consensus coverage under query weights',
 		async (method) => {

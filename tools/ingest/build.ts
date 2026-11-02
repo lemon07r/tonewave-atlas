@@ -2,6 +2,7 @@ import { mkdir, mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { buildRedirects, previousCatalogs } from './redirects.ts';
 import { GRID_SIZE, RANK_SIZE, RANK_STEP } from '#core/grid.ts';
 import { smoothOctave } from '#core/smooth.ts';
 import { encodePack, type CurvePack, type PackedCurve } from '#core/dataset/codec.ts';
@@ -37,13 +38,16 @@ import {
 	record,
 	ROOT,
 	sha256,
-	unwanted
+	nonProductName
 } from './common.ts';
 import {
 	collisionGroups,
+	configurationDescriptor,
 	DisplayNames,
+	defaultVariantIndex,
 	identity,
 	normalise,
+	sampleContext,
 	sourceFor,
 	suspiciousNames,
 	usdPrice,
@@ -52,9 +56,24 @@ import {
 import { publishDataset, removeStaging } from './publish.ts';
 import { medianSpreadByBand, rankStatistics } from './statistics.ts';
 import { referenceTargets } from './targets.ts';
+import {
+	cleanEntry,
+	curveProblem,
+	duplicateDefault,
+	entryForm,
+	identityProblem,
+	modification,
+	partitionFor
+} from './quality.ts';
+import { rigEvidence } from './rig-evidence.ts';
+import { classifyEq, factoryMode } from './eq.ts';
+import { mergeSwitchIdentities, reconcileSwitchDefaults, reviewVariantStates } from './switches.ts';
+import { finaliseDefaults, withProvisionalDefaults } from './default-coverage.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
+	configuration?: string;
+	sourceOrder?: number;
 	channels: PackedCurve[];
 	rank: PackedCurve;
 }
@@ -116,7 +135,61 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const sources: Source[] = [];
 	const partitions = new Map<string, PartitionCurve[]>();
 	const acceptedIds = new Set<string>();
+	const defaults = new Map<string, PartitionCurve[]>();
+	const originalPartitions = new Map<string, string>();
 	const report = {
+		quality: {
+			quarantine: [] as {
+				source: string;
+				file: string;
+				brand: string;
+				model: string;
+				partition: string;
+				reason: string;
+				validChannels: boolean;
+			}[],
+			forms: [] as {
+				source: string;
+				file: string;
+				name: string;
+				before: string;
+				after: string;
+				reason: string;
+			}[],
+			markers: [] as { source: string; before: string; after: string }[],
+			curveAudit: [] as { source: string; file: string; channel: string; reason: string }[],
+			variantCorrections: [] as {
+				source: string;
+				file: string;
+				label: string;
+				before: string;
+				after: string;
+			}[],
+			eqAudit: [] as { source: string; file: string; name: string; decision: string }[],
+			ambiguousEqLabelsKeptAsTuning: [] as {
+				source: string;
+				file: string;
+				label: string;
+				index: number;
+				measurementId: string;
+			}[],
+			tuningModes: [] as {
+				source: string;
+				file: string;
+				label: string;
+				index: number;
+				classification: string;
+				kind: string;
+				isDefault: boolean;
+			}[],
+			defaultSelections: [] as {
+				source: string;
+				name: string;
+				index: number | null;
+				file: string | null;
+			}[],
+			scanned: {} as Record<string, { phones: number; measurements: number; reclassified: number }>
+		},
 		targets: targets.map(({ id, provenance }) => ({ id, ...provenance })),
 		counts: {} as Record<string, SourceCount>,
 		excluded: [] as { id: string; reason: string }[],
@@ -223,6 +296,10 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		let channels: string[];
 		try {
 			source = sourceFor(db, config, bookCache.entry.fetchedAt, overrides[db.url] ?? overrides[db.username]);
+			originalPartitions.set(
+				source.id,
+				source.partition.startsWith('iem-source-') ? 'iem-711' : source.partition
+			);
 			supportedChannels(config);
 			channels = fileChannels(config);
 			dir = dataDirectory(db, config);
@@ -269,18 +346,72 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 		for (const warning of book.warnings) report.issues.push({ source: db.id, file: '', reason: warning });
 		counts.phones = book.phones.length;
-		for (const phone of book.phones) {
-			for (const [index, file] of phone.file.entries()) {
+		const shortSamples = sampleContext(book.phones);
+		const scanned = { phones: book.phones.length, measurements: 0, reclassified: 0 };
+		report.quality.scanned[db.id] = scanned;
+		for (const rawPhone of book.phones) {
+			const formDecision = entryForm(rawPhone);
+			const form = formDecision.form ?? source.form;
+			const cleanPhone = cleanEntry(rawPhone, source, [...Object.keys(brands), ...Object.values(brands)]);
+			if (cleanPhone.brand !== rawPhone.brand || cleanPhone.name !== rawPhone.name)
+				report.quality.markers.push({
+					source: source.id,
+					before: `${rawPhone.brand} ${rawPhone.name}`,
+					after: `${cleanPhone.brand} ${cleanPhone.name}`
+				});
+			if (
+				cleanPhone.file.some(
+					(file, i) =>
+						classifyEq(`${cleanPhone.brand} ${cleanPhone.name} ${file} ${cleanPhone.suffix[i] ?? ''}`) !==
+							'none' || factoryMode(cleanPhone.suffix[i] ?? '')
+				)
+			) {
+				const index = defaultVariantIndex(cleanPhone, shortSamples.has(rawPhone));
+				report.quality.defaultSelections.push({
+					source: db.id,
+					name: `${cleanPhone.brand} ${cleanPhone.name}`,
+					index,
+					file: index === null ? null : (cleanPhone.file[index] ?? null)
+				});
+			}
+			for (const [index, file] of cleanPhone.file.entries()) {
+				const phone = modification(cleanPhone, index);
 				counts.variants++;
-				if (unwanted(`${phone.brand} ${phone.name} ${file}`)) {
-					reject(file, 'target/EQ/calibration name');
+				const text = `${phone.brand} ${phone.name} ${file} ${phone.suffix[index] ?? ''}`;
+				const derived = nonProductName(text);
+				const quarantine = (reason: string, validChannels: boolean) => {
+					report.quality.quarantine.push({
+						source: db.id,
+						file,
+						brand: rawPhone.brand,
+						model: rawPhone.name,
+						partition: originalPartitions.get(source.id) ?? source.partition,
+						reason,
+						validChannels
+					});
+					reject(file, `quarantine: ${reason}`);
+				};
+				if (/eq/i.test(text))
+					report.quality.eqAudit.push({
+						source: db.id,
+						file,
+						name: `${phone.brand} ${phone.name}`,
+						decision: derived ?? `retained: ${classifyEq(text)}`
+					});
+				if (derived) {
+					quarantine(derived, false);
 					continue;
 				}
 				if (excluded.products.includes(`${phone.brand} ${phone.name}`) || excluded.files.includes(file)) {
 					reject(file, 'local exclusion');
 					continue;
 				}
-				const product = identity(phone.brand, phone.name, source.form, aliases, productAliases);
+				const product = identity(phone.brand, phone.name, form, aliases, productAliases);
+				const problem = identityProblem(product.brand, product.model);
+				if (problem) {
+					quarantine(problem, false);
+					continue;
+				}
 				const id = `m-${sha256(`${db.id}\0${product.id}\0${file}\0${index}`).slice(0, 20)}`;
 				if (acceptedIds.has(id)) {
 					trackIdentity(product, `${phone.brand} ${phone.name}`);
@@ -315,14 +446,10 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						warnings.push(`${channel}: ${parsed.error}`);
 						continue;
 					}
-					let low = Infinity,
-						high = -Infinity;
-					for (const db of parsed.points.db) {
-						low = Math.min(low, db);
-						high = Math.max(high, db);
-					}
-					if (high - low < 0.05 || high - low > 100) {
-						warnings.push(`${channel}: ${high - low < 0.05 ? 'flat line' : 'absurd dynamic range'}`);
+					const rawProblem = curveProblem(parsed.points.db, false);
+					if (rawProblem) {
+						report.quality.curveAudit.push({ source: db.id, file, channel, reason: rawProblem });
+						warnings.push(`${channel}: ${rawProblem}`);
 						continue;
 					}
 					const values = resample(parsed.points);
@@ -331,14 +458,10 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 							const cal = calibration[i] ?? NaN;
 							if (Number.isFinite(cal)) values[i] = (values[i] ?? NaN) - cal;
 						}
-					const finite = values.filter(Number.isFinite);
-					if (
-						finite.length < 16 ||
-						Math.max(...finite) - Math.min(...finite) > 100 ||
-						Math.min(...finite) < -200 ||
-						Math.max(...finite) > 200
-					) {
-						warnings.push(`${channel}: invalid calibrated range`);
+					const calibratedProblem = curveProblem(values, true);
+					if (calibratedProblem) {
+						report.quality.curveAudit.push({ source: db.id, file, channel, reason: calibratedProblem });
+						warnings.push(`${channel}: ${calibratedProblem}`);
 						continue;
 					}
 					curves.push({ measurementId: id, channel, values });
@@ -365,12 +488,79 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const avg = averageChannels(left, right);
 				const smooth = smoothOctave(avg.values, 12);
 				const rank = Float64Array.from({ length: RANK_SIZE }, (_, i) => smooth[i * RANK_STEP] ?? NaN);
+				const selectedVariant = variant(phone, index, id, shortSamples.has(rawPhone));
+				const defaultKey = `${source.id}:${product.id}`;
+				const configuration = configurationDescriptor(phone, index);
+				if (
+					selectedVariant.kind === 'default' &&
+					defaults
+						.get(defaultKey)
+						?.some((c) => c.configuration === configuration && duplicateDefault(rank, c.rank.values))
+				) {
+					quarantine('near-identical duplicate default from same source/normalised identity', true);
+					continue;
+				}
+				// Compare against the previous classifier without changing its original descriptor inputs.
+				const oldText = `${phone.suffix[index] ?? (index === 0 ? '' : file)} ${file}`;
+				const oldKind =
+					index === 0
+						? 'default'
+						: /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
+									oldText
+							  )
+							? 'tuning'
+							: /tip|insert|shallow|deep|foam|pad|seal|position/i.test(oldText)
+								? 'fit'
+								: /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(oldText)
+									? 'setup'
+									: /sample|unit|proto|defect|\bs\d\b/i.test(oldText)
+										? 'unit'
+										: 'unknown';
+				if (oldKind !== selectedVariant.kind)
+					report.quality.variantCorrections.push({
+						source: db.id,
+						file,
+						label: selectedVariant.label,
+						before: oldKind,
+						after: selectedVariant.kind
+					});
+				if (form !== source.form) {
+					report.quality.forms.push({
+						source: db.id,
+						file,
+						name: `${phone.brand} ${phone.name}`,
+						before: source.form,
+						after: form,
+						reason: formDecision.reason ?? ''
+					});
+					scanned.reclassified++;
+				}
+				scanned.measurements++;
+				const eq = classifyEq(text);
+				if (eq !== 'none' || factoryMode(selectedVariant.label))
+					report.quality.tuningModes.push({
+						source: db.id,
+						file,
+						label: selectedVariant.label,
+						index,
+						classification: eq === 'none' ? 'factory mode' : eq,
+						kind: selectedVariant.kind,
+						isDefault: selectedVariant.isDefault
+					});
+				if (eq === 'ambiguous')
+					report.quality.ambiguousEqLabelsKeptAsTuning.push({
+						source: db.id,
+						file,
+						label: selectedVariant.label,
+						index,
+						measurementId: id
+					});
 				const measurement: Measurement = {
 					id,
 					productId: product.id,
 					sourceId: source.id,
-					partition: source.partition,
-					variant: variant(phone, index, id),
+					partition: partitionFor(source, form),
+					variant: selectedVariant,
 					channels: curves.map((c) => c.channel),
 					channelContributions: [...avg.contributions],
 					imbalanceDb: avg.imbalanceDb,
@@ -395,6 +585,9 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						calibrationUrl: calUrl,
 						processing: [
 							'parse/sort/duplicate-frequency dB mean; ignore phase',
+							...(phone.name !== cleanPhone.name
+								? [`distinct modified-product identity: ${phone.name}`]
+								: []),
 							'log-frequency linear interpolation on 240-point 1/24-oct GRID; no extrapolation',
 							...(calibration
 								? [
@@ -418,7 +611,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						id: product.id,
 						brand: product.brand,
 						model: product.model,
-						form: source.form,
+						form,
 						measurementIds: []
 					};
 					products.set(p.id, p);
@@ -427,13 +620,18 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				displayNames.observe(product);
 				trackIdentity(product, `${phone.brand} ${phone.name}`);
 				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
-				const group = partitions.get(source.partition) ?? [];
-				group.push({
+				const group = partitions.get(measurement.partition) ?? [];
+				const row = {
 					measurement,
+					configuration,
+					sourceOrder: counts.variants,
 					channels: curves,
 					rank: { measurementId: id, channel: 'avg', values: rank }
-				});
-				partitions.set(source.partition, group);
+				};
+				group.push(row);
+				if (selectedVariant.kind === 'default')
+					defaults.set(defaultKey, [...(defaults.get(defaultKey) ?? []), row]);
+				partitions.set(measurement.partition, group);
 				acceptedIds.add(id);
 				counts.accepted++;
 			}
@@ -445,6 +643,141 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		);
 	}
 	displayNames.apply(products.values());
+	const allCurves = [...partitions.values()].flat();
+	const switchIdentity = mergeSwitchIdentities(products, allCurves);
+	for (const move of switchIdentity.moves) {
+		for (const map of [identities, originalIdentities]) {
+			const names = map.get(move.to) ?? new Set<string>();
+			for (const name of map.get(move.from) ?? []) names.add(name);
+			map.set(move.to, names);
+			map.delete(move.from);
+		}
+	}
+	const switchDefaults = reconcileSwitchDefaults(products, allCurves);
+	// Rig evidence must see the same default-kind contract as the engine. These provisional
+	// selections are restored so final choices use final partitions, not provisional isolation.
+	const iemCurves = allCurves.filter((c) => products.get(c.measurement.productId)?.form === 'iem');
+	const { coverage: rigDefaultCoverage, value: rigReport } = withProvisionalDefaults(
+		products,
+		allCurves,
+		switchDefaults.decisions,
+		() =>
+			rigEvidence(
+				sources.filter((s) => iemCurves.some((c) => c.measurement.sourceId === s.id)),
+				iemCurves.map((c) => ({ measurement: c.measurement, values: c.rank.values }))
+			)
+	);
+	const hasControls =
+		rigReport.sources.some((s) => s.control === '5128') && rigReport.sources.some((s) => s.control === '711');
+	if (hasControls && (!rigReport.separated || !rigReport.loco.passes || rigReport.minimumProducts === null)) {
+		await atomicWrite(resolve(paths.cache, 'rig-evidence-blocked.json'), JSON.stringify(rigReport, null, 2));
+		throw new Error(
+			`BLOCKED: rig projection controls do not separate/stabilise; see rig-evidence-blocked.json (${JSON.stringify(rigReport.separation)})`
+		);
+	}
+	for (const score of rigReport.sources) {
+		const source = sources.find((s) => s.id === score.source);
+		if (!source?.rigEvidence) continue;
+		source.rigEvidence = {
+			configRig: score.configRig,
+			class: score.class,
+			family: score.family,
+			rationale: score.control
+				? source.rigEvidence.rationale
+				: score.class === 'evidenced'
+					? '95% product-bootstrap projection interval lies wholly on one side of the leave-source-out control threshold'
+					: 'Insufficient overlap or projection interval crosses the control threshold',
+			sharedProducts: score.sharedProducts,
+			projection: score.projection,
+			interval: score.interval,
+			threshold: rigReport.threshold,
+			minimumProducts: rigReport.minimumProducts
+		};
+		source.rigInferred = score.class !== 'verified';
+		if (source.form === 'iem') source.partition = partitionFor(source, 'iem');
+	}
+	partitions.clear();
+	for (const row of allCurves) {
+		const source = sources.find((s) => s.id === row.measurement.sourceId);
+		const form = products.get(row.measurement.productId)?.form;
+		if (!source || !form) throw new Error('Missing accepted source/form');
+		row.measurement.partition = partitionFor(source, form);
+		const group = partitions.get(row.measurement.partition) ?? [];
+		group.push(row);
+		partitions.set(row.measurement.partition, group);
+	}
+	const defaultCoverage = finaliseDefaults(products, allCurves, switchDefaults.decisions);
+	const unknownVariants = allCurves
+		.filter((c) => c.measurement.variant.kind === 'unknown')
+		.map(({ measurement: m }) => ({
+			source: m.sourceId,
+			productId: m.productId,
+			file: m.variant.file,
+			label: m.variant.label
+		}));
+	for (const source of sources) {
+		const rows = allCurves.filter((c) => c.measurement.sourceId === source.id);
+		source.forms = [
+			...new Set(
+				rows.map((c) => {
+					const product = products.get(c.measurement.productId);
+					if (!product) throw new Error('Missing accepted product');
+					return product.form;
+				})
+			)
+		].sort();
+		source.partitions = [...new Set(rows.map((c) => c.measurement.partition))].sort();
+	}
+	const quarantineSummary = [...Map.groupBy(report.quality.quarantine, (q) => q.partition)].map(
+		([partition, rows]) => {
+			const duplicateDefaults = rows.filter((q) => q.validChannels).length;
+			const retained = allCurves.filter(
+				(c) => originalPartitions.get(c.measurement.sourceId) === partition
+			).length;
+			return {
+				partition,
+				candidates: rows.length,
+				reasons: Object.fromEntries(
+					[...Map.groupBy(rows, (q) => q.reason)].map(([reason, qs]) => [reason, qs.length])
+				),
+				legitimateDuplicateDefaults: duplicateDefaults,
+				legitimateDenominator: retained + duplicateDefaults,
+				smallPartitionExempt: retained + duplicateDefaults < 200
+			};
+		}
+	);
+	if (
+		quarantineSummary.some(
+			(s) => !s.smallPartitionExempt && s.legitimateDuplicateDefaults / s.legitimateDenominator > 0.03
+		)
+	) {
+		await atomicWrite(
+			resolve(paths.cache, 'quality-blocked.json'),
+			JSON.stringify({ ...report.quality, quarantineSummary }, null, 2)
+		);
+		throw new Error(
+			'BLOCKED: more than 3% legitimate duplicate defaults removed from a partition with >=200 measurements; see quality-blocked.json'
+		);
+	}
+	const formGroups = Map.groupBy(
+		[...products.values()],
+		(p) => `${normalise(p.brand)}:${normalise(p.model)}`
+	);
+	const remainingFormConflicts = [...formGroups.values()]
+		.filter((ps) => new Set(ps.map((p) => p.form)).size > 1)
+		.map((ps) =>
+			ps.map((p) => ({
+				id: p.id,
+				brand: p.brand,
+				model: p.model,
+				form: p.form,
+				sources: [
+					...new Set(
+						allCurves.filter((c) => c.measurement.productId === p.id).map((c) => c.measurement.sourceId)
+					)
+				]
+			}))
+		);
 	const artifacts = new Map<string, Uint8Array>();
 	artifacts.set('targets.json.gz', gzipSync(JSON.stringify(targets), { level: 9 }));
 	const partitionMetadata: Partition[] = [];
@@ -553,6 +886,8 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		merged: productsBefore - products.size
 	};
 	for (const p of sortedProducts) p.measurementIds.sort();
+	const previous = await previousCatalogs(paths.output);
+	const catalogs: Catalog[] = [];
 	for (const form of ['iem', 'headphone'] as const) {
 		const catalog: Catalog = {
 			formatVersion: 1,
@@ -562,11 +897,18 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				.flatMap((cs) => cs.map((c) => c.measurement))
 				.filter((m) => products.get(m.productId)?.form === form)
 				.sort((a, b) => a.id.localeCompare(b.id, 'en')),
-			sources: sources.filter((s) => s.form === form),
+			sources: sources.filter((s) => s.forms?.includes(form)),
 			partitions: partitionMetadata.filter((p) => p.form === form)
 		};
-		artifacts.set(`catalog-${form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));
+		catalogs.push(catalog);
 	}
+	const redirects = {
+		baselineVersion: previous.version,
+		warnings: previous.warnings,
+		...buildRedirects(previous.catalogs, catalogs)
+	};
+	for (const catalog of catalogs)
+		artifacts.set(`catalog-${catalog.form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));
 	const files = [...artifacts]
 		.sort(([a], [b]) => a.localeCompare(b, 'en'))
 		.map(([path, bytes]): DatasetFile => ({ path, bytes: bytes.length, sha256: sha256(bytes) }));
@@ -593,9 +935,24 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		JSON.stringify(
 			{
 				...report,
+				redirects,
+				switchIdentity,
+				switchDefaults,
+				defaultCoverage,
+				rigDefaultCoverage,
+				variantReview: reviewVariantStates(products, allCurves),
+				unknownVariants,
+				rigEvidence: rigReport,
+				sourceEvidence: sources.map((s) => ({
+					...s,
+					partitionBefore: originalPartitions.get(s.id) ?? s.partition
+				})),
+				quarantineSummary,
+				remainingFormConflicts,
 				version,
 				builtAt,
 				sourcesIncluded: sources.length,
+				publishersIncluded: new Set(sources.map((s) => s.username)).size,
 				products: products.size,
 				identityMerges,
 				groupwiseMerges,

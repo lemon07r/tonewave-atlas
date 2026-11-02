@@ -13,6 +13,22 @@ export interface Source {
 	partition: string;
 	rig: string | null;
 	rigInferred: boolean;
+	/** Optional on older catalogs. Statistical (evidenced) families apply only to IEM rows,
+	 * not a mixed source's headphone hardware. This is not independent hardware certification. */
+	rigEvidence?: {
+		class: 'verified' | 'evidenced' | 'unknown';
+		family: '711' | '5128' | null;
+		rationale: string;
+		configRig?: string | null;
+		sharedProducts?: number;
+		projection?: number | null;
+		interval?: [number, number] | null;
+		threshold?: number | null;
+		minimumProducts?: number | null;
+	};
+	/** Actual accepted forms/partitions in a mixed database; primary fields remain compatible. */
+	forms?: Form[];
+	partitions?: string[];
 	permission: 'public, not explicitly licensed' | 'permission granted';
 	crawledAt: string;
 	calibration: string | null;
@@ -97,6 +113,8 @@ export interface Partition {
 
 export interface Catalog {
 	formatVersion: 1;
+	/** Historical IDs mapped directly to current IDs in this form, including cross-form moves. */
+	redirects?: { products: Record<string, string>; measurements: Record<string, string> };
 	form: Form;
 	products: Product[];
 	measurements: Measurement[];

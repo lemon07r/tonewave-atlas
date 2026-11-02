@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import type { Catalog, Manifest, ReferenceTarget } from '#core/dataset/types.ts';
 import { decodePack } from '#core/dataset/codec.ts';
+import { buildPartitionIndex } from '#core/atlas/index.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
+import { buildRedirects } from './redirects.ts';
 import { HttpCache } from './cache.ts';
 import { datasetVersion, DIRECTORY_URL, ROOT, sha256 } from './common.ts';
 
@@ -16,7 +18,8 @@ const bookUrl = `${base}data/phone_book.json`;
 const configUrl = `${base}config.js`;
 const book = JSON.stringify([{ name: 'Brand', phones: [{ name: 'Model', file: 'Model' }] }]);
 const config = 'const DIR = "data/", rig_description = "B&K 5128", measurement_calibration_file = "offset";';
-const curve = (offset: number) => [...GRID].map((hz, i) => `${hz} ${offset + Math.sin(i / 20)}`).join('\n');
+const curve = (offset: number, shape = 0) =>
+	[...GRID].map((hz, i) => `${hz} ${offset + Math.sin(i / 20) + shape * Math.cos(i / 15)}`).join('\n');
 
 afterEach(async () => {
 	vi.unstubAllGlobals();
@@ -79,17 +82,478 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		switchIdentity: { moves: { kind: string; before: string; parent: string }[] };
+		switchDefaults: {
+			products: number;
+			productSources: number;
+			decisions: { product: string; preferred: string | null }[];
+		};
+		defaultCoverage: {
+			before: { productPartitions: { withoutDefault: number } };
+			after: { productPartitions: { withoutDefault: number } };
+			changes: { selected: string }[];
+		};
+		rigDefaultCoverage: { after: { productPartitions: { withoutDefault: number } } };
 		groupwiseMerges: {
 			merged: number;
 			groups: { productId: string; originalKeys: string[]; merged: number }[];
 		};
 		statistics: { partition: string; statistics: unknown }[];
+		quality: {
+			quarantine: { reason: string; file: string }[];
+			forms: { file: string; before: string; after: string }[];
+			ambiguousEqLabelsKeptAsTuning: { file: string; label: string }[];
+			tuningModes: { file: string; kind: string; isDefault: boolean }[];
+			defaultSelections: { name: string; index: number | null; file: string | null }[];
+		};
 		targets: ({ id: string } & ReferenceTarget['provenance'])[];
 	};
 	return { manifest, catalog, report };
 }
 
 describe('cached dataset build safety', () => {
+	it('retains separately labelled same-response fits and every channel before default reconciliation', async () => {
+		const phones = [
+			{ name: 'Model', file: ['Model stock tips'], suffix: ['stock tips'] },
+			{ name: 'Model', file: ['Model foam tips'], suffix: ['foam tips'] }
+		];
+		const { paths } = await fixture(config, [
+			[bookUrl, JSON.stringify([{ name: 'Brand', phones }])],
+			...phones.flatMap((p) =>
+				p.file.flatMap((f) =>
+					['L', 'R'].map((c): [string, string] => [
+						`${base}data/${encodeURIComponent(f + ' ' + c + '.txt')}`,
+						curve(80)
+					])
+				)
+			)
+		]);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.measurements).toHaveLength(2);
+		expect(catalog.measurements.map((m) => m.provenance.originalUrls.length)).toEqual([2, 2]);
+		expect(catalog.measurements.filter((m) => m.variant.isDefault)).toHaveLength(1);
+		expect(catalog.measurements.map((m) => m.variant.label).sort()).toEqual(['foam tips', 'stock tips']);
+	});
+	it('uses strict plurality of former defaults for split products, leaving ties unmapped across forms', async () => {
+		const { paths } = await fixture();
+		await build(paths);
+		const { catalog } = await result(paths);
+		const p = catalog.products[0],
+			m = catalog.measurements[0];
+		if (!p || !m) throw new Error('Missing fixture');
+		const a = { ...p, id: 'a' },
+			b = { ...p, id: 'b', form: 'headphone' as const };
+		const ms = Array.from({ length: 5 }, (_, i) => ({
+			...m,
+			id: `new-${i}`,
+			productId: i < 2 ? 'a' : 'b',
+			provenance: { ...m.provenance, originalUrls: [`https://original/${i}`] }
+		}));
+		const old = (defaults: number[]): Catalog => ({
+			...catalog,
+			products: [{ ...p, id: 'old' }],
+			measurements: ms.map((row, i) => ({
+				...row,
+				id: `old-${i}`,
+				productId: 'old',
+				variant: {
+					...row.variant,
+					kind: defaults.includes(i) ? 'default' : 'tuning',
+					isDefault: defaults.includes(i)
+				}
+			}))
+		});
+		const current = (): Catalog[] => [
+			{ ...catalog, products: [a], measurements: ms.filter((row) => row.productId === 'a') },
+			{
+				...catalog,
+				form: 'headphone',
+				products: [b],
+				measurements: ms.filter((row) => row.productId === 'b')
+			}
+		];
+		const winner = current();
+		expect(buildRedirects([old([0, 1, 2])], winner).splits).toMatchObject([{ target: 'a' }]);
+		expect(winner[0]?.redirects?.products).toEqual({ old: 'a' });
+		expect(winner[1]?.redirects?.measurements['old-4']).toBe('new-4');
+		for (const defaults of [[0, 2], []]) {
+			const tied = current();
+			expect(buildRedirects([old(defaults)], tied).splits).toMatchObject([
+				{ target: null, reason: 'unmapped: tied or absent former defaults' }
+			]);
+			expect(tied.every((c) => !c.redirects?.products.old)).toBe(true);
+		}
+	});
+	it('redirects previous published identities by source and unordered original URL set, carrying chains', async () => {
+		const { paths } = await fixture();
+		await build(paths);
+		const before = await result(paths);
+		const product = before.catalog.products[0];
+		const measurement = before.catalog.measurements[0];
+		if (!product || !measurement) throw new Error('Missing fixture');
+		const previous = {
+			...before.catalog,
+			products: [{ ...product, id: 'old-product', measurementIds: ['old-measurement'] }],
+			measurements: [
+				{
+					...measurement,
+					id: 'old-measurement',
+					productId: 'old-product',
+					provenance: {
+						...measurement.provenance,
+						originalUrls: [...measurement.provenance.originalUrls].reverse()
+					}
+				}
+			],
+			redirects: {
+				products: { ancient: 'old-product', dead: 'gone', [product.id]: 'gone' },
+				measurements: { ancient: 'old-measurement' }
+			}
+		};
+		await writeFile(
+			resolve(paths.output, before.manifest.version, 'catalog-iem.json.gz'),
+			gzipSync(JSON.stringify(previous))
+		);
+		await build(paths);
+		const after = await result(paths);
+		expect(after.catalog).toHaveProperty('redirects', {
+			products: { ancient: product.id, 'old-product': product.id },
+			measurements: { ancient: measurement.id, 'old-measurement': measurement.id }
+		});
+	});
+	it('covers isolated sample/fit/tuning partitions and treats credits as neutral, offline', async () => {
+		const phones = [
+			{ name: 'Credit', file: ['Credit (by 왈왈)'], suffix: ['(by 왈왈)'] },
+			{ name: 'Olina', file: ['Olina Sample 2'], suffix: ['Sample 2'] },
+			{
+				name: 'D-Fi',
+				file: ['D-Fi Switch 1011', 'D-Fi Switch 0000'],
+				suffix: ['Switch 1011', 'Switch 0000']
+			},
+			{ name: 'Tips', file: ['Tips stock', 'Tips foam'], suffix: ['stock tips', 'foam tips'] },
+			{ name: 'CADENZA 12 S2', file: ['CADENZA 12 S2'], suffix: [] }
+		];
+		const { paths } = await fixture('rig_description="unidentified coupler"', [
+			[bookUrl, JSON.stringify([{ name: 'Maker', phones }])],
+			...phones.flatMap((p) =>
+				p.file.map((f): [string, string] => [`${base}data/${encodeURIComponent(f + ' L.txt')}`, curve(80)])
+			)
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch')));
+		await build(paths);
+		const { catalog, report, manifest } = await result(paths);
+		expect(catalog.measurements).toHaveLength(7);
+		for (const [file, kind, label, isDefault] of [
+			['D-Fi Switch 1011', 'default', 'Switch 1011', true],
+			['D-Fi Switch 0000', 'tuning', 'Switch 0000', false],
+			['Tips stock', 'default', 'stock tips', true],
+			['Tips foam', 'fit', 'foam tips', false]
+		] as const) {
+			const m = catalog.measurements.find((m) => m.variant.file === file);
+			expect(m).toMatchObject({
+				partition: `iem-source-${catalog.sources[0]?.id}`,
+				variant: { kind, label, isDefault }
+			});
+		}
+		for (const ms of Map.groupBy(catalog.measurements, (m) => `${m.productId}|${m.partition}`).values())
+			expect(ms.filter((m) => m.variant.kind === 'default')).toHaveLength(1);
+		for (const m of catalog.measurements) expect(m.variant.isDefault).toBe(m.variant.kind === 'default');
+		for (const partition of catalog.partitions) {
+			const pack = decodePack(
+				gunzipSync(await readFile(resolve(paths.output, manifest.version, partition.rankFile)))
+			);
+			const index = buildPartitionIndex(catalog, partition, pack);
+			const measured = new Set(
+				catalog.measurements.filter((m) => m.partition === partition.id).map((m) => m.productId)
+			);
+			expect([...index.products.keys()].sort()).toEqual([...measured].sort());
+		}
+		expect(catalog.measurements.find((m) => m.variant.file.includes('(by'))?.variant).toMatchObject({
+			kind: 'default',
+			label: '',
+			isDefault: true
+		});
+		expect(catalog.measurements.find((m) => m.variant.file.includes('Sample 2'))?.variant).toMatchObject({
+			kind: 'default',
+			label: 'Sample 2',
+			isDefault: true
+		});
+		// This source explicitly uses Sample 2 elsewhere: its shorthand is justified.
+		expect(catalog.measurements.find((m) => m.variant.file.includes('S2'))?.variant).toMatchObject({
+			kind: 'default',
+			isDefault: true
+		});
+		expect(report.defaultCoverage.after.productPartitions.withoutDefault).toBe(0);
+		expect(report.rigDefaultCoverage.after.productPartitions.withoutDefault).toBe(0);
+	});
+	it('reconciles labelled switch defaults and split cable/state identities before statistics, without fetching', async () => {
+		const names = ['reviewer', 'second', 'third', 'store', 'joyce', 'tipper'];
+		const directory = names.map((username) => ({
+			username,
+			name: username,
+			urlType: 'subdomain',
+			dbs: [{ type: 'IEMs', folder: '/' }]
+		}));
+		const books = [
+			[{ name: 'Softears', phones: [{ name: 'Volume S', file: ['High Impedance', 'Low Impedance'] }] }],
+			[{ name: 'Softears', phones: [{ name: 'Volume S', file: ['Low Impedance', 'High Impedance'] }] }],
+			[{ name: 'Softears', phones: [{ name: 'Volume S', file: ['Low Impedance'] }] }],
+			[
+				{
+					name: 'Softears',
+					phones: [
+						{ name: 'Volume S High Imp', file: ['High Impedance'] },
+						{ name: 'Volume S Low Imp', file: ['Low Impedance'] }
+					]
+				}
+			],
+			[{ name: 'Softears', phones: [{ name: 'Volume S (Standard 4.4mm)', file: ['standard cable'] }] }],
+			[{ name: 'Softears', phones: [{ name: 'Volume S Stock Tip', file: ['stock tips'] }] }]
+		];
+		const bodies: [string, string][] = [[DIRECTORY_URL, JSON.stringify(directory)]];
+		for (const [i, name] of names.entries()) {
+			const url = `https://${name}.squig.link/`;
+			const book = books[i];
+			if (!book) throw new Error('Missing book fixture');
+			bodies.push(
+				[`${url}config.js`, 'rig_description="IEC 60318-4 711"'],
+				[`${url}data/phone_book.json`, JSON.stringify(book)]
+			);
+			for (const file of book.flatMap((b) => b.phones.flatMap((p) => p.file)))
+				bodies.push([
+					`${url}data/${encodeURIComponent(file + ' L.txt')}`,
+					curve(80, file.includes('High') ? 2 : 0)
+				]);
+		}
+		const { paths } = await fixture('', bodies);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(request).not.toHaveBeenCalled();
+		expect(catalog.products.map((p) => p.model)).toEqual(['Volume S']);
+		expect(catalog.measurements).toHaveLength(9);
+		expect(report.switchIdentity.moves.map((m) => m.kind).sort()).toEqual([
+			'cable',
+			'switch',
+			'switch',
+			'tip'
+		]);
+		expect(report.switchDefaults.decisions[0]?.preferred).toBe('impedance:low');
+		for (const source of catalog.sources) {
+			const defaults = catalog.measurements.filter((m) => m.sourceId === source.id && m.variant.isDefault);
+			expect(defaults).toHaveLength(1);
+			expect(defaults[0]?.variant.file).toBe(
+				source.username === 'joyce'
+					? 'standard cable'
+					: source.username === 'tipper'
+						? 'stock tips'
+						: 'Low Impedance'
+			);
+		}
+	});
+	it('retains factory/uncertain EQ modes offline, selects stock defaults and reports uncertainty', async () => {
+		const groups = [
+			{
+				name: 'Bowers and Wilkins',
+				phones: [
+					{
+						name: 'Pi7 S2',
+						file: ['Pi7S2 ANCOn', 'Pi7S2 ANCOff'],
+						suffix: ['(Codec: APTX Adaptive, EQ: N/A, ANC: On)', '(Codec: APTX Adaptive, EQ: N/A, ANC: Off)']
+					}
+				]
+			},
+			{
+				name: 'CMF by Nothing',
+				phones: [
+					{ name: 'CMF Buds Pro', file: ['CMF Buds Pro'], suffix: ['(Codec: AAC, EQ: Balanced, ANC: High)'] }
+				]
+			},
+			{
+				name: 'Qudelix',
+				phones: [
+					{
+						name: 'QX Over',
+						file: [
+							'Qudelix QX Over',
+							'Qudelix QX Over (Sunrise Neutral EQ)',
+							'Qudelix QX Over (Oratory1990 EQ)'
+						],
+						suffix: []
+					}
+				]
+			},
+			{ name: 'Fixture', phones: [{ name: 'Mode only', file: ['Mode only EQ1'], suffix: [] }] },
+			{
+				name: 'Moondrop',
+				phones: [
+					{
+						name: 'May',
+						file: [
+							'Moondrop May Harman',
+							'Moondrop May Standard',
+							'Moondrop May PEQ0',
+							'Moondrop May (User EQ)'
+						],
+						suffix: ['(EQ: Harman)', '(EQ: Standard)', '(EQ: PEQ 0 Gain)', '(User EQ)']
+					}
+				]
+			}
+		];
+		const bodies: [string, string][] = groups.flatMap((g) =>
+			g.phones.flatMap((p) =>
+				p.file.map((file, i): [string, string] => [
+					`${base}data/${encodeURIComponent(file + ' L.txt')}`,
+					curve(80, i)
+				])
+			)
+		);
+		const { paths } = await fixture('rig_description="B&K 5128"', [
+			[bookUrl, JSON.stringify(groups)],
+			...bodies
+		]);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(request).not.toHaveBeenCalled();
+		expect(catalog.products).toHaveLength(5);
+		expect(catalog.measurements).toHaveLength(9);
+		expect(
+			catalog.measurements
+				.filter((m) => m.variant.isDefault)
+				.map((m) => m.variant.file)
+				.sort()
+		).toEqual(['CMF Buds Pro', 'Mode only EQ1', 'Moondrop May Standard', 'Pi7S2 ANCOff', 'Qudelix QX Over']);
+		expect(catalog.measurements.find((m) => m.variant.file === 'Mode only EQ1')?.variant).toMatchObject({
+			kind: 'default',
+			isDefault: true
+		});
+		expect(report.defaultCoverage.before.productPartitions.withoutDefault).toBe(1);
+		expect(report.defaultCoverage.after.productPartitions.withoutDefault).toBe(0);
+		for (const file of [
+			'Pi7S2 ANCOn',
+			'Moondrop May Harman',
+			'Moondrop May PEQ0',
+			'Qudelix QX Over (Sunrise Neutral EQ)'
+		])
+			expect(catalog.measurements.find((m) => m.variant.file === file)?.variant).toMatchObject({
+				kind: 'tuning',
+				isDefault: false
+			});
+		expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual([
+			'Moondrop May (User EQ)',
+			'Qudelix QX Over (Oratory1990 EQ)'
+		]);
+		expect(report.quality.ambiguousEqLabelsKeptAsTuning.map((q) => q.file).sort()).toEqual([
+			'Mode only EQ1',
+			'Qudelix QX Over (Sunrise Neutral EQ)'
+		]);
+		expect(report.quality.defaultSelections).toContainEqual(
+			expect.objectContaining({ name: 'Bowers and Wilkins Pi7 S2', index: 1, file: 'Pi7S2 ANCOff' })
+		);
+		expect(report.quality.tuningModes).toContainEqual(
+			expect.objectContaining({ file: 'Moondrop May Harman', kind: 'tuning', isDefault: false })
+		);
+	});
+	it('stops before publication when legitimate duplicate removal exceeds 3% of a 200-measurement partition', async () => {
+		const phones = Array.from({ length: 200 }, (_, i) => ({ name: 'Model', file: `copy-${i}` }));
+		const bodies: [string, string][] = phones.map((p) => [`${base}data/${p.file}%20L.txt`, curve(80)]);
+		const { paths } = await fixture('rig_description="B&K 5128"', [
+			[bookUrl, JSON.stringify([{ name: 'Maker', phones }])],
+			...bodies
+		]);
+		await expect(build(paths)).rejects.toThrow('more than 3% legitimate duplicate defaults');
+		await expect(stat(resolve(paths.output, 'manifest.json'))).rejects.toThrow('ENOENT');
+		const blocked = JSON.parse(await readFile(resolve(paths.cache, 'quality-blocked.json'), 'utf8')) as {
+			quarantineSummary: {
+				legitimateDuplicateDefaults: number;
+				legitimateDenominator: number;
+				smallPartitionExempt: boolean;
+			}[];
+		};
+		expect(blocked.quarantineSummary).toEqual([
+			expect.objectContaining({
+				legitimateDuplicateDefaults: 199,
+				legitimateDenominator: 200,
+				smallPartitionExempt: false
+			})
+		]);
+	});
+	it('publishes both forms from a mixed database, quarantines non-products and retains distinctly named mods', async () => {
+		const entries = [
+			{ name: 'AKG', phones: [{ name: 'K371', file: 'headphone' }] },
+			{ name: 'Truthear', phones: [{ name: 'Hexa', file: 'iem' }] },
+			{
+				name: '*',
+				phones: [
+					{ name: 'FDX-SR (JVC HA-FDX1 mod)', file: 'mod' },
+					{ name: 'Fake IE900', file: 'fake' }
+				]
+			},
+			{ name: 'KZ', phones: [{ name: 'Unknown', file: 'unknown' }] },
+			{ name: 'Average', phones: [{ name: 'IEM', file: 'average' }] },
+			{ name: 'Ecoustic', phones: [{ name: 'EQ-100', file: 'Ecoustic EQ-100' }] },
+			{
+				name: 'Maker',
+				phones: [
+					{ name: 'Model', file: 'original' },
+					{ name: 'Maker Model', file: 'copy' },
+					{ name: 'Model + EQ', file: 'equalized' }
+				]
+			}
+		];
+		const bodies: [string, string][] = entries.flatMap((b) =>
+			b.phones.flatMap((p) => [
+				[`${base}data/${encodeURIComponent(p.file + ' L.txt')}`, curve(80)] as [string, string]
+			])
+		);
+		const { paths } = await fixture('rig_description="B&K 5128"', [
+			[bookUrl, JSON.stringify(entries)],
+			...bodies
+		]);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, manifest, report } = await result(paths);
+		const hp = JSON.parse(
+			gunzipSync(
+				await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
+			).toString()
+		) as Catalog;
+		expect(request).not.toHaveBeenCalled();
+		expect(hp.products.map((p) => p.model)).toEqual(['K371']);
+		expect(hp.measurements[0]?.partition).toBe('headphone-5128');
+		expect(catalog.products.map((p) => p.model).sort()).toEqual([
+			'EQ-100',
+			'FDX-SR (JVC HA-FDX1 mod)',
+			'Hexa',
+			'Model'
+		]);
+		expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual([
+			'average',
+			'copy',
+			'equalized',
+			'fake',
+			'unknown'
+		]);
+		expect(report.quality.forms).toEqual([
+			expect.objectContaining({ file: 'headphone', before: 'iem', after: 'headphone' })
+		]);
+		expect(catalog.sources[0]?.forms).toEqual(['headphone', 'iem']);
+		expect(hp.sources[0]).toEqual(catalog.sources[0]);
+		expect(manifest.sources[0]?.rigEvidence?.class).toBe('verified');
+	});
+	it('keeps an unknown rig visible in a source-specific partition', async () => {
+		const { paths } = await fixture('rig_description="unidentified coupler"');
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.measurements).toHaveLength(1);
+		expect(catalog.partitions[0]?.id).toBe(`iem-source-${catalog.sources[0]?.id}`);
+		expect(catalog.sources[0]?.rigEvidence).toMatchObject({ class: 'unknown', family: null });
+	});
 	it('builds from the cached page config after root config.js returns 404', async () => {
 		const pageConfigUrl = `${base}assets/js/config.js`;
 		const { paths, http } = await fixture(null, [
@@ -190,7 +654,7 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
 			[`${base}data/Model3%20L.txt`, curve(80)],
 			[`${base}data/Model4%20L.txt`, curve(80)]
 		]);
@@ -224,7 +688,7 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
 			[`${base}data/Model3%20L.txt`, curve(80)]
 		]);
 		await build(paths);
@@ -297,8 +761,8 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
-			[`${base}data/Model3%20L.txt`, curve(80)]
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
+			[`${base}data/Model3%20L.txt`, curve(80, 2)]
 		]);
 		await writeFile(
 			resolve(paths.root, 'data/products.json'),
@@ -325,8 +789,8 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
-			[`${base}data/Model3%20L.txt`, curve(80)]
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
+			[`${base}data/Model3%20L.txt`, curve(80, 2)]
 		]);
 		await writeFile(
 			resolve(paths.root, 'data/products.json'),
@@ -473,7 +937,9 @@ describe('cached dataset build safety', () => {
 		const { paths } = await fixture();
 		await writeFile(
 			resolve(paths.root, 'data/sources.json'),
-			JSON.stringify({ overrides: { reviewer: { partition: 'custom-rig' } } })
+			JSON.stringify({
+				overrides: { reviewer: { partition: 'custom-rig', rationale: 'Test custom partition' } }
+			})
 		);
 		await build(paths);
 		const { catalog } = await result(paths);

@@ -194,10 +194,11 @@ pooled mean improvement is finite and positive both overall and in every reporte
 complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
 explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
 `harmonised` only when finite published offsets were applied. Detail charts and PEQ remain uncorrected.
-In dataset `ef7ead8fc680aae919189e39` (2026-11-02), five-fold iem-711 validation reduced held-out
-same-product pair distance **1.764 → 1.576 dB (−10.7%)**, with fold improvements **0.179–0.194 dB**
-over **83,575 pairs** from 2,500 multi-source products. iem-5128 reached sufficient support (22
-products) but one fold worsened, so its correction stays off. This validates correction for this
+In dataset `47e17d0fbadf1919b2caade0` (2026-11-02), five-fold iem-711 validation reduced held-out
+same-product pair distance **1.765 → 1.578 dB (−10.6%)**, with fold improvements **0.178–0.194 dB**
+over **85,409 pairs** from 2,459 multi-source products. iem-5128 reached sufficient support (21
+products, 27 pairs) and every fold improved, so its correction is on, but the gain is small
+(**1.666 → 1.641 dB**, folds **0.0001–0.118 dB**) and rests on little evidence. This validates correction for this
 dataset, not physical calibration or listener preference.
 
 ### Estimation and held-out validation

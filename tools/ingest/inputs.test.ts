@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import {
 	readInputs,
 	validateAliases,
@@ -8,6 +9,13 @@ import {
 } from './common.ts';
 
 describe('hand-maintained input validation', () => {
+	it('restores the published redirect baseline unconditionally before refresh builds', async () => {
+		const workflow = await readFile(new URL('../../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+		const restore = workflow.split(/\n {6}- /).find((step) => step.includes('run: pnpm data:pull'));
+		expect(restore).toBeDefined();
+		expect(restore).not.toMatch(/^\s*if:/m);
+		expect(workflow.indexOf('run: pnpm data:pull')).toBeLessThan(workflow.indexOf('pnpm data:crawl'));
+	});
 	it('accepts the checked-in inputs and optional notes', async () => {
 		const inputs = await readInputs();
 		expect(inputs.excluded.sources).toContain('crinacle');
@@ -25,12 +33,19 @@ describe('hand-maintained input validation', () => {
 						form: 'iem',
 						partition: 'iem-711',
 						rig: '711',
+						rationale: 'Curated hardware record',
 						permission: 'permission granted'
 					}
 				}
 			})
 		).toEqual({
-			reviewer: { form: 'iem', partition: 'iem-711', rig: '711', permission: 'permission granted' }
+			reviewer: {
+				form: 'iem',
+				partition: 'iem-711',
+				rig: '711',
+				rationale: 'Curated hardware record',
+				permission: 'permission granted'
+			}
 		});
 	});
 	it.each([
@@ -105,6 +120,8 @@ describe('hand-maintained input validation', () => {
 		{ overrides: { reviewer: { rigs: '711' } } },
 		{ overrides: { reviewer: { form: 'earbud' } } },
 		{ overrides: { reviewer: { rig: 711 } } },
+		{ overrides: { reviewer: { rig: '711' } } },
+		{ overrides: { reviewer: { partition: 'iem-711', rationale: '  ' } } },
 		{ overrides: { reviewer: { partition: '../outside' } } },
 		{ overrides: { reviewer: { permission: 'assumed' } } },
 		{ overrides: { reviewer: null } }

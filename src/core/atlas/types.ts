@@ -19,7 +19,17 @@ export interface AtlasOptions {
 	/** Maximum decoded detail shards; catalogs and rank indexes stay resident. Default 8. */
 	detailCacheSize?: number;
 }
-export interface AtlasError {
+/** Changed request identities, so callers can migrate saved links/profile entries. */
+export interface IdResolution {
+	productId?: string;
+	measurementId?: string;
+	canonicalProductId: string;
+	canonicalMeasurementId?: string;
+}
+interface ResolvedIds {
+	resolvedIds?: IdResolution[];
+}
+export interface AtlasError extends ResolvedIds {
 	ok: false;
 	error:
 		| 'not-measured-on-rig'
@@ -50,7 +60,7 @@ export interface AtlasSummary {
 	partitions: PartitionSummary[];
 }
 /** Display metadata for one measurement, without curves. */
-export interface MeasurementInfo {
+export interface MeasurementInfo extends ResolvedIds {
 	id: string;
 	productId: string;
 	brand: string;
@@ -129,7 +139,7 @@ export interface SimilarMatch extends DistanceResult {
 	sourceCount: number;
 	sameProduct: boolean;
 }
-export interface SimilarResult {
+export interface SimilarResult extends ResolvedIds {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
@@ -158,7 +168,7 @@ export interface UnusedTasteItem {
 	measurementId: string | null;
 	reason: string;
 }
-export interface TasteResult {
+export interface TasteResult extends ResolvedIds {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
@@ -199,7 +209,7 @@ export type CompareRequest = SimilarSettings &
 		sort?: 'mean' | 'minimax';
 		paretoOnly?: boolean;
 	};
-export interface CompareResult {
+export interface CompareResult extends ResolvedIds {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
@@ -237,7 +247,7 @@ export interface ProductSpread {
 	/** Finite contributing measurements per frequency, not independent listener samples. */
 	support: Uint16Array;
 }
-export interface ProductDetail {
+export interface ProductDetail extends ResolvedIds {
 	ok: true;
 	product: Product;
 	frequencies: Float64Array;
@@ -246,7 +256,7 @@ export interface ProductDetail {
 	/** Defaults plus fit/setup/unit/unknown variants; separate from default cross-source spread. */
 	variationSpread: ProductSpread[];
 }
-export interface CurveResult {
+export interface CurveResult extends ResolvedIds {
 	measurementId: string;
 	partition: string;
 	channel: 'avg' | 'L' | 'R';
@@ -264,7 +274,7 @@ export interface PeqRequest {
 		| { kind: 'curve'; values: number[] | Float32Array | Float64Array };
 	maxFilters?: number;
 }
-export interface PeqResponse {
+export interface PeqResponse extends ResolvedIds {
 	ok: true;
 	partition: string | null;
 	result: PeqResult;

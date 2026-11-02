@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
+import { classifyEq } from './eq.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CACHE = resolve(ROOT, '.cache/ingest');
@@ -33,7 +34,10 @@ export function datasetVersion(files: DatasetFile[], sources: Source[]): string 
 					rigInferred,
 					permission,
 					crawledAt,
-					calibration
+					calibration,
+					rigEvidence,
+					forms,
+					partitions
 				}) => ({
 					id,
 					username,
@@ -46,7 +50,10 @@ export function datasetVersion(files: DatasetFile[], sources: Source[]): string 
 					rigInferred,
 					permission,
 					crawledAt,
-					calibration
+					calibration,
+					...(rigEvidence === undefined ? {} : { rigEvidence }),
+					...(forms === undefined ? {} : { forms }),
+					...(partitions === undefined ? {} : { partitions })
 				})
 			)
 		})
@@ -241,6 +248,7 @@ export interface SourceOverride {
 	form?: Form;
 	partition?: string;
 	rig?: string;
+	rationale?: string;
 	permission?: Source['permission'];
 }
 
@@ -253,8 +261,20 @@ export function validateSources(value: unknown): Record<string, SourceOverride> 
 			if (typeof override !== 'string') throw new Error('Invalid sources.overrides._note');
 			continue;
 		}
-		const o = keys(override, ['form', 'partition', 'rig', 'permission'], [], `sources.overrides.${name}`);
+		const o = keys(
+			override,
+			['form', 'partition', 'rig', 'rationale', 'permission'],
+			[],
+			`sources.overrides.${name}`
+		);
 		const parsed: SourceOverride = {};
+		if (Object.hasOwn(o, 'rationale')) {
+			if (typeof o.rationale !== 'string' || !o.rationale.trim())
+				throw new Error(`Invalid source rationale: ${name}`);
+			parsed.rationale = o.rationale;
+		}
+		if ((Object.hasOwn(o, 'rig') || Object.hasOwn(o, 'partition')) && !parsed.rationale)
+			throw new Error(`Invalid source rig/partition override without rationale: ${name}`);
 		if (Object.hasOwn(o, 'form')) {
 			if (o.form !== 'iem' && o.form !== 'headphone') throw new Error(`Invalid source form: ${name}`);
 			parsed.form = o.form;
@@ -509,7 +529,21 @@ export function formFor(db: Database): Form {
 }
 
 export function unwanted(name: string): boolean {
-	return /target|eq[\s_-]*sandbox|[∆Δ]|\b(?:compensation|calibration)\b/i.test(name);
+	return nonProductName(name) !== null;
+}
+
+export function nonProductName(name: string): string | null {
+	if (/\b(?:fake|replica|counterfeit)\b/i.test(name))
+		return 'explicit fake/replica/counterfeit product or file';
+	if (/target|eq[\s_-]*sandbox|[∆Δ]|\b(?:compensation|calibration)\b/i.test(name))
+		return 'target/calibration/delta/sandbox curve';
+	return derivedName(name);
+}
+
+/** Exclude explicit post-hoc operations, never factory or uncertain preset labels. */
+export function derivedName(name: string): string | null {
+	if (/\baverage\s+(?:iem|headphone)s?\b/i.test(name)) return 'derived population average';
+	return classifyEq(name) === 'post-hoc' ? 'derived EQ curve' : null;
 }
 
 export function errorMessage(error: unknown): string {
