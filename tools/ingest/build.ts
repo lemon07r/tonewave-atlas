@@ -626,7 +626,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const group = partitions.get(measurement.partition) ?? [];
 				const row = {
 					measurement,
-					sourceIsolated: formDecision.sourceIsolated,
+					sourceIsolated: formDecision.sourceIsolated ?? false,
 					configuration,
 					sourceOrder: counts.variants,
 					channels: curves,
