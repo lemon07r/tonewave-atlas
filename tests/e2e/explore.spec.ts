@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/phase2');
+const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
 mkdirSync(shots, { recursive: true });
 
 for (const theme of ['light', 'dark'] as const) {
@@ -18,19 +18,18 @@ for (const theme of ['light', 'dark'] as const) {
 			page.on('pageerror', (error) => errors.push(error.message));
 			await page.goto('/explore');
 			await page.getByRole('searchbox', { name: 'Filter IEMs' }).fill('Truthear Hexa');
-			await expect(page.getByRole('link', { name: 'Hexa', exact: true })).toBeVisible();
+			const hexaLink = page.locator('a[href="/explore?product=p-19d1654fcb150bf1aa2f"]');
+			await expect(hexaLink).toHaveText('Hexa');
 			await expect(page.locator('.catalog-row')).not.toHaveCount(40);
 			await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('Truthear');
-			const hexa = page
-				.locator('.catalog-row')
-				.filter({ has: page.getByRole('link', { name: 'Hexa', exact: true }) });
+			const hexa = page.locator('.catalog-row').filter({ has: hexaLink });
 			await expect(hexa).toContainText('711-family coupler');
 			await expect(hexa.locator('.prices')).toContainText(/\$\d.* listed by .+, \w{3} \d{4}/);
 			const listedPrices = (await hexa.locator('.prices p').allTextContents()).map((text) => text.trim());
 			expect(listedPrices.length).toBeGreaterThan(0);
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.screenshot({ path: join(shots, `pages-explore-${info.project.name}-${theme}.png`) });
-			await page.getByRole('link', { name: 'Hexa', exact: true }).click();
+			await hexaLink.click();
 			await expect(page.getByRole('heading', { name: 'Hexa', exact: true })).toBeVisible();
 			for (const listing of listedPrices)
 				await expect(page.locator('.product-heading')).toContainText(listing);

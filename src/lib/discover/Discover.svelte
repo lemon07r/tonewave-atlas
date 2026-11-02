@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { browser } from '$app/env';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { Focus } from '#core/analysis/weights.ts';
 	import { page } from '$app/state';
@@ -39,7 +40,7 @@
 	import { compareEvidence, nearestLikedEvidence } from './evidence.ts';
 
 	let { form }: { form: Form } = $props();
-	let settings = $derived(parseDiscovery(page.url.searchParams));
+	let settings = $derived(parseDiscovery(browser ? page.url.searchParams : new SvelteURLSearchParams()));
 	let products = $state.raw<ProductListItem[]>([]);
 	let summary = $state.raw<AtlasSummary>();
 	let catalogLoading = $state(true);
@@ -835,6 +836,7 @@
 	.controls,
 	.workspace-tools[open] {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 16px;
 		padding-bottom: 20px;
 	}

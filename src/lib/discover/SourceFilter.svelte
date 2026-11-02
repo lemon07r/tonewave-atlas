@@ -74,6 +74,12 @@
 	h3 {
 		font-size: var(--text-sm);
 	}
+	select {
+		display: block;
+		width: 100%;
+		min-width: 0;
+		margin-top: 8px;
+	}
 	p,
 	legend {
 		font-size: var(--text-xs);

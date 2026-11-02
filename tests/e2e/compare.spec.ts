@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/phase2');
+const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
 mkdirSync(shots, { recursive: true });
 
 for (const theme of ['light', 'dark'] as const) {
