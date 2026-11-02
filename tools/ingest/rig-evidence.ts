@@ -226,8 +226,11 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 			}
 		};
 	});
-	const locoPasses = locoDetails.length > 0 && locoDetails.every((d) => d.result.correct);
-	// Fixed, nested candidate sizes. Require >=99% correct on EVERY eligible control, not pooled accuracy.
+	const locoPasses =
+		details.every((d) => !d.score.control || d.score.interval !== null) &&
+		locoDetails.length > 0 &&
+		locoDetails.every((d) => d.result.correct);
+	// Fixed candidate sizes with independently seeded samples. Validate EVERY verified control.
 	const stability = [4, 8, 12, 16, 20, 24, 32].map((n) => {
 		const eligible = locoDetails.filter((d) => d.held.residuals.length >= n);
 		const results = eligible.map(({ held: d, threshold }) => {
@@ -254,6 +257,8 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 			passes:
 				separated &&
 				locoPasses &&
+				eligible.length === details.filter((d) => d.score.control).length &&
+				eligible.filter((d) => d.held.score.control === '711').length >= 3 &&
 				eligible.filter((d) => d.held.score.control === '5128').length >= 2 &&
 				results.every((r) => r.correct >= 198)
 		};

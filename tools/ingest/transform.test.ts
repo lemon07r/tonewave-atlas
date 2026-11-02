@@ -36,6 +36,18 @@ const db = {
 };
 
 describe('source transforms', () => {
+	it('honors curated rig and partition corrections before directory 5128 inference', () => {
+		const s = sourceFor({ ...db, dbType: '5128' }, 'rig_description="B&K 5128"', 'date', {
+			rig: '711',
+			partition: 'iem-711',
+			rationale: 'Curated correction'
+		});
+		expect(s).toMatchObject({
+			partition: 'iem-711',
+			rig: '711',
+			rigEvidence: { class: 'verified', family: '711', rationale: 'Curated correction' }
+		});
+	});
 	it('keeps ANC context when only maker/model prefixes are removed', () => {
 		const phone = {
 			brand: 'Maker',

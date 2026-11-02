@@ -13,7 +13,8 @@ export interface Source {
 	partition: string;
 	rig: string | null;
 	rigInferred: boolean;
-	/** Optional on older catalogs. Evidence is not independent hardware certification. */
+	/** Optional on older catalogs. Statistical (evidenced) families apply only to IEM rows,
+	 * not a mixed source's headphone hardware. This is not independent hardware certification. */
 	rigEvidence?: {
 		class: 'verified' | 'evidenced' | 'unknown';
 		family: '711' | '5128' | null;

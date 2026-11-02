@@ -65,6 +65,28 @@ function fixture() {
 }
 
 describe('signed rig evidence', () => {
+	it('requires a score from every verified control before admitting unknown rigs', () => {
+		const { sources, rows } = fixture();
+		const template = sources[0];
+		if (!template) throw new Error('Missing fixture source');
+		const r = rigEvidence([...sources, { ...template, id: 'unscored' }], rows, 40);
+		expect(r.loco.unscored).toEqual(['unscored']);
+		expect(r.loco.passes).toBe(false);
+		expect(r.minimumProducts).toBeNull();
+		expect(r.sources.filter((s) => !s.control).every((s) => s.class === 'unknown')).toBe(true);
+	});
+	it('does not skip a sparse control when validating any candidate overlap size', () => {
+		const { sources, rows } = fixture();
+		const r = rigEvidence(
+			sources,
+			rows.filter((row) => row.measurement.sourceId !== 'a' || row.measurement.productId === 'p-0'),
+			40
+		);
+		expect(r.loco.passes).toBe(true);
+		expect(r.sources.find((s) => s.source === 'a')?.sharedProducts).toBe(1);
+		expect(r.stability.every((s) => !s.passes)).toBe(true);
+		expect(r.minimumProducts).toBeNull();
+	});
 	it('does not admit unknown rigs when a held-out control fails a threshold trained without it', () => {
 		const { sources, rows } = fixture();
 		const biased = rows.map((r) =>

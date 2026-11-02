@@ -31,6 +31,20 @@ const phone = (brand = 'Maker', name = 'Model', file = ['Model']): Phone => ({
 });
 
 describe('deterministic catalog quality rules', () => {
+	it('does not route headphone rows using an IEM-evidenced 5128 family', () => {
+		const source = sourceFor(
+			{ id: 'mixed', username: 'mixed', name: 'Mixed', url: 'https://mixed.invalid/', dbType: 'IEMs' },
+			'',
+			'date',
+			{}
+		);
+		source.rigEvidence = { class: 'evidenced', family: '5128', rationale: 'IEM projection' };
+		expect(partitionFor(source, 'iem')).toBe('iem-5128');
+		expect(partitionFor(source, 'headphone')).toBe('headphone-source-mixed');
+		const physical = sourceFor({ ...source, dbType: 'Headphones' }, 'rig_description="B&K 5128"', 'date', {});
+		physical.rigEvidence = source.rigEvidence;
+		expect(partitionFor(physical, 'headphone')).toBe('headphone-5128');
+	});
 	it.each([
 		'Average IEM',
 		'Average Headphone',

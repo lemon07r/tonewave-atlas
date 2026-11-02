@@ -259,17 +259,17 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 	const o = record(override) ? override : {};
 	const form = o.form === 'iem' || o.form === 'headphone' ? o.form : formFor(db);
 	const rig = typeof o.rig === 'string' ? o.rig : configString(config, 'rig_description');
+	const corrected = typeof o.rig === 'string' || typeof o.partition === 'string';
 	const family =
-		db.dbType === '5128' ||
-		/5128/.test(rig ?? '') ||
-		(typeof o.partition === 'string' && /-5128$/.test(o.partition))
+		(!corrected && db.dbType === '5128') ||
+		/5128/.test(typeof o.partition === 'string' ? o.partition : (rig ?? ''))
 			? '5128'
-			: /\b(?:711|60711)\b|60318[\s-]*4/i.test(rig ?? '') || o.partition === 'iem-711'
+			: /\b(?:711|60711)\b|60318[\s-]*4/i.test(typeof o.partition === 'string' ? o.partition : (rig ?? ''))
 				? '711'
 				: null;
 	let partition: string;
 	if (typeof o.partition === 'string') partition = o.partition;
-	else if (db.dbType === '5128' || /5128/.test(rig ?? '')) partition = `${form}-5128`;
+	else if (family === '5128') partition = `${form}-5128`;
 	else if (form === 'iem') partition = family === '711' ? 'iem-711' : `iem-source-${db.id}`;
 	else if (/mini.?dsp\s+ears\s+pro/i.test(rig ?? '')) partition = 'headphone-minidsp-ears-pro';
 	else if (/mini.?dsp\s+ears/i.test(rig ?? '')) partition = 'headphone-minidsp-ears';

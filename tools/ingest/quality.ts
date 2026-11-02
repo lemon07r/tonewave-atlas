@@ -144,9 +144,12 @@ export function duplicateDefault(a: ArrayLike<number>, b: ArrayLike<number>): bo
 }
 
 export function partitionFor(source: Source, form: Form): string {
+	// Preserve the primary headphone hardware partition; IEM projection evidence cannot change it.
+	if (source.form === 'headphone' && form === 'headphone') return source.partition;
 	if (source.form === form && !/^(?:iem|headphone)-(?:source-|711$|5128$)/.test(source.partition))
 		return source.partition;
-	if (source.rigEvidence?.family === '5128') return `${form}-5128`;
+	if (source.rigEvidence?.family === '5128' && (form === 'iem' || source.rigEvidence.class === 'verified'))
+		return `${form}-5128`;
 	if (form === 'iem') return source.rigEvidence?.family === '711' ? 'iem-711' : `iem-source-${source.id}`;
 	return source.form === form ? source.partition : `headphone-source-${source.id}`;
 }
