@@ -6,7 +6,8 @@ import { normalise } from './transform.ts';
 
 /** Audited maker/model families. Anchored to BOTH maker and model, never fuzzy identity merges. */
 const headphoneModels: Record<string, RegExp> = {
-	akg: /^(?:K\s*(?!3003)\d|Q\d|N9|N700)/i,
+	// Established full-size models in the indexes; K319/K391/Q350 are not headphones.
+	akg: /^(?:K\s*(?:52|72|92|140|182|240|245|267|271|275|290|340|361|371|400|402|501|553|612|701|702|712|7XX|812|872|1000)(?!\d)|Q701(?!\d)|N9\b|N700NC\b)/i,
 	audeze: /^(?:LCD(?![- ]?i[34])|MM[- ]?\d|EL[- ]|Maxwell|Mobius|Penrose)/i,
 	audiotechnica: /^ATH[- ]?(?:AD|A\d|AV|M\d|W|R\d)/i,
 	beyerdynamic: /^DT\s*\d+(?!.*\bie\b)/i,
