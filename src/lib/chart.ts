@@ -1,4 +1,4 @@
-import { GRID, GRID_SIZE } from '#core/grid.ts';
+import { GRID_SIZE } from '#core/grid.ts';
 
 export interface FrSeries {
 	id: string;
@@ -96,10 +96,14 @@ export function dbLabel(value: number | null | undefined, signed = false): strin
 }
 
 /** Nulls, rather than NaNs, tell uPlot to preserve an explicit gap. No interpolation or alignment. */
-export function chartValues(values: ArrayLike<number>, baseline?: ArrayLike<number>): (number | null)[] {
-	if (values.length !== GRID_SIZE || (baseline && baseline.length !== GRID_SIZE))
-		throw new RangeError(`Curves must have ${GRID_SIZE} points on GRID.`);
-	return Array.from(GRID, (_, i) => {
+export function chartValues(
+	values: ArrayLike<number>,
+	baseline?: ArrayLike<number>,
+	size = GRID_SIZE
+): (number | null)[] {
+	if (values.length !== size || (baseline && baseline.length !== size))
+		throw new RangeError(`Curves must have ${size} points on the supplied grid.`);
+	return Array.from({ length: size }, (_, i) => {
 		const value = values[i];
 		const base = baseline ? baseline[i] : 0;
 		if (value === undefined || base === undefined || !Number.isFinite(value) || !Number.isFinite(base))
