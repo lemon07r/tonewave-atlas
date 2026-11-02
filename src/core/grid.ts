@@ -1,6 +1,6 @@
 /**
  * Canonical log-frequency grid shared by ingestion, storage, analysis and display.
- * f_k = 20 · 2^(k / 24) Hz for k = 0…239: 1/24-octave spacing from 20 Hz to ≈19.4 kHz.
+ * f_k = 20 · 2^(k / 24) Hz for k = 0…239: 1/24-octave spacing from 20 Hz to ≈19.9 kHz.
  */
 export const GRID_POINTS_PER_OCTAVE = 24;
 export const GRID_SIZE = 240;

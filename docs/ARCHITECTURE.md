@@ -30,7 +30,7 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
 
 ## Key decisions
 
-- **Frequency grid.** One canonical log grid: `f_k = 20 · 2^(k/24)`, k = 0…239 (20 Hz–19.4 kHz,
+- **Frequency grid.** One canonical log grid: `f_k = 20 · 2^(k/24)`, k = 0…239 (20 Hz–19.9 kHz,
   1/24 octave). Measurements are resampled by linear interpolation in log-frequency; points outside
   the measured range are `NaN`, never extrapolated. Ranking uses a coarser 1/12-octave view derived
   from the same grid.
