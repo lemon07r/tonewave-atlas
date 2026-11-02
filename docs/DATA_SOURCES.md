@@ -1,7 +1,8 @@
 # Measurement sources
 
 Tonewave Atlas discovers reviewer databases from the public [squig.link directory](https://squig.link/squigsites.json).
-Each database supplies its configuration, brand/model index (`data/phone_book.json`), and channel text
+Each database supplies its configuration (`config.js` at the database root, or the config script
+that its page references), brand/model index (`data/phone_book.json`), and channel text
 files. The manifest and catalogs attribute every included database; each measurement records its
 original file URLs, database link, REW date when present, HTTP Last-Modified, and processing steps.
 Reviewer-listed prices are retained verbatim; only explicit dollar/USD forms are parsed, with no
@@ -15,13 +16,16 @@ availability is not a redistribution licence, and the squig graph software's lic
 rights to reviewers' measurements. We publish resampled curves, not the raw text files. Attribution
 and links are retained; they are not a substitute for permission.
 
-Every crawl reads the network's `optedOut` list from `squigsites.js`; builds reapply the cached list and
-our local `data/exclusions.json`. Opted-out reviewers, all alternate-domain databases, and
-crinacle/hangout.audio are excluded. Earbuds are not supported yet. For exclusion, correction, or
-takedown, open a [GitHub issue on lemon07r/tonewave-atlas](https://github.com/lemon07r/tonewave-atlas/issues).
-We honour source-owner removal requests by adding an exclusion and rebuilding; raw cache entries are
-local ingestion state, never part of the published dataset. Discovery must succeed before a crawl;
-an unrecognisable opt-out list fails closed.
+The site is non-commercial and credits every database it uses. Every openly served IEM and headphone
+database in the directory is crawled unless `data/exclusions.json` lists it (earbud databases are not
+supported), including reviewers on the network's `optedOut` list
+in `squigsites.js` (squig.link uses that list to hide shop links; we do not read it as a data
+opt-out). The maintainer contacts reviewers for consent where possible. Crinacle's hangout.audio is
+never crawled: it serves encrypted files behind an access check, and we do not bypass access
+controls. Earbuds are not supported yet. For exclusion, correction, or takedown, open a
+[GitHub issue on lemon07r/tonewave-atlas](https://github.com/lemon07r/tonewave-atlas/issues). We
+honour source-owner removal requests by adding an exclusion and rebuilding; raw cache entries are
+local ingestion state, never part of the published dataset. Discovery must succeed before a crawl.
 
 ## Rigs and processing
 

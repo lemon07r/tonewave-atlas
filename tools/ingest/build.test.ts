@@ -8,7 +8,7 @@ import { decodePack } from '#core/dataset/codec.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
-import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL, ROOT, sha256 } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, ROOT, sha256 } from './common.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -46,7 +46,6 @@ async function fixture(configBody: string | null = config, extraBodies: [string,
 				{ username: 'reviewer', name: 'Reviewer', urlType: 'subdomain', dbs: [{ type: 'IEMs', folder: '/' }] }
 			])
 		],
-		[OPT_OUT_URL, 'let optedOut = [];'],
 		[bookUrl, book],
 		[`${base}data/offset.txt`, curve(10)],
 		[`${base}data/Model%20L.txt`, curve(80)],
@@ -91,6 +90,82 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('builds from the cached page config after root config.js returns 404', async () => {
+		const pageConfigUrl = `${base}assets/js/config.js`;
+		const { paths, http } = await fixture(null, [
+			[base, '<script src="assets/js/config.js"></script>'],
+			[pageConfigUrl, config]
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })));
+		await http.fetch(pageConfigUrl);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { manifest, catalog, report } = await result(paths);
+		expect(request).not.toHaveBeenCalled();
+		expect(catalog.measurements).toHaveLength(1);
+		expect(catalog.sources[0]).toMatchObject({ rig: 'B&K 5128', partition: 'iem-5128' });
+		expect(report.excluded).toEqual([]);
+		expect(report.retainedFailures).toEqual([expect.objectContaining({ url: pageConfigUrl, status: 404 })]);
+		const detailFile = catalog.measurements[0]?.detailFile;
+		if (!detailFile) throw new Error('Missing fixture detail file');
+		const detail = decodePack(
+			gunzipSync(await readFile(resolve(paths.output, manifest.version, detailFile)))
+		);
+		expect(detail.curves[0]?.values[20]).toBe(70);
+	});
+	it('keeps a successful root config instead of using the cached index page', async () => {
+		const { paths } = await fixture(config, [
+			[base, '<script src="https://other.squig.link/config.js"></script>']
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.measurements).toHaveLength(1);
+		expect(report.excluded).toEqual([]);
+	});
+	it.each([true, false])(
+		'prefers a cached linked config over a stale root config (linked available: %s)',
+		async (linkedAvailable) => {
+			const pageConfigUrl = `${base}assets/js/config.js`;
+			const linkedConfig =
+				'const DIR = "data/", rig_description = "IEC 60318-4 711", measurement_calibration_file = "offset";';
+			const { paths, http } = await fixture(config, [
+				[base, '<script src="assets/js/config.js"></script>'],
+				...(linkedAvailable ? ([[pageConfigUrl, linkedConfig]] as [string, string][]) : [])
+			]);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })));
+			await http.fetch(configUrl);
+			if (!linkedAvailable) await http.fetch(pageConfigUrl);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch')));
+			await build(paths);
+			const { catalog, report } = await result(paths);
+			expect(catalog.measurements).toHaveLength(1);
+			expect(catalog.sources[0]?.partition).toBe(linkedAvailable ? 'iem-711' : 'iem-5128');
+			expect(report.retainedFailures.some((failure) => failure.url === configUrl)).toBe(!linkedAvailable);
+		}
+	);
+	it.each(['<script src="assets/js/graphtool.js"></script>', '<script src="assets/js/config.js"></script>'])(
+		'excludes a source when the cached index has no available config: %s',
+		async (html) => {
+			const { paths } = await fixture(null, [[base, html]]);
+			await build(paths);
+			const { catalog, report } = await result(paths);
+			expect(catalog.measurements).toEqual([]);
+			expect(report.excluded[0]?.reason).toContain('No successful config found');
+		}
+	);
+	it('reports an unsafe page config without aborting publication or fetching it', async () => {
+		const { paths } = await fixture(null, [
+			[base, '<script src="https://other.squig.link/config.js"></script>']
+		]);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(request).not.toHaveBeenCalled();
+		expect(catalog.measurements).toEqual([]);
+		expect(report.excluded[0]?.reason).toContain('same-origin');
+	});
 	it('votes only accepted measurements, with global brand spelling and unchanged provenance', async () => {
 		const { paths } = await fixture('', [
 			[
@@ -267,7 +342,7 @@ describe('cached dataset build safety', () => {
 		expect(catalog.products[0]).toMatchObject({ brand: 'MAKER', model: 'MODEL' });
 		expect(catalog.measurements).toHaveLength(3);
 	});
-	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
+	it.each([DIRECTORY_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
 		'reports stale discovery/calibration/measurement %s',
 		async (url) => {
 			const { paths, http } = await fixture();
@@ -277,8 +352,7 @@ describe('cached dataset build safety', () => {
 			const { report, catalog } = await result(paths);
 			expect(catalog.measurements).toHaveLength(1);
 			expect(report.retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
-			if ([DIRECTORY_URL, OPT_OUT_URL].includes(url))
-				expect(report.retainedFailures[0]).toMatchObject({ source: 'discovery' });
+			if (url === DIRECTORY_URL) expect(report.retainedFailures[0]).toMatchObject({ source: 'discovery' });
 			expect(report.issues.some((issue) => issue.reason.includes('last-good'))).toBe(true);
 		}
 	);
@@ -310,7 +384,8 @@ describe('cached dataset build safety', () => {
 		expect(report.excluded).toEqual([
 			{
 				id: expect.any(String) as unknown,
-				reason: 'No successful config.js; refusing rig/calibration defaults'
+				reason:
+					'No successful config found at config.js or in the index page; refusing rig/calibration defaults'
 			}
 		]);
 	});

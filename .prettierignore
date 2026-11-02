@@ -6,5 +6,3 @@ coverage/
 test-results/
 playwright-report/
 .cache/
-PROJECT_BRIEF.md
-.agents/

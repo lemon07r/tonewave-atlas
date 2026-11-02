@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
 	configChannels,
+	configScriptUrl,
 	configString,
 	calibrationUrl,
 	dataDirectory,
 	discover,
 	fileChannels,
 	measurementUrl,
-	parseOptOuts,
 	phoneBook,
 	readInputs,
 	validateProducts,
@@ -79,16 +79,55 @@ describe('source transforms', () => {
 		expect(measurementUrl(dataDirectory(db, ''), 'A / #?', 'L')).toBe(
 			'https://reviewer.squig.link/data/A%20%2F%20%23%3F%20L.txt'
 		);
-		expect(parseOptOuts("let optedOut = ['a', 'crinacle']; malicious();")).toEqual(['a', 'crinacle']);
-		expect(() => parseOptOuts('something changed')).toThrow();
+	});
+	it('resolves a parent-relative config script from a nested database page', () => {
+		expect(
+			configScriptUrl(
+				'<script src="../assets/js/graphtool.js"></script><script src="../assets/js/config_5128.js"></script>',
+				'https://listener.squig.link/5128/'
+			)
+		).toBe('https://listener.squig.link/assets/js/config_5128.js');
+	});
+	it.each([
+		'<script src="assets/js/config.js"></script>',
+		"<script defer src = 'assets/js/config.js'></script>",
+		'<SCRIPT SRC=assets/js/config.js></SCRIPT>'
+	])('resolves the page-relative config script in %s', (html) => {
+		expect(configScriptUrl(html, db.url)).toBe('https://reviewer.squig.link/assets/js/config.js');
+	});
+	it('takes the first config script and preserves query strings and fragments', () => {
+		expect(
+			configScriptUrl(
+				'<script src="assets/js/config_5128.js?v=2#settings"></script><script src="config.js"></script>',
+				db.url
+			)
+		).toBe('https://reviewer.squig.link/assets/js/config_5128.js?v=2#settings');
+	});
+	it.each([
+		'https://other.squig.link/config.js',
+		'//other.squig.link/config.js',
+		'http://reviewer.squig.link/config.js',
+		'https://user:pass@reviewer.squig.link/config.js'
+	])('rejects a config script outside the same-origin HTTP(S) policy: %s', (src) => {
+		expect(() => configScriptUrl(`<script src="${src}"></script>`, db.url)).toThrow('same-origin');
+	});
+	it('returns null when no config script src matches', () => {
+		expect(
+			configScriptUrl(
+				`<!-- <script src="config.js"></script> -->
+				<script data-src="config.js" src="assets/js/graphtool.js"></script>
+				<script src="not-config.js"></script><script src="config.json"></script>
+				<script src="assets/js/graphtool.js?other=/config.js"></script>
+				<script src="assets/js/graphtool.js#/config.js"></script>
+				<script>const config = 'config.js';</script><link href="config.js">`,
+				db.url
+			)
+		).toBeNull();
 	});
 	it('ignores commented sample/channel settings without stripping URLs', () => {
 		const config = `// num_samples = 5;\n/* default_channels = ['R']; */\nconst default_channels = ['L', 'R'], DIR = 'https://reviewer.squig.link/data/';`;
 		expect(fileChannels(config)).toEqual(['L', 'R']);
 		expect(dataDirectory(db, config)).toBe('https://reviewer.squig.link/data/');
-		expect(
-			parseOptOuts(`// let optedOut = [];\n/* const optedOut = ['stale']; */\nlet optedOut = ['live'];`)
-		).toEqual(['live']);
 	});
 	it.each(['[]', '["A"]', '["L", "R", "C"]'])('rejects unsupported physical channels %s', (list) => {
 		expect(() => supportedChannels(`default_channels = ${list}`)).toThrow('Unsupported channels');

@@ -151,9 +151,11 @@ pooled mean improvement is finite and positive both overall and in every reporte
 complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
 explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
 `harmonised` only when finite published offsets were applied. Detail charts and PEQ remain uncorrected.
-In the **2026-11 dataset build**, five-fold iem-711 validation reduced held-out same-product pair
-distance **1.781 → 1.588 dB (−10.9%)**, with fold improvements **0.184–0.202 dB** over **50,823 pairs**.
-This validates correction for this dataset, not physical calibration or listener preference.
+In dataset `ef7ead8fc680aae919189e39` (2026-11-02), five-fold iem-711 validation reduced held-out
+same-product pair distance **1.764 → 1.576 dB (−10.7%)**, with fold improvements **0.179–0.194 dB**
+over **83,575 pairs** from 2,500 multi-source products. iem-5128 reached sufficient support (22
+products) but one fold worsened, so its correction stays off. This validates correction for this
+dataset, not physical calibration or listener preference.
 
 ### Estimation and held-out validation
 
@@ -433,4 +435,4 @@ or sample rates may produce different results; the Wavelet curve approximates th
 See [VALIDATION.md](VALIDATION.md) for independent numerical tests and reproducible timings. Synthetic
 correctness does not establish perceptual validity. The cluster/penalty/confidence thresholds, default
 σ profile and reason mappings need evaluation against real within-partition overlaps and prospective
-user feedback. No real-data validation or listener study is claimed here.
+user feedback. Real-data validation covers measurement agreement only; no listener study is claimed.

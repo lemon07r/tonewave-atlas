@@ -7,6 +7,7 @@ import {
 	CACHE,
 	calibrationUrl,
 	fileChannels,
+	configScriptUrl,
 	configString,
 	dataDirectory,
 	DIRECTORY_URL,
@@ -14,8 +15,6 @@ import {
 	errorMessage,
 	readInputs,
 	measurementUrl,
-	OPT_OUT_URL,
-	parseOptOuts,
 	phoneBook,
 	record,
 	ROOT,
@@ -35,15 +34,9 @@ export async function crawl(
 	const sites = values.sites?.split(',').map((site) => site.trim());
 	const { excluded } = await readInputs(paths.root);
 	const http = new HttpCache(paths.cache);
-	const [directory, script] = await Promise.all([http.fetch(DIRECTORY_URL), http.fetch(OPT_OUT_URL)]);
-	if (
-		directory.entry.status !== 200 ||
-		script.entry.status !== 200 ||
-		directory.entry.lastFailure ||
-		script.entry.lastFailure
-	)
-		throw new Error('Live source discovery/opt-out retrieval failed');
-	const optOuts = parseOptOuts(new TextDecoder().decode(script.body));
+	const directory = await http.fetch(DIRECTORY_URL);
+	if (directory.entry.status !== 200 || directory.entry.lastFailure)
+		throw new Error('Live source discovery failed');
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
 	const databases = discover(raw);
 	for (const site of sites ?? [])
@@ -73,15 +66,13 @@ export async function crawl(
 				snapshot.excluded.push({ id: String(site.username), reason: 'altDomain/crinacle' });
 		}
 	for (const db of databases) {
-		const reason = optOuts.includes(db.username)
-			? 'upstream opt-out'
-			: excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
-				? 'local exclusion'
-				: db.dbType === 'Earbuds'
-					? 'earbuds not supported'
-					: sites && !sites.includes(db.username) && !sites.includes(db.id)
-						? 'not selected'
-						: null;
+		const reason = excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
+			? 'local exclusion'
+			: db.dbType === 'Earbuds'
+				? 'earbuds not supported'
+				: sites && !sites.includes(db.username) && !sites.includes(db.id)
+					? 'not selected'
+					: null;
 		if (reason) snapshot.excluded.push({ id: db.id, reason });
 		else snapshot.sources.push(db);
 	}
@@ -90,14 +81,32 @@ export async function crawl(
 	for (const [i, db] of snapshot.sources.entries()) {
 		console.log(`[${i + 1}/${snapshot.sources.length}] ${db.id}: ${db.url}`);
 		try {
-			const [configResponse, bookResponse] = await Promise.all([
+			const [rootConfigResponse, bookResponse] = await Promise.all([
 				http.fetch(new URL('config.js', db.url).href),
 				http.fetch(new URL('data/phone_book.json', db.url).href)
 			]);
 			if (bookResponse.entry.status !== 200) throw new Error(`Phone book HTTP ${bookResponse.entry.status}`);
+			// A root config that now fails keeps its last-good body (status 200 plus lastFailure), so a
+			// stale root still triggers page discovery and is used only if no linked config succeeds.
+			let configResponse = rootConfigResponse;
+			if (configResponse.entry.status !== 200 || configResponse.entry.lastFailure) {
+				try {
+					const pageResponse = await http.fetch(db.url);
+					if (pageResponse.entry.status === 200) {
+						retained(db.id, pageResponse);
+						const configUrl = configScriptUrl(new TextDecoder().decode(pageResponse.body), db.url);
+						if (configUrl) {
+							const linked = await http.fetch(configUrl);
+							if (linked.entry.status === 200) configResponse = linked;
+						}
+					}
+				} catch (e) {
+					if (rootConfigResponse.entry.status !== 200) throw e;
+				}
+			}
 			if (configResponse.entry.status !== 200)
 				throw new Error(
-					'No successful config.js; source excluded rather than using rig/calibration defaults'
+					'No successful config found at config.js or in the index page; source excluded rather than using rig/calibration defaults'
 				);
 			const config = new TextDecoder().decode(configResponse.body);
 			for (const response of [configResponse, bookResponse]) retained(db.id, response);

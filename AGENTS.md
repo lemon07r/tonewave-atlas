@@ -23,7 +23,8 @@ system map: `docs/ARCHITECTURE.md`; maths: `docs/METHODOLOGY.md`; data rights: `
   imports with explicit `.ts` extensions; use `$app/state`, not stores.
 - Docs describe what exists. When behaviour changes, update the one doc that owns it rather than adding
   a new file; delete guidance that has gone stale.
-- Secrets live in `.env` (gitignored; see `.env.example`). Cloudflare deploys use `CLOUDFLARE_PAGES_TOKEN`.
+- Secrets live in `.env` (gitignored; see `.env.example`). Local Cloudflare Pages deploys pass `CLOUDFLARE_PAGES_TOKEN` as `CLOUDFLARE_API_TOKEN`
+  (the zone token is IP-restricted); the Deploy workflow uses the `CLOUDFLARE_API_TOKEN` repository secret.
 
 ## Code Search
 
