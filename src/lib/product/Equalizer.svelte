@@ -10,6 +10,7 @@
 	import type { FrSeries } from '#lib/chart.ts';
 	import { GRID } from '#core/grid.ts';
 	import { responseDistance } from '#core/analysis/distance.ts';
+	import { signedDb } from './format.ts';
 	let {
 		detail,
 		products,
@@ -21,6 +22,9 @@
 	let busy = $state(false);
 	let error = $state('');
 	let result = $state.raw<PeqResponse | null>(null);
+	let sortedFilters = $derived(
+		result ? [...result.result.filters].sort((a, b) => a.frequency - b.frequency) : []
+	);
 	let series = $state.raw<FrSeries[]>([]);
 	let before = $state<number | null>(null);
 	let request = {};
@@ -160,7 +164,7 @@
 		<p class="mono small">
 			Response distance, 20 Hz–10 kHz: {before?.toFixed(1) ?? '—'} dB before → {result.result.residualDistanceDb.toFixed(
 				1
-			)} dB after. Preamp: {result.result.preamp.toFixed(1)} dB.
+			)} dB after. Preamp: {signedDb(result.result.preamp)} dB.
 		</p>
 		<p class="small muted">
 			Level-aligned RMS shape residual, not a quality score. Filters and nominal headroom assume 48 kHz; they
@@ -174,10 +178,10 @@
 						><th scope="col">Gain (dB)</th></tr
 					></thead
 				><tbody
-					>{#each result.result.filters as filter, i (`${i}-${filter.frequency}`)}<tr
+					>{#each sortedFilters as filter, i (`${i}-${filter.frequency}`)}<tr
 							><th scope="row">{i + 1}</th><td>{filter.type}</td><td>{filter.frequency.toFixed(0)}</td><td
 								>{filter.q.toFixed(2)}</td
-							><td>{filter.gain.toFixed(1)}</td></tr
+							><td>{signedDb(filter.gain)}</td></tr
 						>{/each}</tbody
 				>
 			</table>
@@ -248,6 +252,11 @@
 	}
 	td {
 		font-family: var(--mono);
+	}
+	th:nth-child(n + 3),
+	td:nth-child(n + 3) {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
 	@media (max-width: 900px) {
 		.eq-controls {

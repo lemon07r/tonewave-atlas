@@ -59,7 +59,24 @@ for (const theme of ['light', 'dark'] as const) {
 			const table = page.getByRole('table', { name: 'Parametric EQ filters' });
 			await expect(table).toBeVisible();
 			expect(await table.getByRole('row').count()).toBeGreaterThan(1);
-			await expect(page.getByText(/Response distance, 20 Hz–10 kHz:/)).toBeVisible();
+			const frequencies = await table.locator('tbody tr td:nth-child(3)').allTextContents();
+			for (const frequency of frequencies) expect(frequency).toMatch(/^\d+$/);
+			const hertz = frequencies.map(Number);
+			expect(hertz).toEqual([...hertz].sort((a, b) => a - b));
+			for (const gain of await table.locator('tbody tr td:nth-child(5)').allTextContents()) {
+				expect(gain).toMatch(/^[+−]\d+\.\d$/);
+			}
+			expect(
+				await table.locator('th:nth-child(n + 3), td:nth-child(n + 3)').evaluateAll((cells) =>
+					cells.every((cell) => {
+						const style = getComputedStyle(cell);
+						return style.textAlign === 'right' && style.fontVariantNumeric.includes('tabular-nums');
+					})
+				)
+			).toBe(true);
+			await expect(page.getByText(/Response distance, 20 Hz–10 kHz:/)).toContainText(
+				/Preamp: [+−]\d+\.\d dB/
+			);
 			const downloadPromise = page.waitForEvent('download');
 			await page.getByRole('button', { name: 'Download Equalizer APO', exact: true }).click();
 			const download = await downloadPromise;
@@ -67,7 +84,9 @@ for (const theme of ['light', 'dark'] as const) {
 			const stream = await download.createReadStream();
 			const chunks: Buffer[] = [];
 			for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
-			expect(Buffer.concat(chunks).toString()).toMatch(/Preamp:.*dB[\s\S]*Filter 1: ON/);
+			const apo = Buffer.concat(chunks).toString();
+			expect(apo).toMatch(/Preamp:.*dB[\s\S]*Filter 1: ON/);
+			expect(apo).not.toContain('−');
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.locator('.eq').scrollIntoViewIfNeeded();
 			await page.screenshot({ path: join(shots, `pages-eq-${info.project.name}-${theme}.png`) });
