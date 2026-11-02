@@ -59,6 +59,8 @@ The crawler uses an identifying User-Agent, four global request slots (never mor
 conditional ETag/Last-Modified requests, persistent content-addressed cache, and exponential backoff.
 Failed revalidations retain the last successful body and record the failure separately; sources
 without a successful configuration are excluded rather than silently losing calibration or rig data.
+Retained calibration and measurement failures are listed with their URL/status in the build report
+and crawl summary; a retained body is not counted as a fresh successful retrieval.
 Remote configuration paths must stay on the database's HTTP(S) origin. Hand-maintained inputs are
 strictly validated; missing keys, unknown keys (except `_note`), or wrong value types stop the command.
 Persistent rate limiting or blocking stops the crawl. Interrupted crawls resume from cached files.
@@ -69,6 +71,9 @@ Builds are deterministic for unchanged cache/inputs; build time is the newest re
 fetch time, not the current wall clock. Output versions hash the artifacts and source attribution.
 Verified existing versions stay in place on repeat publication; repairs use a recoverable backup and
 commit the manifest last. Generated old versions are removed only after successful local publication.
+Serial publication sweeps abandoned build/pull/backup/interrupted staging on success and failure;
+cleanup errors are warnings after a committed manifest, not failed publications. If rollback itself
+fails, its sole recovery backup is preserved rather than deleting live data.
 Reports count missing channel HTTP responses and distinguish uncached
 variants in partial crawls from rejected measurements, and list parsing failures, unaliased
 brands, duplicate index rows, normalised identity collisions, and suspicious adjacent near-names. Exact

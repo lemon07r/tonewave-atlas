@@ -8,7 +8,7 @@ import { sha256 } from './common.ts';
 
 vi.mock('node:fs/promises', async (original) => {
 	const fs = await original<typeof import('node:fs/promises')>();
-	return { ...fs, rename: vi.fn(fs.rename) };
+	return { ...fs, rename: vi.fn(fs.rename), rm: vi.fn(fs.rm) };
 });
 const realFs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
 const roots: string[] = [];
@@ -27,6 +27,7 @@ const text = JSON.stringify(manifest);
 
 afterEach(async () => {
 	vi.mocked(rename).mockReset();
+	vi.mocked(rm).mockReset();
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -82,7 +83,8 @@ describe('recoverable dataset publication', () => {
 		await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('manifest interrupted');
 		expect(await readFile(resolve(f.target, 'catalog-iem.json.gz'), 'utf8')).toBe('old incomplete dataset');
 		expect(await readFile(resolve(f.output, 'manifest.json'), 'utf8')).toBe('old manifest');
-		expect(await readFile(resolve(f.staging, 'catalog-iem.json.gz'), 'utf8')).toBe(payload);
+		await expect(stat(f.staging)).rejects.toThrow();
+		expect(await readdir(f.output)).toEqual(['manifest.json', version].sort());
 	});
 	it('recovers a prior process interruption with only the backup left', async () => {
 		const f = await fixture();
@@ -109,5 +111,34 @@ describe('recoverable dataset publication', () => {
 		await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('does not match');
 		expect((await stat(f.target)).ino).toBe(before);
 		expect(await readFile(resolve(f.output, 'manifest.json'), 'utf8')).toBe('old manifest');
+		await expect(stat(f.staging)).rejects.toThrow();
+	});
+	it.each([true, false])('sweeps interrupted scratch directories on success=%s', async (success) => {
+		const f = await fixture();
+		for (const name of ['.build-old', '.pull-old', `.backup-${'b'.repeat(24)}`, '.interrupted-old']) {
+			await mkdir(resolve(f.output, name));
+			await writeFile(resolve(f.output, name, 'partial'), 'not for deployment');
+		}
+		if (!success) await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), 'corrupt');
+		if (success) await publishDataset(f.output, f.staging, manifest, text);
+		else await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('does not match');
+		expect(await readdir(f.output)).toEqual(['manifest.json', version].sort());
+	});
+	it('logs cleanup errors without failing an already committed publication', async () => {
+		const f = await fixture();
+		await mkdir(resolve(f.output, '.build-old'));
+		vi.mocked(rm).mockImplementation((path, options) =>
+			path === resolve(f.output, '.build-old')
+				? Promise.reject(new Error('cleanup denied'))
+				: realFs.rm(path, options)
+		);
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			await expect(publishDataset(f.output, f.staging, manifest, text)).resolves.toBeUndefined();
+			expect(await readFile(resolve(f.output, 'manifest.json'), 'utf8')).toBe(text);
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining('cleanup denied'));
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });

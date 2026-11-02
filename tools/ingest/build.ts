@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -41,7 +41,7 @@ import {
 	unwanted
 } from './common.ts';
 import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
-import { publishDataset } from './publish.ts';
+import { publishDataset, removeStaging } from './publish.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -106,11 +106,27 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		counts: {} as Record<string, SourceCount>,
 		excluded: [] as { id: string; reason: string }[],
 		issues: [] as { source: string; file: string; reason: string }[],
+		retainedFailures: [] as {
+			source: string;
+			url: string;
+			status: number | null;
+			at: string;
+			error: string;
+		}[],
 		layouts: [] as { file: string; layout: string; curveMajorBytes: number; frequencyMajorBytes: number }[]
 	};
 	let builtAt = directory.entry.fetchedAt;
 	const useTime = (time: string) => {
 		if (time > builtAt) builtAt = time;
+	};
+	const retained = (source: string, response: NonNullable<Awaited<ReturnType<typeof cached>>>) => {
+		if (!response.entry.lastFailure) return;
+		report.retainedFailures.push({ source, url: response.entry.url, ...response.entry.lastFailure });
+		report.issues.push({
+			source,
+			file: response.entry.url,
+			reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
+		});
 	};
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
 	if (Array.isArray(raw))
@@ -147,13 +163,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 		const config = new TextDecoder().decode(configCache.body);
 		useTime(configCache.entry.fetchedAt);
-		for (const response of [configCache, bookCache])
-			if (response.entry.lastFailure)
-				report.issues.push({
-					source: db.id,
-					file: response.entry.url,
-					reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
-				});
+		for (const response of [configCache, bookCache]) retained(db.id, response);
 		const counts: SourceCount = {
 			phones: 0,
 			variants: 0,
@@ -188,6 +198,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		if (calUrl) {
 			const c = await cached(calUrl, paths.cache);
 			if (c?.entry.status === 200) {
+				retained(db.id, c);
 				const p = parseMeasurement(new TextDecoder().decode(c.body), {
 					minPoints: 2,
 					maxStartHz: Infinity,
@@ -254,6 +265,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						continue;
 					}
 					useTime(response.entry.fetchedAt);
+					retained(db.id, response);
+					if (response.entry.lastFailure)
+						warnings.push(
+							`${channel}: using last-good cached body after ${response.entry.lastFailure.error}`
+						);
 					const parsed = parseMeasurement(new TextDecoder().decode(response.body));
 					if (!parsed.ok) {
 						report.issues.push({ source: db.id, file: `${file} ${channel}`, reason: parsed.error });
@@ -510,7 +526,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		for (const [name, bytes] of artifacts) await atomicWrite(resolve(staging, name), bytes);
 		await publishDataset(paths.output, staging, manifest, JSON.stringify(manifest, null, 2) + '\n');
 	} finally {
-		await rm(staging, { recursive: true, force: true });
+		await removeStaging(staging);
 	}
 	await atomicWrite(
 		resolve(paths.cache, 'report.json'),

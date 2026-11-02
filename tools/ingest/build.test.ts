@@ -76,11 +76,25 @@ async function result(paths: { cache: string; output: string }) {
 	const report = JSON.parse(await readFile(resolve(paths.cache, 'report.json'), 'utf8')) as {
 		excluded: { reason: string }[];
 		issues: { reason: string }[];
+		retainedFailures: { url: string; status: number | null }[];
 	};
 	return { manifest, catalog, report };
 }
 
 describe('cached dataset build safety', () => {
+	it.each([`${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
+		'reports stale calibration/measurement %s',
+		async (url) => {
+			const { paths, http } = await fixture();
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })));
+			await http.fetch(url);
+			await build(paths);
+			const { report, catalog } = await result(paths);
+			expect(catalog.measurements).toHaveLength(1);
+			expect(report.retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
+			expect(report.issues.some((issue) => issue.reason.includes('last-good'))).toBe(true);
+		}
+	);
 	it.each([configUrl, bookUrl])(
 		'retains calibration and partition after a last-good %s later 404s',
 		async (url) => {

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
@@ -57,8 +57,17 @@ export function datasetVersion(files: DatasetFile[], sources: Source[]): string 
 export async function atomicWrite(path: string, value: string | Uint8Array): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temp = `${path}.${randomUUID()}.partial`;
-	await writeFile(temp, value);
-	await rename(temp, path);
+	try {
+		await writeFile(temp, value);
+		await rename(temp, path);
+	} catch (error) {
+		try {
+			await rm(temp, { force: true });
+		} catch (cleanup) {
+			console.warn(`Could not remove ${temp}: ${errorMessage(cleanup)}`);
+		}
+		throw error;
+	}
 }
 
 export async function readJson(path: string): Promise<unknown> {
@@ -96,6 +105,7 @@ export interface CrawlSnapshot {
 	sources: Database[];
 	excluded: { id: string; reason: string }[];
 	errors: { id: string; error: string }[];
+	retainedFailures?: { id: string; url: string; status: number | null; at: string; error: string }[];
 }
 
 export interface Exclusions {
@@ -290,7 +300,15 @@ export function measurementUrl(dir: string, file: string, channel: string): stri
 }
 
 export function calibrationUrl(dir: string, stem: string): string {
-	const url = sameOriginUrl(stem, dir);
+	// Relative values are filenames/paths, not query strings or fragments. Leave actual URLs to
+	// sameOriginUrl so protocol-relative and non-HTTP(S) values cannot evade origin validation.
+	const path = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(stem)
+		? stem
+		: stem
+				.split('/')
+				.map((part) => encodeURIComponent(part))
+				.join('/');
+	const url = sameOriginUrl(path, dir);
 	if (!/\.txt$/i.test(url.pathname)) url.pathname += url.pathname.endsWith('/') ? 'calibration.txt' : '.txt';
 	return url.href;
 }

@@ -73,6 +73,9 @@ describe('source transforms', () => {
 		expect(calibrationUrl(dir, 'https://reviewer.squig.link/cal/')).toBe(
 			'https://reviewer.squig.link/cal/calibration.txt'
 		);
+		expect(calibrationUrl(dir, 'folder/Offset #1?.txt')).toBe(
+			'https://reviewer.squig.link/measurements/folder/Offset%20%231%3F.txt'
+		);
 	});
 	it('discovers root/subdomain/lab URLs but never altDomain/crinacle', () => {
 		const entries = ['root', 'subdomain', 'labFolder', 'altDomain'].map((urlType) => ({

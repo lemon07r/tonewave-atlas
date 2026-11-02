@@ -53,9 +53,18 @@ export async function crawl(
 		startedAt: new Date().toISOString(),
 		finishedAt: null,
 		limited: Boolean(sites) || Number.isFinite(limit),
+		retainedFailures: [],
 		sources: [],
 		excluded: [],
 		errors: []
+	};
+	const retained = (id: string, response: Awaited<ReturnType<HttpCache['fetch']>>) => {
+		if (response.entry.status !== 200 || !response.entry.lastFailure) return;
+		snapshot.retainedFailures?.push({ id, url: response.entry.url, ...response.entry.lastFailure });
+		snapshot.errors.push({
+			id,
+			error: `Using last-good ${response.entry.url}: ${response.entry.lastFailure.error}`
+		});
 	};
 	// Keep an explicit audit of alternate-domain exclusions, even though discover never returns them.
 	if (Array.isArray(raw))
@@ -91,12 +100,7 @@ export async function crawl(
 					'No successful config.js; source excluded rather than using rig/calibration defaults'
 				);
 			const config = new TextDecoder().decode(configResponse.body);
-			for (const response of [configResponse, bookResponse])
-				if (response.entry.lastFailure)
-					snapshot.errors.push({
-						id: db.id,
-						error: `Using last-good ${response.entry.url}: ${response.entry.lastFailure.error}`
-					});
+			for (const response of [configResponse, bookResponse]) retained(db.id, response);
 			const dir = dataDirectory(db, config);
 			supportedChannels(config);
 			const channels = fileChannels(config);
@@ -105,11 +109,7 @@ export async function crawl(
 				const response = await http.fetch(calibrationUrl(dir, cal));
 				if (response.entry.status !== 200)
 					throw new Error(`Configured calibration HTTP ${response.entry.status}; source excluded`);
-				if (response.entry.lastFailure)
-					snapshot.errors.push({
-						id: db.id,
-						error: `Using last-good calibration: ${response.entry.lastFailure.error}`
-					});
+				retained(db.id, response);
 			}
 			const book = phoneBook(
 				JSON.parse(new TextDecoder().decode(bookResponse.body).replace(/^\uFEFF/, '')) as unknown
@@ -132,6 +132,7 @@ export async function crawl(
 			await parallelEach(urls, async (url) => {
 				try {
 					const response = await http.fetch(url);
+					retained(db.id, response);
 					if (response.entry.status !== 200) missing++;
 				} catch (e) {
 					if (e instanceof CrawlBlockedError) throw e;
@@ -155,7 +156,7 @@ export async function crawl(
 	snapshot.finishedAt = new Date().toISOString();
 	await save();
 	console.log(
-		`Crawl complete: ${snapshot.sources.length} databases selected, ${snapshot.excluded.length} excluded, ${snapshot.errors.length} issues. ${resolve(paths.cache, 'crawl.json')}`
+		`Crawl complete: ${snapshot.sources.length} databases selected, ${snapshot.excluded.length} excluded, ${snapshot.errors.length} issues, ${snapshot.retainedFailures?.length ?? 0} retained failures. ${resolve(paths.cache, 'crawl.json')}`
 	);
 }
 

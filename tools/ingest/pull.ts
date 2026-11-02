@@ -1,11 +1,11 @@
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { DatasetFile, Manifest, Source } from '#core/dataset/types.ts';
 import { atomicWrite, datasetVersion, errorMessage, OUTPUT, record, sha256, USER_AGENT } from './common.ts';
 import { parallelEach } from './cache.ts';
-import { publishDataset } from './publish.ts';
+import { publishDataset, removeStaging } from './publish.ts';
 
 /** Strict paths and checksums are required before any remote filename reaches the local filesystem. */
 export function validateManifest(value: unknown): Manifest {
@@ -139,7 +139,7 @@ export async function pull(
 		});
 		await publishDataset(output, staging, manifest, manifestText);
 	} finally {
-		await rm(staging, { recursive: true, force: true });
+		await removeStaging(staging);
 	}
 	console.log(
 		`Pulled ${manifest.version}: ${manifest.files.length} verified files, ${manifest.files.reduce((n, f) => n + f.bytes, 0)} bytes`
