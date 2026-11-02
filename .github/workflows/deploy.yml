@@ -1,0 +1,79 @@
+name: Deploy
+
+# A green CI run on main redeploys the site with the current published dataset.
+# The weekly schedule (or a manual run with refresh) re-crawls sources incrementally and rebuilds the dataset.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: Re-crawl sources and rebuild the dataset
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Decide dataset mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.refresh }}" = "true" ]; then
+            echo "refresh=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "refresh=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore crawl cache
+        if: steps.mode.outputs.refresh == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: .cache/ingest
+          key: ingest-${{ github.run_id }}
+          restore-keys: ingest-
+
+      - name: Crawl and build dataset
+        if: steps.mode.outputs.refresh == 'true'
+        run: |
+          pnpm data:crawl
+          pnpm data:build
+
+      - name: Save crawl cache
+        if: always() && steps.mode.outputs.refresh == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .cache/ingest
+          key: ingest-${{ github.run_id }}
+
+      - name: Reuse published dataset
+        if: steps.mode.outputs.refresh != 'true'
+        run: pnpm data:pull
+
+      - run: pnpm build
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler pages deploy build --project-name tonewave-atlas --branch main --commit-hash ${{ github.event.workflow_run.head_sha || github.sha }}

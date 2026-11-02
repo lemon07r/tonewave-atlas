@@ -1,0 +1,26 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended", ":semanticCommitsDisabled", "helpers:pinGitHubActionDigestsToSemver"],
+	"schedule": ["before 6am on monday"],
+	"minimumReleaseAge": "3 days",
+	"rangeStrategy": "bump",
+	"lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on the first day of the month"] },
+	"packageRules": [
+		{
+			"description": "SvelteKit 3 and typescript-eslint peer on TypeScript 6.0; lift once they support newer majors",
+			"matchPackageNames": ["typescript"],
+			"allowedVersions": "<6.1"
+		},
+		{
+			"description": "Group low-risk tooling updates into one PR",
+			"matchDepTypes": ["devDependencies"],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "dev tooling"
+		},
+		{
+			"description": "Svelte/Kit/Vite move together",
+			"matchPackageNames": ["svelte", "@sveltejs/**", "vite", "svelte-check"],
+			"groupName": "svelte stack"
+		}
+	]
+}
