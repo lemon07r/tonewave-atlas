@@ -41,6 +41,7 @@
 	import { bandLabels } from './describe.ts';
 	import { rankToGrid } from './rank-to-grid.ts';
 	import { alignDisplaySeries } from './align-display.ts';
+	import { rigLabel } from '#lib/rigs.ts';
 	import { candidateCurve, displayCurve, detail, curveSources, type CurveSource } from './display.ts';
 	import ResultRow from './ResultRow.svelte';
 
@@ -362,7 +363,7 @@
 							label: `Taste ${target.id + 1} centre (derived)`,
 							values: rankToGrid(target.centre),
 							reference: true,
-							attribution: `${model.partition} · derived, log-frequency interpolated; corrected by the analysis service`
+							attribution: `${rigLabel(model.partition, summary?.sources)} · derived, log-frequency interpolated; corrected by the analysis service`
 						});
 						for (const member of target.members) {
 							const item = items.find((i) => (i.measurementId ?? i.productId) === member);
@@ -441,7 +442,11 @@
 			{#if catalogError}<Notice kind="caution">Catalog unavailable: {catalogError}</Notice>{/if}
 			{#if urlState.mode === 'similar' && urlState.ref}<div class="reference">
 					<h2>{nameFor(urlState.ref)}</h2>
-					<p>Reference · {similar?.partition ?? (urlState.rig || 'automatic rig selection')}</p>
+					<p>
+						Reference · {similar?.partition || urlState.rig
+							? rigLabel(similar?.partition ?? urlState.rig, summary?.sources)
+							: 'automatic rig selection'}
+					</p>
 					{#if (selectedProduct?.partitions.length ?? 0) > 1}<label class="field-label"
 							>Measurement rig<select
 								class="text-input"
@@ -449,9 +454,10 @@
 								onchange={(event) => {
 									changeUrl({ rig: event.currentTarget.value, m: undefined, chart: undefined });
 								}}
-								><option value="">Automatic{similar ? ` · ${similar.partition}` : ''}</option
+								><option value=""
+									>Automatic{similar ? ` · ${rigLabel(similar.partition, summary?.sources)}` : ''}</option
 								>{#each selectedProduct?.partitions ?? [] as partition (partition)}<option value={partition}
-										>{partition}</option
+										>{rigLabel(partition, summary?.sources)}</option
 									>{/each}</select
 							></label
 						>{/if}
@@ -585,9 +591,10 @@
 								onchange={(event) => {
 									changeUrl({ rig: event.currentTarget.value, chart: undefined });
 								}}
-								><option value="">Automatic{taste ? ` · ${taste.partition}` : ''}</option
+								><option value=""
+									>Automatic{taste ? ` · ${rigLabel(taste.partition, summary.sources)}` : ''}</option
 								>{#each summary.partitions.filter((p) => p.form === form) as partition (partition.id)}<option
-										value={partition.id}>{partition.id}</option
+										value={partition.id}>{rigLabel(partition.id, summary.sources)}</option
 									>{/each}</select
 							></label
 						>{/if}
@@ -633,7 +640,7 @@
 				<div class="section-heading">
 					<h2>{urlState.mode === 'similar' ? 'Similar sound' : 'Taste matches'}</h2>
 					<a class="chart-jump" href="#discover-chart">View chart</a><span class="eyebrow"
-						>{activeResult?.partition ?? 'Measured shape'}</span
+						>{activeResult ? rigLabel(activeResult.partition, summary?.sources) : 'Measured shape'}</span
 					>
 				</div>
 				<p class="distance-note">
@@ -882,6 +889,7 @@
 	.section-heading .eyebrow {
 		font-size: 9px;
 		letter-spacing: 0.03em;
+		text-transform: none;
 	}
 	.distance-note {
 		margin-bottom: 20px;

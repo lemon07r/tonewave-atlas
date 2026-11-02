@@ -21,6 +21,7 @@ test('real similar search, dB explanations, overlays, URL controls and reload', 
 	const first = page.locator('.result-row').first();
 	await expect(first).toBeVisible();
 	await expect(first.locator('.distance')).toHaveText(/Response distance:\s\d+\.\d\sdB/);
+	await expect(page.locator('.results .section-heading .eyebrow')).toHaveText('711-family coupler');
 	await expect(page).toHaveURL(/ref=p-/);
 	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
 	await expect(page.locator('.legend-row')).toHaveCount(2);

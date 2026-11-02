@@ -4,6 +4,7 @@ import type { CandidateInfo, ProductDetail } from '#core/atlas/types.ts';
 import { responseDistance } from '#core/analysis/distance.ts';
 import { makeWeights } from '#core/analysis/weights.ts';
 import { GRID } from '#core/grid.ts';
+import { rigLabel } from '#lib/rigs.ts';
 
 export interface CurveSource {
 	label: string;
@@ -32,7 +33,7 @@ export function curveSources(product: ProductDetail, ids: readonly string[]): Cu
 	for (const { measurement, source } of product.measurements) {
 		if (!ids.includes(measurement.id)) continue;
 		const url = measurement.provenance.databaseUrl;
-		unique.set(url, { label: `${source.name} · ${measurement.partition}`, url });
+		unique.set(url, { label: `${source.name} · ${rigLabel(measurement.partition, [source])}`, url });
 	}
 	return [...unique.values()];
 }
