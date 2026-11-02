@@ -22,6 +22,8 @@ export interface AtlasCandidate {
 export interface PartitionIndex {
 	partition: Partition;
 	statistics: PartitionStatistics | null;
+	/** At least one finite measurement bin received a finite published source offset. */
+	harmonised: boolean;
 	candidates: AtlasCandidate[];
 	products: Map<string, AtlasCandidate>;
 	measurements: Map<string, IndexedCurve>;
@@ -92,16 +94,17 @@ export function buildPartitionIndex(
 		catalog.measurements.filter((m) => m.partition === partition.id).map((m) => [m.id, m])
 	);
 	const measurements = new Map<string, IndexedCurve>();
+	let harmonised = false;
 	const byProduct = new Map<string, IndexedCurve[]>();
 	for (const curve of pack.curves) {
 		const measurement = metadata.get(curve.measurementId);
 		if (!measurement || curve.channel !== 'avg') continue;
 		if (measurements.has(measurement.id)) throw new Error('Duplicate rank measurement');
 		const offset = harmonise ? statistics?.sourceOffsets[measurement.sourceId] : undefined;
-		const values = Float64Array.from(
-			curve.values,
-			(v, i) => v - (Number.isFinite(offset?.[i]) ? (offset?.[i] ?? 0) : 0)
-		);
+		const values = Float64Array.from(curve.values, (v, i) => {
+			if (Number.isFinite(v) && Number.isFinite(offset?.[i])) harmonised = true;
+			return v - (Number.isFinite(offset?.[i]) ? (offset?.[i] ?? 0) : 0);
+		});
 		const row = { measurement, values };
 		measurements.set(measurement.id, row);
 		const group = byProduct.get(measurement.productId) ?? [];
@@ -148,5 +151,5 @@ export function buildPartitionIndex(
 	candidates.forEach((c, i) => {
 		matrix.set(c.values, i * RANK_SIZE);
 	});
-	return { partition, statistics, candidates, products, measurements, matrix };
+	return { partition, statistics, harmonised, candidates, products, measurements, matrix };
 }

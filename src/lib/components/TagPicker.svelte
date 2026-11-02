@@ -25,7 +25,17 @@
 							: selected.filter((item) => item !== option);
 						onchange?.(selected);
 					}}
-				/><span>{option}</span></label
+				/><span
+					>{#if selected.includes(option)}<svg
+							width="12"
+							height="12"
+							viewBox="0 0 12 12"
+							aria-hidden="true"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"><path d="m2 6 2.5 2.5L10 3" /></svg
+						>{/if}{option}</span
+				></label
 			>{/each}
 	</div>
 </fieldset>
@@ -52,7 +62,9 @@
 		margin: 0;
 	}
 	span {
-		display: block;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		padding: 7px 12px;
 		min-height: 36px;
 		border: var(--hairline) solid var(--line);
@@ -64,9 +76,6 @@
 		border-color: var(--accent);
 		background: var(--accent-soft);
 		color: var(--accent);
-	}
-	input:checked + span::before {
-		content: '✓ ';
 	}
 	input:focus-visible + span {
 		outline: 2px solid var(--accent);

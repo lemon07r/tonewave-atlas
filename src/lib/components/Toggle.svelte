@@ -12,7 +12,7 @@
 	} = $props();
 </script>
 
-<label class="toggle"
+<label class="toggle" class:disabled
 	><input
 		type="checkbox"
 		role="switch"
@@ -67,6 +67,8 @@
 	}
 	input:disabled ~ span {
 		opacity: 0.5;
+	}
+	.toggle.disabled {
 		cursor: not-allowed;
 	}
 </style>

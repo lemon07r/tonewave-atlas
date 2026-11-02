@@ -26,17 +26,18 @@ export interface AtlasError {
 		| 'unknown-product'
 		| 'unknown-measurement'
 		| 'unknown-upload'
+		| 'unknown-target'
 		| 'partition-required'
 		| 'insufficient-data';
 	message: string;
 }
-export interface PartitionSummary {
+interface PartitionSummary {
 	id: string;
 	form: Form;
 	measurementCount: number;
 	productCount: number;
 }
-export interface SourceSummary extends Source {
+interface SourceSummary extends Source {
 	/** Accepted measurements from this source in the published catalog. */
 	measurementCount: number;
 }
@@ -63,6 +64,8 @@ export interface ProductListItem {
 	brand: string;
 	model: string;
 	partitions: string[];
+	/** Rigs with default measurements eligible for product consensus and product-target EQ. */
+	defaultPartitions: string[];
 	sourceCount: number;
 	measurementCount: number;
 	variantLabels: string[];
@@ -120,6 +123,7 @@ export interface SimilarMatch extends DistanceResult {
 export interface SimilarResult {
 	ok: true;
 	partition: string;
+	harmonised: boolean;
 	reference: ReferenceInfo;
 	results: SimilarMatch[];
 	caveats: string[];
@@ -131,6 +135,7 @@ export interface TasteItem extends Omit<RatedItem, 'id' | 'curve'> {
 export interface TasteRequest {
 	items: TasteItem[];
 	partition?: string;
+	harmonise?: boolean;
 	corrections?: { tasteId: number; bands: Partial<Record<Band, number>> }[];
 	filters?: RankFilters;
 	topK?: number;
@@ -143,6 +148,7 @@ export interface UnusedTasteItem {
 export interface TasteResult {
 	ok: true;
 	partition: string;
+	harmonised: boolean;
 	model: {
 		tastes: {
 			id: number;
@@ -170,7 +176,7 @@ export interface CompareResult {
 	results: { candidate: CandidateInfo; tradeoff: MultiReferenceResult }[];
 	caveats: string[];
 }
-export interface DetailMeasurement {
+interface DetailMeasurement {
 	measurement: Measurement;
 	source: Source;
 	curves: { channel: string; values: Float64Array }[];
@@ -208,6 +214,7 @@ export interface PeqRequest {
 	partition?: string;
 	target:
 		| { kind: 'product'; productId: string }
+		| { kind: 'reference'; targetId: string }
 		| { kind: 'curve'; values: number[] | Float32Array | Float64Array };
 	maxFilters?: number;
 }

@@ -40,6 +40,12 @@
 	function applyTheme() {
 		document.documentElement.dataset.theme =
 			theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+		document
+			.querySelector('meta[name="theme-color"]')
+			?.setAttribute(
+				'content',
+				getComputedStyle(document.documentElement).getPropertyValue('--paper').trim()
+			);
 	}
 	onMount(() => {
 		try {
@@ -236,9 +242,6 @@
 	}
 	main {
 		min-height: calc(100svh - 205px);
-	}
-	main:focus {
-		outline: none;
 	}
 	.site-footer {
 		max-width: 1344px;

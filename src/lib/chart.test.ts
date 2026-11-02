@@ -34,6 +34,11 @@ describe('chart display data', () => {
 		values[2] = -Infinity;
 		expect(chartValues(values).slice(0, 4)).toEqual([null, null, null, 0]);
 	});
+	test('turns finite-input subtraction overflow into an explicit gap', () => {
+		const values = new Float64Array(GRID_SIZE).fill(Number.MAX_VALUE);
+		const baseline = new Float64Array(GRID_SIZE).fill(-Number.MAX_VALUE);
+		expect(chartValues(values, baseline).every((value) => value === null)).toBe(true);
+	});
 	test('rejects noncanonical grid lengths rather than stretching data', () => {
 		expect(() => chartValues([1, 2])).toThrow(RangeError);
 		expect(() => chartValues(new Float32Array(GRID_SIZE), [1])).toThrow(RangeError);
@@ -53,5 +58,8 @@ describe('chart display data', () => {
 		expect(frequencyLabel(50)).toBe('50');
 		expect(dbLabel(NaN)).toBe('—');
 		expect(dbLabel(2.34, true)).toBe('+2.3');
+		expect(dbLabel(-0.01)).toBe('0.0');
+		expect(dbLabel(0.01, true)).toBe('0.0');
+		expect(dbLabel(-0, true)).toBe('0.0');
 	});
 });

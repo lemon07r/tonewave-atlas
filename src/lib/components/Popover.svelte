@@ -5,10 +5,12 @@
 </script>
 
 <span class="popover-wrap"
-	><button type="button" class="button quiet" popovertarget={id}
+	><button type="button" class="button quiet" popovertarget={id} aria-label={label} aria-haspopup="dialog"
 		>{#if trigger}{@render trigger()}{:else}{label}{/if}</button
 	>
-	<div {id} popover="auto" aria-label={label}><div class="popover-body">{@render children()}</div></div></span
+	<div {id} popover="auto" role="dialog" aria-label={label}>
+		<div class="popover-body">{@render children()}</div>
+	</div></span
 >
 
 <style>

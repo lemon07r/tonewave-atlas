@@ -11,6 +11,7 @@
 		| 'plus'
 		| 'download'
 		| 'info'
+		| 'warning'
 		| 'chevron'
 		| 'check'
 		| 'catalog';
@@ -27,6 +28,7 @@
 		plus: 'M12 5v14M5 12h14',
 		download: 'M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5',
 		info: 'M12 11v6m0-10v.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
+		warning: 'M12 3 2 21h20L12 3zm0 6v5m0 3v.1',
 		chevron: 'm6 9 6 6 6-6',
 		check: 'm5 12 4 4L19 6',
 		catalog: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z'

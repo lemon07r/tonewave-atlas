@@ -14,7 +14,7 @@ export interface PeqOptions {
 	maxFilters?: number;
 	iterations?: number;
 }
-export interface HardRegion {
+interface HardRegion {
 	low: number;
 	high: number;
 	reason: 'narrow-notch' | 'residual' | 'high-frequency-uncertainty';

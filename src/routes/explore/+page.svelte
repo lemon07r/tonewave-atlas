@@ -1,72 +1,193 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
-	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
-	import Icon from '#lib/components/Icon.svelte';
+	import { resolve } from '$app/paths';
+	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
+	import { priceListings } from '#lib/product/data.ts';
+	import { rigLabel } from '#lib/rigs.ts';
+	import ProductView from '#lib/product/ProductView.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import Disclosure from '#lib/components/Disclosure.svelte';
-	let headphones = $derived(browser && page.url.searchParams.get('form') === 'headphones');
+	import Skeleton from '#lib/components/Skeleton.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
+	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
+	let headphones = $derived(form === 'headphone');
+	let productId = $derived(browser ? (page.url.searchParams.get('product') ?? '') : '');
+	let products = $state.raw<ProductListItem[]>([]);
+	let summary = $state.raw<AtlasSummary | null>(null);
+	let detail = $state.raw<ProductDetail | null>(null);
+	let loading = $state(true);
+	let error = $state('');
+	let query = $state('');
+	let brand = $state('');
+	let sort = $state('name');
+	let currentPage = $state(0);
+	const pageSize = 40;
+	let brands = $derived([...new Set(products.map((p) => p.brand))].sort((a, b) => a.localeCompare(b)));
+	let filtered = $derived(
+		products
+			.filter(
+				(p) =>
+					(!brand || p.brand === brand) &&
+					`${p.brand} ${p.model}`.toLowerCase().includes(query.trim().toLowerCase())
+			)
+			.sort((a, b) =>
+				sort === 'reviewers'
+					? b.sourceCount - a.sourceCount || a.model.localeCompare(b.model)
+					: sort === 'price'
+						? (a.priceUsd?.[0] ?? Infinity) - (b.priceUsd?.[0] ?? Infinity) || a.model.localeCompare(b.model)
+						: `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`)
+			)
+	);
+	let visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+	let searchForm = '';
+	$effect(() => {
+		if (searchForm !== form) {
+			searchForm = form;
+			query = '';
+		}
+	});
+	$effect(() => {
+		const selectedForm = form,
+			id = productId;
+		const abort = new AbortController();
+		loading = true;
+		error = '';
+		detail = null;
+		summary = null;
+		currentPage = 0;
+		brand = '';
+		void (async () => {
+			const service = await analysis();
+			const [list, data] = await Promise.all([productList(selectedForm), service.summary()]);
+			abort.signal.throwIfAborted();
+			products = list;
+			summary = data;
+			if (id) {
+				if (!list.some((p) => p.id === id))
+					throw new Error(
+						'This product is not in the selected form-factor catalog. Switch modes or return to the catalog.'
+					);
+				const result = await service.productDetail(id);
+				if (!result.ok) throw new Error(result.message);
+				if (!abort.signal.aborted) detail = result;
+			}
+		})()
+			.catch((e: unknown) => {
+				if (!abort.signal.aborted) error = String(e);
+			})
+			.finally(() => {
+				if (!abort.signal.aborted) loading = false;
+			});
+		return () => {
+			abort.abort();
+		};
+	});
 </script>
 
 <svelte:head
-	><title>Explore — Tonewave Atlas</title><meta
+	><title>{detail ? `${detail.product.brand} ${detail.product.model}` : 'Explore'} — Tonewave Atlas</title
+	><meta
 		name="description"
-		content="Explore IEM and headphone measurements, with source attribution, variants and rig details."
+		content="Browse real measurements, source provenance, rig-aware consensus curves and product-to-product EQ."
 	/></svelte:head
 >
 <div class="page">
-	<div class="page-heading">
-		<p class="eyebrow">Follow the evidence</p>
-		<h1>A catalog of measured sound.</h1>
-		<p>Find a product. See its measurements, variants and sources — including the places they don’t agree.</p>
-	</div>
-	<div class="explore-grid">
-		<aside aria-label="Catalog filters">
-			<p class="eyebrow filter-title">Refine the view</p>
-			<div class="filter">
-				<label class="field-label" for="rig-filter">Measurement rig</label><select id="rig-filter" disabled
-					><option>All rig families</option></select
-				>
-				<p>Comparisons stay within one family.</p>
-			</div>
-			<div class="filter">
-				<label class="field-label" for="source-filter">Source</label><select id="source-filter" disabled
-					><option>All sources</option></select
-				>
-			</div>
-			<Disclosure label="More filters"
-				><p class="small muted">
-					Budget, variant and brand filters will be available when the measurement catalog is connected.
-				</p></Disclosure
-			>
-		</aside>
-		<section aria-label="Product catalog">
-			<SearchCombobox
-				items={[]}
-				label={`Search ${headphones ? 'headphones' : 'IEMs'}`}
-				placeholder="Search by brand or model"
-				shortcut
-				emptyText="No catalog is connected yet. There are no products to search."
-				onselect={() => {}}
-			/>
-			<div class="catalog-heading">
-				<h2>{headphones ? 'Headphones' : 'In-ear monitors'}</h2>
-				<span class="eyebrow">Catalog not connected</span>
-			</div>
-			<div class="empty-state catalog-empty">
-				<Icon name="catalog" size={36} />
-				<h3>The atlas starts with evidence.</h3>
-				<p>
-					No measurements are loaded in this preview. When the catalog is connected, products will appear here
-					with their sources and rig details.
+	{#if error}<Notice kind="caution" title="Catalog unavailable"
+			>{error}
+			<a href={resolve(`/explore${headphones ? '?form=headphones' : ''}`)}>Back to catalog</a></Notice
+		>{/if}
+	{#if loading}<Skeleton rows={4} label={productId ? 'Loading product measurements' : 'Loading catalog'} />
+	{:else if detail}<ProductView {detail} {products} {headphones} sources={summary?.sources ?? []} />
+	{:else if !error}
+		<div class="page-heading">
+			<p class="eyebrow">Follow the evidence</p>
+			<h1>A catalog of measured sound.</h1>
+			<p>
+				Find a product. See every available measurement, variant and source — including where they disagree.
+			</p>
+		</div>
+		{#if headphones}<Notice title="A small headphone dataset"
+				>Coverage is currently limited. Rig-specific and single-source measurements are retained without
+				pretending they establish broad agreement.</Notice
+			>{/if}
+		<div class="explore-grid">
+			<aside aria-label="Catalog filters" class="stack">
+				<div>
+					<label class="field-label" for="brand">Brand</label><select
+						id="brand"
+						bind:value={brand}
+						onchange={() => (currentPage = 0)}
+						><option value="">All brands</option>{#each brands as name (name)}<option value={name}
+								>{name}</option
+							>{/each}</select
+					>
+				</div>
+				<div>
+					<label class="field-label" for="sort">Sort by</label><select
+						id="sort"
+						bind:value={sort}
+						onchange={() => (currentPage = 0)}
+						><option value="name">Name</option><option value="reviewers">Number of reviewers</option><option
+							value="price">Listed price (USD)</option
+						></select
+					>
+				</div>
+				<p class="small muted">
+					Reviewer counts describe available sources, not popularity or quality. Unknown prices sort last.
 				</p>
-			</div>
-			<Notice title="No cherry-picked curves"
-				>A product may have several measurements. We keep their provenance and show disagreement instead of
-				choosing whichever looks best.</Notice
-			>
-		</section>
-	</div>
+			</aside>
+			<section aria-label="Product catalog">
+				<label class="field-label" for="catalog-search">Filter {headphones ? 'headphones' : 'IEMs'}</label
+				><input
+					id="catalog-search"
+					class="text-input"
+					type="search"
+					bind:value={query}
+					oninput={() => (currentPage = 0)}
+					placeholder="Brand or model"
+				/>
+				<div class="catalog-heading row spread">
+					<h2>{headphones ? 'Headphones' : 'In-ear monitors'}</h2>
+					<span class="small muted" role="status">{filtered.length.toLocaleString()} products</span>
+				</div>
+				{#each visible as product (product.id)}<div class="catalog-row">
+						<div>
+							<p class="eyebrow">{product.brand}</p>
+							<h3>
+								<a href={resolve(`/explore?product=${product.id}${headphones ? '&form=headphones' : ''}`)}
+									>{product.model}</a
+								>
+							</h3>
+							<p class="small muted">
+								{product.sourceCount}
+								{product.sourceCount === 1 ? 'reviewer' : 'reviewers'} · {product.partitions
+									.map((rig) => rigLabel(rig, summary?.sources))
+									.join(' / ')}
+							</p>
+						</div>
+						<div class="prices small muted">
+							{#each priceListings(product.prices, summary?.sources ?? []) as listing (listing)}<p>
+									{listing}
+								</p>{/each}
+						</div>
+					</div>{/each}
+				{#if !filtered.length}<p class="empty-state">
+						No products match these filters. Try another brand or model.
+					</p>{/if}
+				<nav class="pagination row spread" aria-label="Catalog pages">
+					<Button variant="quiet" disabled={currentPage === 0} onclick={() => currentPage--}>Previous</Button
+					><span class="small mono"
+						>Page {currentPage + 1} / {Math.max(1, Math.ceil(filtered.length / pageSize))}</span
+					><Button
+						variant="quiet"
+						disabled={(currentPage + 1) * pageSize >= filtered.length}
+						onclick={() => currentPage++}>Next</Button
+					>
+				</nav>
+			</section>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -74,70 +195,58 @@
 		display: grid;
 		grid-template-columns: 228px minmax(0, 1fr);
 		gap: 64px;
+		margin-top: 32px;
+		align-items: start;
 	}
-	.filter-title {
-		margin-bottom: 24px;
-	}
-	.filter {
-		margin-bottom: 24px;
-	}
-	.filter select {
+	select,
+	input {
 		width: 100%;
-		font-size: var(--text-sm);
-	}
-	.filter p {
-		margin-top: 8px;
-		font-size: var(--text-xs);
-		color: var(--muted);
 	}
 	.catalog-heading {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 16px;
 		padding: 28px 0 16px;
-		border-bottom: var(--hairline) solid var(--line);
+		border-bottom: 1px solid var(--line);
 	}
-	.catalog-heading h2 {
-		font-size: var(--text-lg);
+	.catalog-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 24px;
+		padding: 20px 0;
+		border-bottom: 1px solid var(--line);
 	}
-	.catalog-heading .eyebrow {
-		font-size: 10px;
+	.catalog-row h3 {
+		margin: 6px 0;
 	}
-	.catalog-empty {
-		min-height: 300px;
+	.prices {
+		align-self: center;
+		text-align: right;
 	}
-	.catalog-empty p {
-		max-width: 44ch;
+	.prices p + p {
+		margin-top: 4px;
+	}
+	.pagination {
+		margin-top: 24px;
 	}
 	@media (max-width: 1050px) {
 		.explore-grid {
-			gap: 32px;
 			grid-template-columns: 200px minmax(0, 1fr);
+			gap: 32px;
 		}
 	}
 	@media (max-width: 700px) {
 		.explore-grid {
 			display: flex;
-			flex-direction: column-reverse;
+			flex-direction: column;
 			gap: 32px;
 		}
 		.explore-grid > * {
 			width: 100%;
 		}
-		.explore-grid aside {
-			border-top: var(--hairline) solid var(--line);
-			padding-top: 24px;
+		.catalog-row {
+			grid-template-columns: 1fr;
+			gap: 8px;
 		}
-		.catalog-heading {
-			align-items: baseline;
-		}
-		.catalog-heading .eyebrow {
-			max-width: 13ch;
-			text-align: right;
-		}
-		.catalog-empty {
-			min-height: 280px;
+		.prices {
+			text-align: left;
 		}
 	}
 </style>

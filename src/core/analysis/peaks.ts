@@ -1,7 +1,7 @@
 import { smoothOctave } from '../smooth.ts';
 import { frequenciesFor, type Curve } from './common.ts';
 
-export interface NarrowPeak {
+interface NarrowPeak {
 	frequency: number;
 	heightDb: number;
 	q: number;

@@ -2,7 +2,7 @@
 	let { rows = 3, label = 'Loading results' }: { rows?: number; label?: string } = $props();
 </script>
 
-<div role="status" aria-label={label} class="skeleton">
+<div role="status" class="skeleton">
 	<span class="sr-only">{label}</span>{#each Array.from({ length: rows }, (_, i) => i) as i (i)}<div
 			class="loading-row"
 			aria-hidden="true"
