@@ -1,0 +1,121 @@
+Dataset ef7ead8fc680aae919189e39; unharmonised default rank consensus; uniform LS-aligned RMS over common finite bins
+{"partition":"iem-5128","pairs":616,"shapeOverHalf":0,"maxShapeRms":1.0658141036401503e-14}
+{"partition":"iem-711","pairs":8067,"shapeOverHalf":0,"maxShapeRms":0.13242271859356117}
+{"partition":"headphone-5128","pairs":288,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-minidsp-ears-pro","pairs":76,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-aden-headphones-3ada1172","pairs":107,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-audioamigo-headphones-c3276e9c","pairs":73,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-auricularesargentina-headphones-1f3655bc","pairs":104,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-boizoff-headphones-7f772a98","pairs":130,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-cammyfi-headphones-a5ccf638","pairs":54,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-capraaudio-headphones-d74b7822","pairs":87,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-dl-headphones-5b10fb76","pairs":29,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-elrics-headphones-ad4852f0","pairs":82,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-filk-headphones-e6fed804","pairs":105,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-gadgetrytech-headphones-0a46489e","pairs":261,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-hadoe-headphones-3da7ad2f","pairs":21,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-iemworld-headphones-bd4c0c90","pairs":41,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-ish-headphones-8f76addc","pairs":171,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-kr0mka-headphones-059909ae","pairs":100,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-kuulokenurkka-headphones-e954717c","pairs":186,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-listener-headphones-957d0584","pairs":75,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-ragnarok-headphones-f8ccef94","pairs":23,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-sai-headphones-fd708a3f","pairs":368,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-superreview-headphones-55015a91","pairs":133,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-suporsalad-headphones-e102dc7b","pairs":41,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-therollo9-headphones-dae425f1","pairs":51,"shapeOverHalf":0,"maxShapeRms":0}
+{"partition":"headphone-source-vsg-headphones-bdd46999","pairs":95,"shapeOverHalf":0,"maxShapeRms":0}
+{
+  "totals": {
+    "pairs": 11384,
+    "multiMeasurement": 2540,
+    "shapeOverHalf": 0,
+    "rawOverHalf": 1409,
+    "supportChanged": 0,
+    "availabilityChanged": 0
+  },
+  "uniqueProducts": 10012,
+  "affectedUniqueProducts": 0,
+  "largest": [
+    {
+      "partition": "iem-711",
+      "id": "p-db44071f12f6df22b222",
+      "name": "Venture Electronics SIE",
+      "rows": 3,
+      "rms": 0.13242271859356117,
+      "raw": 9.856732967060221
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-2039b952638aad35abaa",
+      "name": "Effect Audio Perseus",
+      "rows": 4,
+      "rms": 0.09933468942444114,
+      "raw": 11.655972783713375
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-666003c2fe6600a20e38",
+      "name": "64 Audio Aspire 2",
+      "rows": 3,
+      "rms": 0.07431399406643481,
+      "raw": 33.2362506790151
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-f573422f074f6671da91",
+      "name": "Noble Audio Lu Ban",
+      "rows": 3,
+      "rms": 0.03240332489896779,
+      "raw": 0.9266392441247177
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-0f69afb03ecb45d0991b",
+      "name": "Hiby Xeno",
+      "rows": 3,
+      "rms": 0.02898064278316787,
+      "raw": 17.936824719310053
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-6baa6975b168ead90405",
+      "name": "Soundpeats H3",
+      "rows": 11,
+      "rms": 0.0275582360409452,
+      "raw": 0.581400762570261
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-78c35ccfbc93eaa5fe6b",
+      "name": "64 Audio Aspire 1",
+      "rows": 3,
+      "rms": 0.027033497992509915,
+      "raw": 34.99037628002881
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-bc8affb229936122a055",
+      "name": "Final E5000",
+      "rows": 3,
+      "rms": 0.023763767664474886,
+      "raw": 0.3913980560873823
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-94a46043a401f52435f9",
+      "name": "Vortex Reference",
+      "rows": 3,
+      "rms": 0.02346869214190007,
+      "raw": 7.591731902448103
+    },
+    {
+      "partition": "iem-711",
+      "id": "p-be210591f7977d472532",
+      "name": "Sony WF-1000XM4",
+      "rows": 10,
+      "rms": 0.02290454266678213,
+      "raw": 28.701805029457706
+    }
+  ]
+}

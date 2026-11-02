@@ -125,6 +125,8 @@ function listedPrices(measurements: readonly Measurement[]): NonNullable<Measure
 	return [...seen.values()];
 }
 
+const SOURCE_INDEX_CACHE_SIZE = 4;
+
 export class AtlasService {
 	private readonly baseUrl: string;
 	private readonly fetcher: typeof globalThis.fetch;
@@ -134,6 +136,8 @@ export class AtlasService {
 	private readonly catalogs = new Map<Form, Promise<Catalog>>();
 	private readonly ranks = new Map<string, Promise<CurvePack>>();
 	private readonly indexes = new Map<string, Promise<PartitionIndex>>();
+	private readonly sourceIndexes = new Map<string, Promise<PartitionIndex>>();
+	private readonly partitionSources = new Map<string, ReadonlySet<string>>();
 	private readonly details = new Map<string, CurvePack>();
 	private readonly pendingDetails = new Map<string, Promise<CurvePack>>();
 	private readonly uploads = new Map<string, Upload>();
@@ -249,17 +253,36 @@ export class AtlasService {
 		harmonise = false,
 		filters?: RankFilters
 	): Promise<PartitionIndex> {
-		const sources = selectedSources(filters);
+		let sources = selectedSources(filters);
+		if (sources) {
+			let present = this.partitionSources.get(partition.id);
+			if (!present) {
+				present = new Set(
+					catalog.measurements.filter((m) => m.partition === partition.id).map((m) => m.sourceId)
+				);
+				this.partitionSources.set(partition.id, present);
+			}
+			sources = sources.filter((id) => present.has(id));
+		}
 		const key = JSON.stringify([partition.id, harmonise, sources ?? null]);
-		let pending = this.indexes.get(key);
+		const cache = sources ? this.sourceIndexes : this.indexes;
+		let pending = cache.get(key);
+		if (pending && sources) {
+			cache.delete(key);
+			cache.set(key, pending);
+		}
 		if (!pending) {
 			pending = this.rank(partition)
 				.then((pack) => buildPartitionIndex(catalog, partition, pack, harmonise, sources))
 				.catch((error: unknown) => {
-					this.indexes.delete(key);
+					if (cache.get(key) === pending) cache.delete(key);
 					throw error;
 				});
-			this.indexes.set(key, pending);
+			cache.set(key, pending);
+			if (sources && cache.size > SOURCE_INDEX_CACHE_SIZE) {
+				const oldest = cache.keys().next().value;
+				if (oldest !== undefined) cache.delete(oldest);
+			}
 		}
 		return pending;
 	}
@@ -299,7 +322,7 @@ export class AtlasService {
 		measurements: readonly Measurement[],
 		requested?: string,
 		defaultProductId?: string,
-		filters?: RankFilters
+		settings: Pick<SimilarRequest, 'focus' | 'customBands' | 'treblePenalty' | 'filters'> = {}
 	): Promise<Partition | undefined> {
 		if (requested) return catalog.partitions.find((p) => p.id === requested);
 		const counts = new Map<string, number>();
@@ -310,12 +333,17 @@ export class AtlasService {
 		const available = await Promise.all(
 			catalog.partitions
 				.filter((p) => counts.has(p.id))
-				.map(async (partition) => ({
-					partition,
-					count: defaultProductId
-						? Number((await this.index(catalog, partition, false, filters)).products.has(defaultProductId))
-						: (counts.get(partition.id) ?? 0)
-				}))
+				.map(async (partition) => {
+					if (!defaultProductId) return { partition, count: counts.get(partition.id) ?? 0 };
+					const index = await this.index(catalog, partition, false, settings.filters);
+					const row = index.products.get(defaultProductId);
+					return {
+						partition,
+						count: Number(
+							!!row && !!distanceSummary(row.values, row.values, distanceOptions(index, settings))
+						)
+					};
+				})
 		);
 		return available
 			.filter((p) => p.count > 0)
@@ -384,7 +412,7 @@ export class AtlasService {
 			measurements,
 			input.partition,
 			selected ? undefined : found.product.id,
-			input.filters
+			input
 		);
 		if (!partition || !measurements.some((m) => m.partition === partition.id))
 			return failure('not-measured-on-rig', 'Reference is not measured on this rig.');
@@ -583,10 +611,12 @@ export class AtlasService {
 				if (!partition) continue;
 				const index = await this.index(found.catalog, partition, false, settings.filters);
 				const row = item.measurementId ? index.measurements.get(item.measurementId) : undefined;
-				const usable = item.measurementId
-					? row?.measurement.productId === item.productId &&
-						!!distanceSummary(row.values, row.values, distanceOptions(index, settings))
-					: index.products.has(item.productId);
+				const values = item.measurementId
+					? row?.measurement.productId === item.productId
+						? row.values
+						: undefined
+					: index.products.get(item.productId)?.values;
+				const usable = values && !!distanceSummary(values, values, distanceOptions(index, settings));
 				if (usable) counts.set(id, (counts.get(id) ?? 0) + 1);
 				productCounts.set(id, partitionProducts(found.catalog, id));
 			}
@@ -759,11 +789,27 @@ export class AtlasService {
 			references: references.map((r) => ({ ...r.info, rankCurve: r.values.slice() })),
 			results: ordered.flatMap(({ tradeoff, i }) => {
 				const candidate = selected.candidates[i],
-					curve = curves[i],
-					reference = references[0];
-				if (!candidate || !curve || !reference) return [];
-				const offsetDb = distanceSummary(curve, reference.values, options)?.offset ?? 0;
-				return [{ candidate: candidate.info, tradeoff, rankCurve: alignedCurve(curve, offsetDb), offsetDb }];
+					curve = curves[i];
+				if (!candidate || !curve) return [];
+				let alignedTo: number | null = null,
+					offsetDb = 0;
+				for (const [referenceIndex, reference] of references.entries()) {
+					const distance = distanceSummary(curve, reference.values, options);
+					if (distance) {
+						alignedTo = referenceIndex;
+						offsetDb = distance.offset;
+						break;
+					}
+				}
+				return [
+					{
+						candidate: candidate.info,
+						tradeoff,
+						rankCurve: alignedCurve(curve, offsetDb),
+						offsetDb,
+						alignedTo
+					}
+				];
 			}),
 			counts: { candidates: comparisons.length, pareto: comparisons.filter((r) => r.pareto).length },
 			caveats: rankingCaveats(

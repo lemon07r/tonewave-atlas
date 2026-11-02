@@ -40,7 +40,6 @@ export function consensus(curves: readonly IndexedCurve[], frequencies: Curve): 
 	const options = { frequencies };
 	const eligible = curves
 		.filter((curve) => distanceSummary(curve.values, curve.values, options))
-		.slice()
 		.sort((a, b) => a.measurement.id.localeCompare(b.measurement.id));
 	const scores = eligible.map((curve) => ({ curve, distances: [] as number[], points: 0 }));
 	for (let i = 0; i < scores.length; i++) {

@@ -54,7 +54,10 @@ estimate. A product with no usable default reference is not given a fabricated c
   never replaced. Uploaded references have no source identity and stay unchanged/unharmonised.
   Result caveats identify excluded reference/candidate measurements. Reliability, population curves
   and reviewer offsets remain the published **partition-wide** estimates; they are not re-estimated
-  on the selected subset. Selected source sets are canonicalised for derived-index caching.
+  on the selected subset. Selected source sets are deduplicated, sorted and filtered to sources
+  present in that partition for derived-index caching. Source-specific indexes share a four-entry
+  LRU; eviction retains raw rank packs and ordinary, unfiltered indexes. An all-unknown selection
+  remains an empty source-only pool, never an unfiltered fallback.
 
 Rank packs already contain individual measurement ids/channel-averaged curves, so source-only pooling
 requires no dataset schema change or detail fetch. Product detail is unaffected by ranking filters.
@@ -66,7 +69,9 @@ Charts can display this basis rather than a different detail curve. Taste `centr
 corrected rank-basis centre; candidates align to their `tasteId` with ordinary `rankWeights`. Returned
 `rankWeights`, per-taste `fitWeights` and effective `treblePenalty` (similar/compare) reproduce D by
 the LS formula below, refitting the offset for each weighting/reference. Compare overlays align to
-reference 0 (offset 0 if inadequate overlap); other objectives refit independently. NaNs remain gaps.
+the first reference with adequate query-weight overlap, named by each row's `alignedTo` index;
+other objectives refit independently. If none overlaps adequately, `alignedTo` is null, `offsetDb`
+is zero and `rankCurve` is unaligned: the UI must not overlay it as aligned. NaNs remain gaps.
 Each taste winner also returns `nearestLiked` with the exact scored liked-member curve and an offset
 aligning the **already returned candidate rankCurve** to that member. Its ordinary `rankWeights`
 reproduce `fit.nearestLiked.distanceDb`, even after centre corrections; member curves are not corrected.
@@ -341,8 +346,11 @@ separate **score increments**, rather than label the final score “dB distance.
 For an uncapped directional constraint, penalty is nonnegative and nondecreasing in adverse trait
 excess, with a zero safe-side plateau and linear strength scaling. The narrow contribution saturates
 at its budgets. Arbitrary constant measurement-level shifts do not change traits, fit or score.
-Multiplying all response deviations by a positive scale is different: dB fit scales linearly, the
-fixed 0.5 dB margin does not scale, and uncapped penalties grow roughly quadratically. The mixture is
+Multiplying all response deviations by a positive scale is different: with a fixed reference,
+weights and support, scaling candidate-minus-reference deviations scales response distance linearly.
+This does not generally hold for fit after rebuilding a taste model: scaling positives changes
+spread-based tolerance weights and can change clustering. The fixed 0.5 dB margin does not scale,
+and uncapped penalties grow roughly quadratically. The mixture is
 therefore **not scale homogeneous** and can reverse candidate order; no global monotonic preference
 claim follows from a single constraint's monotonicity. Tests exercise such a reversal, missing traits,
 one/two-positive limited support and separated conflicting tastes. Real-curve directional sanity

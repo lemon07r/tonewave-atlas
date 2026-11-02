@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { encodePack, type CurvePack } from '../dataset/codec.ts';
 import type {
 	Catalog,
@@ -13,6 +13,8 @@ import type {
 } from '../dataset/types.ts';
 import { GRID, RANK_GRID, RANK_SIZE } from '../grid.ts';
 import { buildPartitionIndex, consensus } from './index.ts';
+import * as indexing from './index.ts';
+import * as ranking from './ranking.ts';
 import { AtlasService } from './service.ts';
 import type { CompareRequest, SimilarRequest } from './types.ts';
 import { spreadFor } from './spread.ts';
@@ -275,6 +277,99 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 }
 
 describe('atlas service', () => {
+	it.each(['similar', 'compare'] as const)(
+		'reviewer: automatic %s rig selection checks default consensus coverage under query weights',
+		async (method) => {
+			const { service, packs, files } = fixture(
+				8,
+				['a', 'b'].map((productId) => ({
+					id: `${productId}-5128`,
+					productId,
+					kind: 'default',
+					partition: 'iem-5128'
+				}))
+			);
+			const pack = packs.find((p) => p.partition === 'iem-711');
+			if (!pack) throw new Error('fixture');
+			// Still >80% covered on the full grid, but completely unobserved in the selected band.
+			for (const curve of pack.curves)
+				if (['a1', 'a2', 'b1'].includes(curve.measurementId))
+					for (let i = 0; i < RANK_SIZE; i++) if ((RANK_GRID[i] ?? Infinity) < 60) curve.values[i] = NaN;
+			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+			const settings = {
+				focus: 'treble' as const,
+				treblePenalty: 2,
+				customBands: { 'sub-bass': 1, bass: 0, 'low-mid': 0, mid: 0, presence: 0, treble: 0, air: 0 }
+			};
+			const options = vi.spyOn(ranking, 'distanceOptions');
+			try {
+				const result =
+					method === 'similar'
+						? await service.similar({ productId: 'a', ...settings })
+						: await service.compare({ productIds: ['a', 'b'], ...settings });
+				expect(result).toMatchObject({ ok: true, partition: 'iem-5128' });
+				expect(result.ok && result.results.length).toBeGreaterThan(0);
+				expect(options.mock.calls.length).toBeGreaterThan(2);
+				for (const [, query] of options.mock.calls) expect(query).toMatchObject(settings);
+			} finally {
+				options.mockRestore();
+			}
+		}
+	);
+	it('reviewer: source-only index keys ignore duplicates, order and sources absent from the partition', async () => {
+		const { service } = fixture();
+		const build = vi.spyOn(indexing, 'buildPartitionIndex');
+		try {
+			const query = (sources: string[], productId = 'a', partition = 'iem-711') =>
+				service.similar({
+					productId,
+					partition,
+					harmonise: false,
+					filters: { sourceMode: 'only', sources }
+				});
+			const first = await query(['s2', 'ghost', 's1', 's1']);
+			expect(first.ok).toBe(true);
+			expect(await query(['s1', 's2', 'another-ghost'])).toEqual(first);
+			expect(build).toHaveBeenCalledTimes(1);
+			expect(await query(['ghost'])).toMatchObject({ ok: false, error: 'not-measured-on-rig' });
+			expect(await query(['another-ghost'])).toMatchObject({ ok: false, error: 'not-measured-on-rig' });
+			expect(build).toHaveBeenCalledTimes(2);
+			// s2 is known to the catalog, but not present on 5128.
+			const other = await query(['s1', 's2'], 'd', 'iem-5128');
+			expect(other.ok).toBe(true);
+			expect(await query(['s1'], 'd', 'iem-5128')).toEqual(other);
+			expect(build).toHaveBeenCalledTimes(3);
+		} finally {
+			build.mockRestore();
+		}
+	});
+	it('reviewer: source-specific indexes evict least-recently-used entries while retaining base indexes and shared rank packs', async () => {
+		const { service, calls } = fixture();
+		const build = vi.spyOn(indexing, 'buildPartitionIndex');
+		try {
+			const query = (sources?: string[]) =>
+				service.similar({
+					productId: 'a',
+					partition: 'iem-711',
+					harmonise: false,
+					...(sources ? { filters: { sourceMode: 'only' as const, sources } } : {})
+				});
+			const base = await query();
+			for (const sources of [['s1'], ['s2'], ['s1', 's2'], ['s1', 's3']]) await query(sources);
+			expect(build).toHaveBeenCalledTimes(5);
+			await query(['s1']); // refresh the oldest entry before inserting a fifth source-specific key
+			await query(['s2', 's3']);
+			await query(['s1']);
+			expect(build).toHaveBeenCalledTimes(6);
+			await query(['s2']); // evicted, so rebuild from the resident raw pack
+			expect(build).toHaveBeenCalledTimes(7);
+			expect(await query()).toEqual(base);
+			expect(build).toHaveBeenCalledTimes(7);
+			expect(calls.filter((p) => p.endsWith('rank-iem-711.bin.gz'))).toHaveLength(1);
+		} finally {
+			build.mockRestore();
+		}
+	});
 	it('names coverage as the default source mode and recomputes both reference and candidate consensus in only mode', async () => {
 		const { service, packs, files } = fixture();
 		const pack = packs[0],
@@ -609,8 +704,9 @@ describe('atlas service', () => {
 			error: 'not-measured-on-rig',
 			partitions: ['iem-5128', 'iem-711']
 		});
-		expect(!result.ok && result.message).toContain('a');
-		expect(!result.ok && result.message).toContain('b');
+		expect(!result.ok && result.message).toBe(
+			'No usable measurement on headphone-unknown for references: a, b'
+		);
 		expect(
 			await service.compare({
 				references: [{ productId: 'a', measurementId: 'a-tune' }, { productId: 'b' }],
@@ -651,6 +747,63 @@ describe('atlas service', () => {
 		expect(legacy).toEqual(current);
 		expect(current.ok && current.treblePenalty).toBe(1);
 	});
+	it.each([true, false])(
+		'reports the first adequate compare overlay reference, or explicitly no alignment (later overlap=%s)',
+		async (later) => {
+			const { service, packs, files } = fixture();
+			const pack = packs[0];
+			if (!pack) throw new Error('fixture');
+			for (const row of pack.curves) {
+				if (row.measurementId === 'e-fit')
+					row.values = Float64Array.from(RANK_GRID, (_, i) => (i < 60 ? 0 : NaN));
+				if (['a1', 'a2'].includes(row.measurementId))
+					row.values = Float64Array.from(RANK_GRID, (_, i) => ((later ? i >= 60 : i < 60) ? 2 : NaN));
+				if (['c1', 'c2'].includes(row.measurementId))
+					row.values = Float64Array.from(RANK_GRID, (_, i) => (i >= 60 ? 20 : NaN));
+			}
+			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+			const result = await service.compare({
+				partition: 'iem-711',
+				references: [{ productId: 'e', measurementId: 'e-fit' }, { productId: 'a' }]
+			});
+			if (!result.ok) throw new Error(result.message);
+			const c = result.results.find((r) => r.candidate.id === 'c');
+			expect(c).toMatchObject({
+				alignedTo: later ? 1 : null,
+				tradeoff: { mean: null, minimax: null, pareto: false }
+			});
+			expect(c?.offsetDb).toBeCloseTo(later ? 18 : 0, 12);
+			expect(c?.rankCurve[0]).toBeNaN();
+			expect(c?.rankCurve[60]).toBeCloseTo(later ? 2 : 20, 12);
+			expect(result.results.find((r) => r.candidate.id === 'b')?.alignedTo).toBe(0);
+		}
+	);
+	it.each(['similar', 'taste', 'compare'] as const)(
+		'discloses missing and invalid spread fallback bands in %s',
+		async (method) => {
+			const { service, packs, files } = fixture();
+			const pack = packs[0];
+			if (!pack) throw new Error('fixture');
+			pack.statistics = {
+				spread: Array.from(RANK_GRID, (f) => (f < 60 ? null : f >= 5000 && f < 10000 ? -1 : 0)),
+				populationMedian: Array.from(RANK_GRID, () => 0),
+				sourceOffsets: {}
+			};
+			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+			const result =
+				method === 'similar'
+					? await service.similar({ productId: 'a' })
+					: method === 'compare'
+						? await service.compare({ productIds: ['a', 'b'] })
+						: await service.taste({
+								items: [{ productId: 'a', rating: 'like', strength: 1, soundRelated: true }]
+							});
+			if (!result.ok) throw new Error(result.message);
+			expect(result.caveats).toContain(
+				'Cross-source spread is missing or invalid in sub-bass, treble; reliability uses the conservative default spread there, not measured uncertainty.'
+			);
+		}
+	);
 	it('lazily caches reference targets across forms, retaining GRID values and provenance', async () => {
 		const { service, calls } = fixture();
 		expect(calls).toEqual([]);

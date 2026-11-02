@@ -83,7 +83,9 @@ in the set under the default `filters.sourceMode: 'coverage'`, without changing 
 `'only'` instead filters individual rank measurements before pooling references and candidates;
 it requires selected sources, echoes the effective mode, and caveats lost measurements. Partition-wide
 reliability/population/reviewer-offset statistics remain unchanged. Derived indexes are cached by
-partition, harmonisation and canonical source set; raw packs are shared. Tuning candidates are opt-in through
+partition, harmonisation and canonical source set (deduplicated, sorted, restricted to that partition).
+Source-specific indexes use a four-entry LRU separate from resident unfiltered indexes; eviction
+retains shared raw packs. Tuning candidates are opt-in through
 `filters.includeTunings`; similarity excludes the reference product's default but may include its
 explicit tunings when enabled. Taste always excludes every rated product, including its tunings.
 An explicit tuning measurement is never its own similarity candidate, even with tunings enabled.
@@ -93,7 +95,9 @@ the unavailable items and list rigs supporting all requested identities. Default
 uses the greatest coverage of usable requested/rated items; ties prefer more measured products, then
 partition id. Explicit measurement references keep their own rig, including non-default variants. A product with no
 usable default on that rig requires an explicit measurement id rather than substituting a fit variant.
-Explicit reference and alternative-rig adequacy uses query weights, not a full-grid uniform guard.
+Explicit references, automatic default-product selection and alternative-rig adequacy use query
+weights. Default-product references still require a consensus that passes the uniform full-grid
+coverage check; query adequacy is an additional prerequisite, not a replacement for consensus coverage.
 Successful explicit-rig compare requests never load unrelated rigs; alternatives are computed only
 for missing-rig errors, after intersecting metadata support.
 
@@ -110,6 +114,8 @@ Similar, taste and compare expose rank frequencies, exact scored/aligned curves 
 taste also exposes per-centre fit weights, similar/compare their effective treble penalty. These fields
 support rank-basis charts and independent score reproduction without loading detail shards. Compare
 uses the same validated harmonisation policy as similar/taste; detail and PEQ remain uncorrected.
+Each compare candidate's `alignedTo` names the first adequately overlapping reference, or is null
+when no alignment is possible. A null-aligned curve must not be overlaid as though aligned.
 Taste winners additionally expose the exact nearest-liked member curve/relative offset, and constraint
 statements use measured-correlate wording. `DISLIKE_REASON_LABELS` in the taste engine provides labels
 for legacy stored reason ids; the narrow 5–9 kHz reason has a bounded total influence.
