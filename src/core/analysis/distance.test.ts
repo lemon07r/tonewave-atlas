@@ -92,6 +92,32 @@ describe('response distance', () => {
 		// 120 equally weighted consecutive positions 1/12 octave apart have variance (120²−1)/(12·12²).
 		expect(plain?.distance).toBeCloseTo(1.25 * Math.sqrt((120 ** 2 - 1) / (12 * 12 ** 2)), 10);
 	});
+	it('selects and explains winners on the same custom frequency grid', () => {
+		const frequencies = Float64Array.from(RANK_GRID, (f) => f * 8),
+			reference = new Float64Array(RANK_SIZE);
+		const matrix = new Float32Array(3 * RANK_SIZE);
+		for (let i = 0; i < RANK_SIZE; i++) {
+			matrix[i] = (i % 2 ? 1 : -1) * (i < 32 ? 0.5 : 20);
+			matrix[RANK_SIZE + i] = i % 2 ? 1 : -1;
+			matrix[2 * RANK_SIZE + i] = i < 32 ? (i % 2 ? 0.25 : -0.25) : NaN;
+		}
+		// 160·2^(i/12) <= 1000 for exactly 32 bins, versus 68 bins on the default grid.
+		const ranked = rankPacked(matrix, reference, 2, { frequencies, maxHz: 1000 });
+		expect(ranked.matches.map((m) => m.index)).toEqual([2, 0]);
+		expect(ranked.matches.map((m) => m.stats.distance)).toEqual([0.25, 0.5]);
+		for (const match of ranked.matches) {
+			expect(match.stats.points).toBe(32);
+			expect(match.stats.coverage).toBe(1);
+			expect(match.stats).toEqual(
+				responseDistance(matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE), reference, {
+					frequencies,
+					maxHz: 1000
+				})
+			);
+		}
+		// A default-grid rescore would discard the best winner for insufficient overlap.
+		expect(responseDistance(matrix.subarray(2 * RANK_SIZE), reference, { maxHz: 1000 })).toBeNull();
+	});
 });
 
 describe('weighting and peak diagnostics', () => {
