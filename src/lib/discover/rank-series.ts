@@ -40,12 +40,19 @@ export function rankedSeries(
 				reference: true
 			});
 	}
-	for (const row of chosen)
+	for (const row of chosen) {
+		if ('alignedTo' in row && row.alignedTo === null) continue;
+		const alignedReference =
+			result.kind === 'compare' && 'alignedTo' in row && row.alignedTo !== null
+				? result.data.references[row.alignedTo]
+				: undefined;
+		const alignment = alignedReference ? ` · aligned to ${nameFor(alignedReference.productId ?? '')}` : '';
 		series.push({
 			id: row.candidate.id,
-			label: `${row.candidate.product.brand} ${row.candidate.product.model}${row.candidate.variantLabel ? ` · ${row.candidate.variantLabel}` : ''}${'tasteId' in row ? ` · Taste ${row.tasteId + 1}` : ''}`,
+			label: `${row.candidate.product.brand} ${row.candidate.product.model}${row.candidate.variantLabel ? ` · ${row.candidate.variantLabel}` : ''}${'tasteId' in row ? ` · Taste ${row.tasteId + 1}` : ''}${alignment}`,
 			values: row.rankCurve,
 			attribution: `${result.data.partition} · as ranked, level-aligned${result.data.harmonised ? ', reviewer offsets corrected' : ''}`
 		});
+	}
 	return series;
 }

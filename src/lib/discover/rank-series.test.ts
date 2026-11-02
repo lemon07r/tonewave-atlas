@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import type { SimilarResult, TasteResult } from '#core/atlas/types.ts';
+import type { CompareResult, SimilarResult, TasteResult } from '#core/atlas/types.ts';
 import { rankedSeries } from './rank-series.ts';
 import { nearestLikedEvidence } from './evidence.ts';
 import { RANK_GRID } from '#core/grid.ts';
@@ -15,6 +15,49 @@ const candidate = {
 	priceUsd: null
 };
 const grid = new Float64Array([20, 40, 80]);
+test('compare overlays preserve exact returned values aligned to the second reference and omit unaligned curves', () => {
+	const second = new Float64Array([NaN, 10, 12]);
+	const ranked = new Float64Array([NaN, 11, 11]);
+	const result: CompareResult = {
+		ok: true,
+		partition: 'iem-711',
+		harmonised: false,
+		sourceMode: 'coverage',
+		rankFrequencies: grid,
+		rankWeights: new Float64Array([1, 1, 1]),
+		treblePenalty: 1,
+		references: [new Float64Array([3, NaN, NaN]), second].map((rankCurve, index) => ({
+			productId: index ? 'Softears Volume S' : 'First reference',
+			uploadId: null,
+			measurementIds: [],
+			sources: [],
+			rankCurve
+		})),
+		results: [
+			{
+				candidate,
+				rankCurve: ranked,
+				offsetDb: 7,
+				alignedTo: 1,
+				tradeoff: { distances: [null, 1], mean: null, minimax: null, pareto: false }
+			}
+		],
+		counts: { candidates: 1, pareto: 0 },
+		caveats: []
+	};
+	const series = rankedSeries({ kind: 'compare', data: result }, ['match'], (id) => id);
+	expect(series[1]?.values).toBe(second);
+	expect(series[2]?.values).toBe(ranked);
+	expect(Array.from(series[2]?.values ?? [])).toEqual([NaN, 11, 11]);
+	expect(series[2]?.label).toContain('aligned to Softears Volume S');
+	const row = result.results[0];
+	if (!row) throw new Error('Expected compare candidate');
+	result.results[0] = { ...row, alignedTo: null, offsetDb: 0 };
+	expect(rankedSeries({ kind: 'compare', data: result }, ['match'], (id) => id).map((s) => s.id)).toEqual([
+		'reference-0',
+		'reference-1'
+	]);
+});
 test('plotted reference and candidate values equal returned rank values, including gaps and offsets', () => {
 	const reference = new Float64Array([1, 3, NaN]);
 	const ranked = new Float64Array([2, -1, NaN]);

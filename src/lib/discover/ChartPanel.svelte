@@ -18,6 +18,17 @@
 	let error = $state('');
 	let loading = $state(false);
 	let rank = $derived(rankedSeries(result, overlays, nameFor));
+	let unaligned = $derived(
+		result.kind === 'compare'
+			? result.data.results.filter((row) => overlays.includes(row.candidate.id) && row.alignedTo === null)
+			: []
+	);
+	let alignedTo = $derived(
+		result.kind === 'compare'
+			? result.data.results.find((row) => overlays.includes(row.candidate.id) && row.alignedTo !== null)
+					?.alignedTo
+			: undefined
+	);
 	$effect(() => {
 		if (view !== 'detail') return;
 		const current = result;
@@ -79,6 +90,12 @@
 			? `As ranked: smoothed, level-aligned${result.data.harmonised ? ' · reviewer offsets corrected' : ''}.`
 			: 'Uncorrected higher-resolution measurements · display-only balanced level alignment; not the scored values.'}
 	</p>
+	{#if view === 'rank' && unaligned.length}<p class="chart-note">
+			Not shown as ranked: {unaligned
+				.map((row) => `${row.candidate.product.brand} ${row.candidate.product.model}`)
+				.join(', ')}. No reference has enough shared coverage for level alignment. Use Detail measurements to
+			inspect these curves.
+		</p>{/if}
 	{#if view === 'detail' && result.kind === 'taste'}<p class="chart-note">
 			Taste centres are derived rank curves, not detail measurements. Switch to “As ranked” to compare each
 			match with its scored taste centre.
@@ -86,7 +103,11 @@
 	<FrChart
 		series={view === 'rank' ? rank : detailSeries}
 		frequencies={view === 'rank' ? result.data.rankFrequencies : GRID}
-		baselineId={(view === 'rank' ? rank[0]?.id : detailSeries[0]?.id) ?? ''}
+		baselineId={(view === 'rank'
+			? alignedTo != null
+				? `reference-${alignedTo}`
+				: rank[0]?.id
+			: detailSeries[0]?.id) ?? ''}
 	/>
 	{#if loading}<p role="status" class="chart-note">Loading detail measurements…</p>{/if}
 	{#if error}<Notice kind="caution">{error}</Notice>{/if}
