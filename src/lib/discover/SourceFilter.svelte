@@ -1,14 +1,19 @@
 <script lang="ts">
 	import type { AtlasSummary, SourceMode } from '#core/atlas/types.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { sourcePartitions } from '#lib/sources.ts';
 	let {
 		sources,
+		partition = '',
+		partitions,
 		selected,
 		mode,
 		onchange,
 		onmodechange
 	}: {
 		sources: AtlasSummary['sources'];
+		partition?: string;
+		partitions?: readonly string[];
 		selected: string[];
 		mode: SourceMode;
 		onchange: (ids: string[]) => void;
@@ -18,7 +23,11 @@
 	let visible = $derived(
 		sources.filter((source) => source.name.toLowerCase().includes(query.trim().toLowerCase()))
 	);
-	let groups = $derived([...new Set(visible.map((source) => source.partition))]);
+	let groups = $derived(
+		[...new Set(visible.flatMap((source) => [...sourcePartitions(source)]))].filter(
+			(group) => (!partition || group === partition) && (!partitions || partitions.includes(group))
+		)
+	);
 </script>
 
 <section class="source-filter" aria-label="Reviewer filter">
@@ -53,7 +62,7 @@
 	<div class="source-options">
 		{#each groups as group (group)}<fieldset>
 				<legend>{rigLabel(group, sources)}</legend
-				>{#each visible.filter((source) => source.partition === group) as source (source.id)}<label
+				>{#each visible.filter( (source) => sourcePartitions(source).includes(group) ) as source (source.id)}<label
 						><input
 							type="checkbox"
 							checked={selected.includes(source.id)}

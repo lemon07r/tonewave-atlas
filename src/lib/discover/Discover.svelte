@@ -24,6 +24,7 @@
 	import { parseDiscovery, withItems, withDiscoveryChanges, discoveryRoute } from './state.ts';
 	import { latestQuery, queryDiscovery, type DiscoveryResult, type QuerySpec } from './query.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { sourceInForm, sourceOnPartition } from '#lib/sources.ts';
 	import { bandLabels } from './describe.ts';
 	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
@@ -491,8 +492,10 @@
 							/>{/if}{/if}
 					<SourceFilter
 						sources={summary?.sources.filter(
-							(s) => s.form === form && (!activePartition || s.partition === activePartition)
+							(s) => sourceInForm(s, form) && (!activePartition || sourceOnPartition(s, activePartition))
 						) ?? []}
+						partition={activePartition}
+						partitions={summary?.partitions.filter((p) => p.form === form).map((p) => p.id) ?? []}
 						selected={settings.sources}
 						mode={settings.sourceMode}
 						onmodechange={(mode: SourceMode) => {

@@ -5,6 +5,7 @@
 	import { analysis, formFromUrl } from '#lib/atlas.ts';
 	import { dateLabel } from '#lib/product/data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { sourceInForm } from '#lib/sources.ts';
 	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
@@ -15,7 +16,7 @@
 	let targetError = $state('');
 	let targetsLoading = $state(true);
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
-	let sources = $derived(summary?.sources.filter((s) => s.form === form) ?? []);
+	let sources = $derived(summary?.sources.filter((s) => sourceInForm(s, form)) ?? []);
 	$effect(() => {
 		let active = true;
 		error = '';
