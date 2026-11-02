@@ -6,6 +6,9 @@ import { crawl } from './crawl.ts';
 import { cached, HttpCache } from './cache.ts';
 import { DIRECTORY_URL, type CrawlSnapshot } from './common.ts';
 
+// Retry backoff resolves immediately so persistent-failure cases stay fast.
+vi.mock('node:timers/promises', () => ({ setTimeout: () => Promise.resolve() }));
+
 const roots: string[] = [];
 const href = (url: Parameters<typeof fetch>[0]) => (url instanceof Request ? url.url : url.toString());
 afterEach(async () => {
@@ -106,6 +109,26 @@ describe('crawl preflight', () => {
 			);
 		}
 	);
+	it('keeps a stale root config when page discovery keeps failing', async () => {
+		const { paths, bodies, request, snapshot } = await fixture(
+			'const DIR = "data/", default_channels = ["R"];'
+		);
+		const base = 'https://reviewer.squig.link/';
+		bodies.set(`${base}data/Model%20R.txt`, '20 70\n20000 80');
+		await crawl(['--sites', 'reviewer'], paths);
+		bodies.delete(`${base}config.js`);
+		const answer = request.getMockImplementation();
+		request.mockImplementation((url, init) =>
+			href(url) === base
+				? Promise.resolve(new Response(null, { status: 500 }))
+				: (answer?.(url, init) ?? Promise.reject(new Error('no mock')))
+		);
+		await crawl(['--sites', 'reviewer'], paths);
+		expect(request.mock.calls.some(([url]) => href(url) === base)).toBe(true);
+		expect((await snapshot()).errors.map(({ error }) => error)).toEqual([
+			expect.stringContaining(`Using last-good ${base}config.js`)
+		]);
+	});
 	it('keeps a successful root config without requesting the index page', async () => {
 		const { paths, request, snapshot } = await fixture();
 		await crawl(['--sites', 'reviewer'], paths);

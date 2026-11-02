@@ -90,14 +90,18 @@ export async function crawl(
 			// stale root still triggers page discovery and is used only if no linked config succeeds.
 			let configResponse = rootConfigResponse;
 			if (configResponse.entry.status !== 200 || configResponse.entry.lastFailure) {
-				const pageResponse = await http.fetch(db.url);
-				if (pageResponse.entry.status === 200) {
-					retained(db.id, pageResponse);
-					const configUrl = configScriptUrl(new TextDecoder().decode(pageResponse.body), db.url);
-					if (configUrl) {
-						const linked = await http.fetch(configUrl);
-						if (linked.entry.status === 200) configResponse = linked;
+				try {
+					const pageResponse = await http.fetch(db.url);
+					if (pageResponse.entry.status === 200) {
+						retained(db.id, pageResponse);
+						const configUrl = configScriptUrl(new TextDecoder().decode(pageResponse.body), db.url);
+						if (configUrl) {
+							const linked = await http.fetch(configUrl);
+							if (linked.entry.status === 200) configResponse = linked;
+						}
 					}
+				} catch (e) {
+					if (rootConfigResponse.entry.status !== 200) throw e;
 				}
 			}
 			if (configResponse.entry.status !== 200)
