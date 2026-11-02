@@ -7,6 +7,8 @@ import { resolve } from '$app/paths';
 import { AsyncLru } from '#lib/analysis/cache.ts';
 import { CatalogIdentity } from '#lib/catalog/identity.ts';
 import { catalogMetadata } from '#lib/catalog/client.ts';
+import { needsOtherCatalog, profileNeedsOtherCatalog } from '#lib/catalog/migrate.ts';
+import type { Profile } from '#lib/profile/profile.ts';
 
 const identities = new AsyncLru<string, CatalogIdentity>(4);
 
@@ -14,6 +16,24 @@ const identities = new AsyncLru<string, CatalogIdentity>(4);
 export function catalogIdentity(form: Form, version: string): Promise<CatalogIdentity> {
 	const url = `${resolve('/')}data/${version}/catalog-${form}.json.gz`;
 	return identities.get(url, async () => new CatalogIdentity((await catalogMetadata(url)).identity));
+}
+
+/** Identity metadata is optional; fetch the other form only for unresolved links or saved items. */
+export async function migrationCatalogs(
+	form: Form,
+	version: string,
+	url: URL,
+	profile?: Profile
+): Promise<Partial<Record<Form, CatalogIdentity>>> {
+	const current = await catalogIdentity(form, version).catch(() => undefined);
+	if (!current) return {};
+	const catalogs: Partial<Record<Form, CatalogIdentity>> = { [form]: current };
+	if (needsOtherCatalog(url, current) || (profile && profileNeedsOtherCatalog(profile, form, current))) {
+		const other = form === 'iem' ? 'headphone' : 'iem';
+		const identity = await catalogIdentity(other, version).catch(() => undefined);
+		if (identity) catalogs[other] = identity;
+	}
+	return catalogs;
 }
 
 export function productFor<T extends { id: string }>(

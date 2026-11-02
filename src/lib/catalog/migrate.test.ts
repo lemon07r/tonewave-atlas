@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { CatalogIdentity, type IdentityCatalog } from './identity.ts';
-import { canonicalItem, migrateItems, migrateProfile, migrateUrl } from './migrate.ts';
+import { canonicalItem, migrateItems, migrateProfile, migrateUrl, needsOtherCatalog } from './migrate.ts';
 import { emptyProfile, parseProfile, strength, type WorkspaceItem } from '#lib/profile/profile.ts';
 import { profileStore } from '#lib/profile/store.ts';
 
@@ -222,4 +222,111 @@ test('legacy catalogs without redirects still resolve current ids, never inherit
 	expect(catalog.productId('toString')).toBeUndefined();
 	expect(catalog.measurementId('__proto__')).toBeUndefined();
 	expect(migrateProfile(emptyProfile(), { iem: legacy }).changed).toBe(false);
+});
+
+const headphones = new CatalogIdentity({
+	products: [{ id: 'headphone', brand: 'Fixture', model: 'Headphone' }],
+	measurements: [{ id: 'headphone-measurement', productId: 'headphone' }],
+	redirects: {
+		products: { 'misfiled-headphone': 'headphone' },
+		measurements: { 'misfiled-measurement': 'headphone-measurement' }
+	}
+});
+
+test('cross-form saved items move in both directions and merge with the destination canonical rating', () => {
+	const profile = emptyProfile();
+	profile.profiles.iem = [
+		item('current', 'like'),
+		item('misfiled-headphone', 'love', { measurementId: 'misfiled-measurement', likedAspects: ['bass'] }),
+		item('unresolved', 'neutral')
+	];
+	profile.profiles.headphone = [item('headphone', 'dislike'), item('old', 'love')];
+	const migrated = migrateProfile(profile, { iem: catalog, headphone: headphones });
+	expect(migrated.profile.profiles.iem).toEqual([item('current', 'like'), item('unresolved', 'neutral')]);
+	expect(migrated.profile.profiles.headphone).toEqual([item('headphone', 'dislike')]);
+	expect(migrated.droppedRating).toBe(true);
+	expect(migrated.messages).toContain(
+		'Fixture Headphone: moved to the Headphones profile after a catalog update.'
+	);
+	expect(migrated.messages).toContain('Fixture One: moved to the IEMs profile after a catalog update.');
+	expect(migrateProfile(migrated.profile, { iem: catalog, headphone: headphones }).changed).toBe(false);
+	expect(profile.profiles.iem).toHaveLength(3);
+});
+
+test('moving an explicit split preserves rating and preference details without inferring a product name', () => {
+	const saved = item('split-misfiled', 'love', {
+		measurementId: 'misfiled-measurement',
+		soundRelated: false,
+		likedAspects: ['mids']
+	});
+	const migrated = migrateProfile(
+		{ version: 2, profiles: { iem: [saved], headphone: [] } },
+		{ iem: catalog, headphone: headphones }
+	);
+	expect(migrated.profile.profiles.iem).toEqual([]);
+	expect(migrated.profile.profiles.headphone).toEqual([
+		{ ...saved, productId: 'headphone', measurementId: 'headphone-measurement' }
+	]);
+	expect(
+		migrateProfile({ version: 2, profiles: { iem: [saved], headphone: [] } }, { iem: catalog }).profile
+			.profiles.iem
+	).toEqual([saved]);
+});
+
+test('a full destination profile retains the misfiled item instead of exceeding the import limit', () => {
+	const products = Array.from({ length: 201 }, (_, i) => ({
+		id: `h-${i}`,
+		brand: 'Fixture',
+		model: `Headphone ${i}`
+	}));
+	const destination = new CatalogIdentity({ products, measurements: [] });
+	const profile = {
+		version: 2 as const,
+		profiles: {
+			iem: [item('h-200', 'like')],
+			headphone: products.slice(0, 200).map(({ id }) => item(id, 'neutral'))
+		}
+	};
+	const migrated = migrateProfile(profile, { iem: catalog, headphone: destination });
+	expect(migrated.profile.profiles.iem).toEqual(profile.profiles.iem);
+	expect(migrated.profile.profiles.headphone).toHaveLength(200);
+	expect(migrated.messages.some((message) => message.includes('profile is full'))).toBe(true);
+	expect(parseProfile(JSON.stringify(migrated.profile))).toEqual(migrated.profile);
+});
+
+test.each([
+	'ref=misfiled-headphone&m=misfiled-measurement',
+	'product=misfiled-headphone&measurement=misfiled-measurement',
+	'p=misfiled-headphone&m=misfiled-measurement',
+	'm=misfiled-measurement,headphone-measurement',
+	`ratings=${encodeURIComponent(JSON.stringify([item('misfiled-headphone', 'love')]))}`
+])('cross-form URLs resolve other-catalog redirects and clear incompatible rig controls: %s', (query) => {
+	const url = new URL(
+		`https://example.org/?${query}&rig=iem-711&sources=iem-source&sourceMode=only&edits=[]&depth=40&unknown=keep#main`
+	);
+	expect(needsOtherCatalog(url, catalog)).toBe(true);
+	const migrated = migrateUrl(url, catalog, headphones);
+	expect(migrated.url.searchParams.get('form')).toBe('headphones');
+	for (const key of ['rig', 'sources', 'sourceMode', 'edits', 'depth'])
+		expect(migrated.url.searchParams.has(key)).toBe(false);
+	expect(migrated.url.searchParams.get('unknown')).toBe('keep');
+	expect(migrated.url.hash).toBe('#main');
+	expect(migrated.url.href).not.toContain('misfiled-');
+	expect(migrated.messages).toEqual(['Fixture Headphone: opened in Headphones after a catalog update.']);
+	expect(migrateUrl(migrated.url, headphones, catalog).changed).toBe(false);
+});
+
+test('reverse-form links recover explicit split ownership, while mixed or unresolved links stay intact', () => {
+	const reverse = migrateUrl(
+		new URL('https://example.org/?form=headphones&ref=split-old&m=old-split-variant'),
+		headphones,
+		catalog
+	);
+	expect(reverse.url.searchParams.has('form')).toBe(false);
+	expect(reverse.url.searchParams.get('ref')).toBe('split-current');
+	for (const query of ['p=current,headphone', 'ref=unknown', 'ref=headphone&ratings=invalid']) {
+		const url = new URL(`https://example.org/?${query}`);
+		expect(migrateUrl(url, catalog, headphones).url.href).toBe(url.href);
+	}
+	expect(needsOtherCatalog(new URL('https://example.org/?m=variant,split-variant'), catalog)).toBe(false);
 });

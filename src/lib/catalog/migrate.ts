@@ -1,7 +1,70 @@
 import type { CatalogIdentity } from './identity.ts';
-import { parseProfile, strength, type Profile, type WorkspaceItem } from '#lib/profile/profile.ts';
+import {
+	parseProfile,
+	PROFILE_LIMIT,
+	strength,
+	type Profile,
+	type WorkspaceItem
+} from '#lib/profile/profile.ts';
+import type { Form } from '#core/dataset/types.ts';
 
 const active = (item: WorkspaceItem) => ['love', 'like', 'dislike'].includes(item.rating);
+const formName = (form: Form) => (form === 'iem' ? 'IEMs' : 'Headphones');
+
+/** Explicit measurement ownership may resolve a split product, but never guess from its name. */
+function hasIdentity(
+	item: Pick<WorkspaceItem, 'productId' | 'measurementId'>,
+	catalog: CatalogIdentity
+): boolean {
+	const product =
+		catalog.productId(item.productId) ??
+		(item.measurementId ? catalog.measurementProduct(item.measurementId) : undefined);
+	return !!product && (!item.measurementId || catalog.measurementProduct(item.measurementId) === product);
+}
+
+function urlItems(url: URL): Pick<WorkspaceItem, 'productId' | 'measurementId'>[] | undefined {
+	const params = url.searchParams;
+	const items: Pick<WorkspaceItem, 'productId' | 'measurementId'>[] = [];
+	for (const [key, measurementKey] of [
+		['ref', 'm'],
+		['product', 'measurement']
+	] as const) {
+		const productId = params.get(key),
+			measurementId = params.get(measurementKey);
+		if (productId) items.push({ productId, ...(measurementId ? { measurementId } : {}) });
+		else if (measurementId)
+			for (const id of measurementId.split(',').filter(Boolean))
+				items.push({ productId: '', measurementId: id });
+	}
+	for (const key of ['p', 'refs'])
+		for (const productId of (params.get(key) ?? '').split(',').filter(Boolean)) items.push({ productId });
+	if (params.has('ratings')) {
+		try {
+			items.push(
+				...parseProfile(
+					JSON.stringify({
+						version: 2,
+						profiles: { iem: JSON.parse(params.get('ratings') ?? '[]') as unknown, headphone: [] }
+					})
+				).profiles.iem
+			);
+		} catch {
+			return undefined; /* Never change form around malformed shared evidence. */
+		}
+	}
+	return items;
+}
+
+export function needsOtherCatalog(url: URL, catalog: CatalogIdentity): boolean {
+	return (urlItems(url) ?? []).some((item) => !hasIdentity(item, catalog));
+}
+
+export function profileNeedsOtherCatalog(profile: Profile, form: Form, catalog: CatalogIdentity): boolean {
+	const other = form === 'iem' ? 'headphone' : 'iem';
+	return (
+		profile.profiles[other].length > 0 || profile.profiles[form].some((item) => !hasIdentity(item, catalog))
+	);
+}
 
 /** An explicit surviving measurement can disambiguate a split with no product redirect. */
 export function canonicalItem(item: WorkspaceItem, catalog: CatalogIdentity): WorkspaceItem {
@@ -72,17 +135,41 @@ export function migrateItems(items: readonly WorkspaceItem[], catalog: CatalogId
 	};
 }
 
-export function migrateProfile(
-	profile: Profile,
-	catalogs: Partial<Record<'iem' | 'headphone', CatalogIdentity>>
-) {
+export function migrateProfile(profile: Profile, catalogs: Partial<Record<Form, CatalogIdentity>>) {
 	const next: Profile = { ...profile, profiles: { ...profile.profiles } };
 	const messages: string[] = [];
 	let droppedRating = false;
+	const incoming: Record<Form, WorkspaceItem[]> = { iem: [], headphone: [] };
+	for (const form of ['iem', 'headphone'] as const) {
+		const current = catalogs[form],
+			otherForm = form === 'iem' ? 'headphone' : 'iem',
+			other = catalogs[otherForm];
+		if (!current || !other) continue;
+		next.profiles[form] = profile.profiles[form].filter((item) => {
+			if (hasIdentity(item, current) || !hasIdentity(item, other)) return true;
+			const canonical = canonicalItem(item, other);
+			const occupied = new Set(
+				[...profile.profiles[otherForm], ...incoming[otherForm]].map(
+					(row) => canonicalItem(row, other).productId
+				)
+			);
+			if (!occupied.has(canonical.productId) && occupied.size >= PROFILE_LIMIT) {
+				messages.push(
+					`${other.name(canonical.productId)}: could not move to ${formName(otherForm)} because that profile is full. It has been kept.`
+				);
+				return true;
+			}
+			incoming[otherForm].push(item);
+			messages.push(
+				`${other.name(canonical.productId)}: moved to the ${formName(otherForm)} profile after a catalog update.`
+			);
+			return false;
+		});
+	}
 	for (const form of ['iem', 'headphone'] as const) {
 		const catalog = catalogs[form];
 		if (!catalog) continue;
-		const migrated = migrateItems(profile.profiles[form], catalog);
+		const migrated = migrateItems([...next.profiles[form], ...incoming[form]], catalog);
 		next.profiles[form] = migrated.items;
 		messages.push(...migrated.messages);
 		droppedRating ||= migrated.droppedRating;
@@ -95,8 +182,47 @@ export function migrateProfile(
 	};
 }
 
-/** Rewrite only identity parameters; retain unrelated controls, unknown ids, and the hash. */
-export function migrateUrl(url: URL, catalog: CatalogIdentity) {
+export interface UrlMigration {
+	url: URL;
+	changed: boolean;
+	messages: string[];
+	droppedRating: boolean;
+}
+
+/** Resolve identities in place; switch form only when every selected identity belongs to the other form. */
+export function migrateUrl(url: URL, catalog: CatalogIdentity, other?: CatalogIdentity): UrlMigration {
+	const identities = urlItems(url);
+	if (
+		other &&
+		identities?.length &&
+		identities.every((item) => !hasIdentity(item, catalog) && hasIdentity(item, other))
+	) {
+		const next = new URL(url.href);
+		const form = url.searchParams.get('form') === 'headphones' ? 'iem' : 'headphone';
+		if (form === 'iem') next.searchParams.delete('form');
+		else next.searchParams.set('form', 'headphones');
+		for (const key of ['rig', 'sources', 'sourceMode', 'edits', 'depth']) next.searchParams.delete(key);
+		const migrated = migrateUrl(next, other);
+		const names = [
+			...new Set(
+				identities.map((item) =>
+					other.name(
+						other.productId(item.productId) ??
+							(item.measurementId ? other.measurementProduct(item.measurementId) : undefined) ??
+							item.productId
+					)
+				)
+			)
+		];
+		return {
+			...migrated,
+			changed: true,
+			messages: [
+				...migrated.messages,
+				`${names.join(', ')}: opened in ${formName(form)} after a catalog update.`
+			]
+		};
+	}
 	const next = new URL(url.href);
 	const params = next.searchParams;
 	const messages: string[] = [];

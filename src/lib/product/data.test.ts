@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import type { ProductListItem } from '#core/atlas/types.ts';
-import { catalogIdentity, priceListings, productFor } from './data.ts';
+import { catalogIdentity, migrationCatalogs, priceListings, productFor } from './data.ts';
 import { gzipSync } from 'node:zlib';
 
 vi.mock('#lib/catalog/client.ts', async () => ({
@@ -29,6 +29,39 @@ test('loads redirects from both gzip and decoded catalogs and retries failed req
 		await expect(catalogIdentity('headphone', 'fixture-retry')).rejects.toThrow('503');
 		fetch.mockResolvedValueOnce(new Response(JSON.stringify(fixture)));
 		expect((await catalogIdentity('headphone', 'fixture-retry')).productId('old')).toBe('now');
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
+test('migration lookup fetches the other form only for unresolved identities and keeps failures optional', async () => {
+	const fixture = {
+		partitions: [],
+		products: [{ id: 'iem', brand: 'Fixture', model: 'IEM' }],
+		measurements: []
+	};
+	const fetch = vi.spyOn(globalThis, 'fetch');
+	try {
+		fetch.mockResolvedValueOnce(new Response(JSON.stringify(fixture)));
+		const current = await migrationCatalogs('iem', 'cross-form', new URL('https://example.org/?ref=iem'));
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(current.iem?.productId('iem')).toBe('iem');
+		fetch.mockResolvedValueOnce(new Response('', { status: 503 }));
+		const failed = await migrationCatalogs(
+			'iem',
+			'cross-form',
+			new URL('https://example.org/?ref=headphone')
+		);
+		expect(failed.iem).toBe(current.iem);
+		expect(failed.headphone).toBeUndefined();
+		fetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({ ...fixture, products: [{ id: 'headphone', brand: 'Fixture', model: 'Headphone' }] })
+			)
+		);
+		const retry = await migrationCatalogs('iem', 'cross-form', new URL('https://example.org/?ref=headphone'));
+		expect(retry.headphone?.productId('headphone')).toBe('headphone');
+		expect(fetch).toHaveBeenCalledTimes(3);
 	} finally {
 		fetch.mockRestore();
 	}
