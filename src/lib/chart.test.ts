@@ -6,17 +6,22 @@ import {
 	dbLabel,
 	frequencyLabel,
 	CURVE_DASHES,
-	REFERENCE_DASH,
-	curveDash
+	curveDash,
+	nearestFrequencyIndex
 } from './chart.ts';
 
 describe('chart display data', () => {
-	test('uses eight distinct patterns with a complete repeat visible in a 48 px legend', () => {
-		const patterns = [...CURVE_DASHES, REFERENCE_DASH];
-		expect(new Set(patterns.map((pattern) => pattern.join(' '))).size).toBe(8);
+	test('uses seven distinct slot patterns with the primary series solid and a complete repeat in a 48 px legend', () => {
+		const patterns = CURVE_DASHES;
+		expect(new Set(patterns.map((pattern) => pattern.join(' '))).size).toBe(7);
 		expect(patterns.every((pattern) => pattern.reduce((sum, value) => sum + value, 0) <= 48)).toBe(true);
 		expect(curveDash(1)).toEqual([14, 5]);
-		expect(curveDash(1, true)).toEqual([3, 3, 3, 8]);
+		expect(curveDash(0)).toEqual([]);
+		expect(curveDash(2)).toEqual([4, 4]);
+	});
+	test('inspects the nearest 1 kHz bin by default and preserves a requested frequency on another grid', () => {
+		expect(nearestFrequencyIndex([20, 900, 1101, 20000])).toBe(1);
+		expect(nearestFrequencyIndex([20, 900, 1101, 20000], 1100)).toBe(2);
 	});
 	test('subtracts the baseline pointwise, retaining missing coverage on either side', () => {
 		const values = new Float64Array(GRID_SIZE).fill(7);

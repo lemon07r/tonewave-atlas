@@ -10,6 +10,7 @@
 		dbLabel,
 		FREQUENCY_TICKS,
 		curveDash as dash,
+		nearestFrequencyIndex,
 		REGIONS,
 		type FrSeries
 	} from '#lib/chart.ts';
@@ -47,11 +48,11 @@
 	let plot: uPlot | undefined;
 	let themeStyle = $state<CSSStyleDeclaration | null>(null);
 	let hidden = $state<string[]>([]);
-	let readIndex = $state(120);
+	let inspectedHz = $state(1000);
 	let activeRegion = $state<number | null>(null);
 	let exportError = $state('');
 	let size = $derived(frequencies.length);
-	let inspected = $derived(Math.min(readIndex, Math.max(0, size - 1)));
+	let inspected = $derived(nearestFrequencyIndex(frequencies, inspectedHz));
 	let levelLabel = $derived(mode === 'difference' ? 'Difference (dB)' : 'Level (dB)');
 	let baseline = $derived(series.find((item) => item.id === baselineId) ?? series[0]);
 	let partialEnvelope = $derived(series.some((item) => Boolean(item.lo) !== Boolean(item.hi)));
@@ -83,16 +84,19 @@
 				}))
 			: []
 	);
-	let octaveIndices = $derived(Array.from({ length: 10 }, (_, i) => Math.floor((i * size) / 10)));
+	let octaveIndices = $derived(
+		Array.from({ length: Math.min(10, size) }, (_, i) => Math.floor((i * size) / Math.min(10, size)))
+	);
 	const compactRegionLabels = ['Sub', 'Bass', 'Low', 'Vocal', 'Upper', 'Treb.', 'Air'];
-	function colour(index: number, reference: boolean | undefined) {
-		return reference && index === 0 ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
+	function colour(index: number) {
+		return `var(--curve-${(index % 7) + 1})`;
 	}
 	function focusSeries(index: number | null) {
 		plot?.setSeries(index === null ? null : index + 1, { focus: true });
 	}
 	function setIndex(index: number) {
-		readIndex = Math.min(size - 1, Math.max(0, index));
+		const readIndex = Math.min(size - 1, Math.max(0, index));
+		inspectedHz = frequencies[readIndex] ?? 1000;
 		if (plot) {
 			const hz = frequencies[readIndex];
 			if (hz !== undefined)
@@ -120,13 +124,7 @@
 		const style = themeStyle;
 		const ink = style.getPropertyValue('--muted').trim();
 		const line = style.getPropertyValue('--line').trim();
-		const colours = current.map((curve) =>
-			style
-				.getPropertyValue(
-					curve.reference && curve.index === 0 ? '--muted' : `--curve-${(curve.index % 7) + 1}`
-				)
-				.trim()
-		);
+		const colours = current.map((curve) => style.getPropertyValue(`--curve-${(curve.index % 7) + 1}`).trim());
 		const range = chartRange(
 			current
 				.filter((curve) => !invisible.includes(curve.id))
@@ -232,7 +230,7 @@
 						label: curve.label,
 						stroke: colours[index] ?? ink,
 						width: curve.reference ? 2 : 2.4,
-						dash: dash(curve.index, curve.reference),
+						dash: dash(curve.index),
 						show: !invisible.includes(curve.id),
 						spanGaps: false,
 						points: { show: false }
@@ -242,7 +240,8 @@
 					drawAxes: [decorations],
 					setCursor: [
 						(chart) => {
-							if (chart.cursor.idx != null && (chart.cursor.left ?? -1) >= 0) readIndex = chart.cursor.idx;
+							if (chart.cursor.idx != null && (chart.cursor.left ?? -1) >= 0)
+								inspectedHz = frequencies[chart.cursor.idx] ?? inspectedHz;
 						}
 					]
 				}
@@ -329,10 +328,8 @@
 			let y = chartTop + chartHeight + 24;
 			series.forEach((item, index) => {
 				ctx.lineWidth = item.reference ? 1.5 : 2;
-				ctx.strokeStyle = style.getPropertyValue(
-					item.reference && index === 0 ? '--muted' : `--curve-${(index % 7) + 1}`
-				);
-				ctx.setLineDash(dash(index, item.reference));
+				ctx.strokeStyle = style.getPropertyValue(`--curve-${(index % 7) + 1}`);
+				ctx.setLineDash(dash(index));
 				ctx.beginPath();
 				ctx.moveTo(24, y - 4);
 				ctx.lineTo(72, y - 4);
@@ -490,9 +487,9 @@
 								x2="48"
 								y1="5"
 								y2="5"
-								stroke={colour(curve.index, curve.reference)}
+								stroke={colour(curve.index)}
 								stroke-width="2"
-								stroke-dasharray={dash(curve.index, curve.reference).join(' ')}
+								stroke-dasharray={dash(curve.index).join(' ')}
 							/></svg
 						><span class="legend-number">{curve.index + 1}</span><span
 							>{curve.label}{#if curve.reference}<span class="reference-label" aria-hidden="true"

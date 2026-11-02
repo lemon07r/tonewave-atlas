@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import { GRID_SIZE } from '#core/grid.ts';
+import { GRID, GRID_SIZE } from '#core/grid.ts';
 import type { FrSeries } from '#lib/chart.ts';
 import FrChart from './FrChart.svelte';
 import '#lib/styles/app.css';
@@ -38,7 +38,7 @@ test('renders all series and an accessible octave-resolution table', async () =>
 		[...screen.container.querySelectorAll('.legend-row line')].map((line) =>
 			line.getAttribute('stroke-dasharray')
 		)
-	).toEqual(['', '14 5', '3 3 3 8']);
+	).toEqual(['', '14 5', '4 4']);
 	expect(screen.container.querySelectorAll('canvas')).toHaveLength(1);
 	await expect
 		.element(screen.getByRole('link', { name: 'Sources and limitations' }))
@@ -82,6 +82,24 @@ test('supports keyboard frequency inspection and focusable region descriptions',
 		.toBeVisible();
 	await userEvent.keyboard('{Escape}');
 	await expect.element(screen.getByText(/Hover or focus a region/)).toBeVisible();
+});
+
+test('starts near 1 kHz and retains the chosen frequency when series and grids change', async () => {
+	const screen = await render(FrChart, { series });
+	const scrubber = screen.container.querySelector<HTMLInputElement>('.frequency-scrubber');
+	if (!scrubber) throw new Error('Frequency scrubber missing');
+	expect(Math.abs((GRID[Number(scrubber.value)] ?? 0) - 1000)).toBeLessThan(20);
+	scrubber.value = '144';
+	scrubber.dispatchEvent(new Event('input', { bubbles: true }));
+	await screen.rerender({ series: [...series.slice(0, 1)] });
+	await expect.element(screen.getByText('1280 Hz', { exact: true })).toBeVisible();
+	await screen.rerender({
+		frequencies: new Float64Array([20, 1000, 1280, 20000]),
+		series: [{ id: 'new', label: 'New grid', values: new Float64Array(4) }]
+	});
+	await expect
+		.element(screen.getByRole('slider', { name: 'Inspect frequency' }))
+		.toHaveAttribute('aria-valuetext', '1280 hertz');
 });
 
 test('keeps missing samples missing and rejects the wrong grid', async () => {

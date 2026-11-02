@@ -21,11 +21,18 @@ export const CURVE_DASHES: number[][] = [
 	[12, 3, 2, 3, 2, 3],
 	[14, 4, 6, 4]
 ];
-export const REFERENCE_DASH = [3, 3, 3, 8];
-
 /** Shared by uPlot, the SVG legend and PNG legend, in CSS pixels. */
-export function curveDash(index: number, reference?: boolean): number[] {
-	return reference ? REFERENCE_DASH : (CURVE_DASHES[index % CURVE_DASHES.length] ?? []);
+export function curveDash(index: number): number[] {
+	return CURVE_DASHES[index % CURVE_DASHES.length] ?? [];
+}
+
+/** Preserve an inspected frequency across grid/series changes, defaulting to the nearest 1 kHz bin. */
+export function nearestFrequencyIndex(frequencies: ArrayLike<number>, hz = 1000): number {
+	let nearest = 0;
+	for (let i = 1; i < frequencies.length; i++)
+		if (Math.abs((frequencies[i] ?? Infinity) - hz) < Math.abs((frequencies[nearest] ?? Infinity) - hz))
+			nearest = i;
+	return nearest;
 }
 
 export const REGIONS = [

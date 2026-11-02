@@ -14,12 +14,12 @@
 	--caution: #805017;
 	--caution-soft: #f2e5cc;
 	--curve-1: #234ac3;
-	--curve-2: #994a25;
-	--curve-3: #7741a0;
-	--curve-4: #a8325c;
-	--curve-5: #316a66;
-	--curve-6: #405a95;
-	--curve-7: #806000;
+	--curve-2: #a34f00;
+	--curve-3: #007565;
+	--curve-4: #a83279;
+	--curve-5: #806000;
+	--curve-6: #006c94;
+	--curve-7: #6c4ca6;
 	--display: 'Newsreader Variable', Georgia, serif;
 	--radius: 2px;
 	--text-title: clamp(2.7rem, 4.4vw, 4.5rem);
@@ -38,13 +38,13 @@
 	--detail: #edb18e;
 	--caution: #efc583;
 	--caution-soft: #3c3227;
-	--curve-1: #a5b8ff;
-	--curve-2: #f4ad7d;
-	--curve-3: #c5a8ef;
-	--curve-4: #f29abd;
-	--curve-5: #81c9c2;
-	--curve-6: #93c4f4;
-	--curve-7: #e7ce7e;
+	--curve-1: #93baff;
+	--curve-2: #f4ad65;
+	--curve-3: #63d4bf;
+	--curve-4: #f29bc6;
+	--curve-5: #e7ce68;
+	--curve-6: #76d4f4;
+	--curve-7: #c3a4ef;
 }
 body .page h1 {
 	font-family: var(--display);
@@ -138,6 +138,16 @@ body .method article h2 {
 	font-family: var(--display);
 	font-weight: 500;
 	letter-spacing: -0.025em;
+}
+/* Product names are proper nouns, not tightly tracked editorial headlines. */
+body .product-name,
+body .result-row .result-model,
+body .catalog-row h3,
+body [data-testid='comparison-row'] h3,
+body .page.discover .example-name strong {
+	letter-spacing: normal;
+	font-kerning: normal;
+	font-optical-sizing: auto;
 }
 body .catalog-row h3 {
 	font-size: 28px;
