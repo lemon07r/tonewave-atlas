@@ -35,6 +35,7 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 	const parents = new Map([...products.values()].map((p) => [key(p), p]));
 	const cableMeasurements = new Set<string>();
 	const tipMeasurements = new Set<string>();
+	const depthMeasurements = new Set<string>();
 	const moves: {
 		from: string;
 		to: string;
@@ -69,10 +70,13 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			if (kind === 'cable') cableMeasurements.add(m.id);
 			if (kind === 'tip') tipMeasurements.add(m.id);
 			m.productId = parent.id;
-			const label = /\bdepth\s+test\b/i.test(suffix.label)
-				? m.variant.label || m.variant.file
-				: m.variant.label;
-			m.variant.label = [label, suffix.label].filter(Boolean).join(' · ');
+			const labels = [m.variant.label];
+			if (/\bdepth\s+test\b/i.test(suffix.label)) {
+				depthMeasurements.add(m.id);
+				const fileLabel = withoutAttribution(m.variant.file);
+				if (!normalise(m.variant.label).includes(normalise(fileLabel))) labels.push(fileLabel);
+			}
+			m.variant.label = [...labels, suffix.label].filter(Boolean).join(' · ');
 			m.provenance.processing.push(
 				`recognized ${kind === 'switch' ? 'switch-state' : kind === 'tip' ? 'tip/fit' : 'cable/termination'} identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${suffix.label}`
 			);
@@ -122,8 +126,11 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			}
 			const defaults = sourceRows.map((r) => r.measurement).filter((m) => m.variant.isDefault);
 			if (defaults.length < 2) continue;
+			// Prefer an accepted non-experiment default; a depth-only source still keeps coverage.
+			const nonDepth = defaults.filter((m) => !depthMeasurements.has(m.id));
+			const candidates = nonDepth.length ? nonDepth : defaults;
 			const selected =
-				defaults.find((m) => /\b(?:stock|standard|default)\b/i.test(m.variant.label)) ?? defaults[0];
+				candidates.find((m) => /\b(?:stock|standard|default)\b/i.test(m.variant.label)) ?? candidates[0];
 			if (!selected) continue;
 			const demoted = defaults.filter((m) => m !== selected);
 			for (const m of demoted) {

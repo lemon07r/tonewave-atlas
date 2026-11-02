@@ -143,6 +143,8 @@ its named measurements stay in a source-isolated headphone partition, with the c
 the maker field. Known maker prefixes can be recovered; otherwise the complete source name stays
 source-local unbranded, without guessing an equivalence to another named headphone. Quarantined
 non-products have no redirects.
+Identity checks also run before per-file modification metadata is appended; a modified dongle remains
+a non-product. A setup qualifier only protects a transducer subject, not `DAC with amplifier`.
 Explicit fake/replica/counterfeit names or file descriptors, clone/copy product names, and unidentified
 one-character custom names are non-products. Clone accessories alone do not make the product fake.
 Earphones Archive's `*` is a mixed index category, not a uniform fake flag (its index, config and page
@@ -237,6 +239,10 @@ colors and codes are not assumed neutral merely because the same suffix also con
 A terminal parenthesized `Depth Test`/`Insertion Depth Test`, optionally preceded by a declared filter,
 folds into an already accepted exact maker/model parent as insertion-fit metadata. Filter and numeric
 depth labels survive, including the first file's depth; no parent is invented when none exists.
+A same-source unsuffixed default takes precedence over a depth experiment regardless of entry order.
+Depth-only sources retain the existing coverage fallback, with explicit fit labels rather than an
+assumption of stock equivalence. Filename depths survive generic suffixes; attribution stays in filenames,
+not display labels.
 
 Before rig evidence and statistics, labelled switch defaults are reconciled **per product**, with
 one vote per source's unambiguous existing default state. A unique plurality selects the common state.

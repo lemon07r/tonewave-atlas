@@ -74,6 +74,7 @@ export interface PartitionCurve {
 	measurement: Measurement;
 	configuration?: string;
 	sourceOrder?: number;
+	sourceIsolated?: boolean;
 	channels: PackedCurve[];
 	rank: PackedCurve;
 }
@@ -374,6 +375,8 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					file: index === null ? null : (cleanPhone.file[index] ?? null)
 				});
 			}
+			const originalProduct = identity(cleanPhone.brand, cleanPhone.name, form, aliases, productAliases);
+			const originalProblem = identityProblem(originalProduct.brand, originalProduct.model);
 			for (const [index, file] of cleanPhone.file.entries()) {
 				const phone = modification(cleanPhone, index);
 				counts.variants++;
@@ -407,7 +410,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					continue;
 				}
 				const product = identity(phone.brand, phone.name, form, aliases, productAliases);
-				const problem = identityProblem(product.brand, product.model);
+				const problem = originalProblem ?? identityProblem(product.brand, product.model);
 				if (problem) {
 					quarantine(problem, false);
 					continue;
@@ -559,7 +562,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					id,
 					productId: product.id,
 					sourceId: source.id,
-					partition: partitionFor(source, form),
+					partition: partitionFor(source, form, formDecision.sourceIsolated),
 					variant: selectedVariant,
 					channels: curves.map((c) => c.channel),
 					channelContributions: [...avg.contributions],
@@ -623,6 +626,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const group = partitions.get(measurement.partition) ?? [];
 				const row = {
 					measurement,
+					sourceIsolated: formDecision.sourceIsolated,
 					configuration,
 					sourceOrder: counts.variants,
 					channels: curves,
@@ -701,7 +705,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		const source = sources.find((s) => s.id === row.measurement.sourceId);
 		const form = products.get(row.measurement.productId)?.form;
 		if (!source || !form) throw new Error('Missing accepted source/form');
-		row.measurement.partition = partitionFor(source, form);
+		row.measurement.partition = partitionFor(source, form, row.sourceIsolated);
 		const group = partitions.get(row.measurement.partition) ?? [];
 		group.push(row);
 		partitions.set(row.measurement.partition, group);

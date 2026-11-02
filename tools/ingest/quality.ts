@@ -72,9 +72,17 @@ const iemMakers = new Set([
 
 const headphoneTestCategory = (brand: string) => /^(?:hp|headphones?)tests?$/.test(normalise(brand));
 
-export function entryForm(phone: Phone): { form: Form | null; reason: string | null } {
+export function entryForm(phone: Phone): {
+	form: Form | null;
+	reason: string | null;
+	sourceIsolated?: boolean;
+} {
 	if (headphoneTestCategory(phone.brand))
-		return { form: 'headphone', reason: 'explicit source-index headphone test category' };
+		return {
+			form: 'headphone',
+			reason: 'explicit source-index headphone test category',
+			sourceIsolated: true
+		};
 	if (/^\[iems?\]$/i.test(phone.brand.trim()))
 		return { form: 'iem', reason: 'explicit source-index [IEMs] category' };
 	const brand = normalise(phone.brand);
@@ -129,8 +137,8 @@ export function identityProblem(brand: string, model: string): string | null {
 	)
 		return 'source-chain test category';
 	// A declared device type is not a transducer. "IEM with/via DAC" remains a named setup.
-	if (/\b(?:dac|amp|amplifier|dongle)\s*$/i.test(model) && !/\b(?:with|via|using|through|on)\b/i.test(model))
-		return 'source-chain device, not a transducer';
+	const subject = model.split(/\b(?:with|via|using|through|on)\b/i)[0] ?? model;
+	if (/\b(?:dac|amp|amplifier|dongle)\s*$/i.test(subject)) return 'source-chain device, not a transducer';
 	const placeholder = /^(?:unknown|undefined|null|none|n\/?a|untitled|tbd|test|[-?_.\s]*)$/i;
 	if (!model.trim() || placeholder.test(model.trim())) return 'blank/placeholder model';
 	if (!brand.trim() || placeholder.test(brand.trim())) return 'blank/placeholder brand';
@@ -155,7 +163,8 @@ export function duplicateDefault(a: ArrayLike<number>, b: ArrayLike<number>): bo
 	);
 }
 
-export function partitionFor(source: Source, form: Form): string {
+export function partitionFor(source: Source, form: Form, sourceIsolated = false): string {
+	if (sourceIsolated) return `${form}-source-${source.id}`;
 	// Preserve the primary headphone hardware partition; IEM projection evidence cannot change it.
 	if (source.form === 'headphone' && form === 'headphone') return source.partition;
 	if (source.form === form && !/^(?:iem|headphone)-(?:source-|711$|5128$)/.test(source.partition))

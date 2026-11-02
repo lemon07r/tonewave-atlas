@@ -37,12 +37,15 @@ describe('deterministic catalog quality rules', () => {
 			expect(identityProblem(brand, 'Reference')).toBe('source-chain test category');
 		}
 	);
-	it.each(['Pocket DAC', 'S8 Pro Robin Dongle', 'Desktop Amplifier'])(
-		'quarantines a model declared as source-chain equipment: %s',
-		(model) => {
-			expect(identityProblem('Maker', model)).toBe('source-chain device, not a transducer');
-		}
-	);
+	it.each([
+		'Pocket DAC',
+		'S8 Pro Robin Dongle',
+		'Desktop Amplifier',
+		'Pocket DAC with amplifier',
+		'Pocket Dongle via DAC'
+	])('quarantines a model declared as source-chain equipment: %s', (model) => {
+		expect(identityProblem('Maker', model)).toBe('source-chain device, not a transducer');
+	});
 	it.each([
 		['Maker', 'Test Pilot'],
 		['Snowy', 'Test HT'],
@@ -66,20 +69,30 @@ describe('deterministic catalog quality rules', () => {
 		});
 		expect(identityProblem('HP Test', 'HEDD2')).toBeNull();
 	});
-	it('does not route headphone rows using an IEM-evidenced 5128 family', () => {
-		const source = sourceFor(
-			{ id: 'mixed', username: 'mixed', name: 'Mixed', url: 'https://mixed.invalid/', dbType: 'IEMs' },
-			'',
-			'date',
-			{}
-		);
-		source.rigEvidence = { class: 'evidenced', family: '5128', rationale: 'IEM projection' };
-		expect(partitionFor(source, 'iem')).toBe('iem-5128');
-		expect(partitionFor(source, 'headphone')).toBe('headphone-source-mixed');
-		const physical = sourceFor({ ...source, dbType: 'Headphones' }, 'rig_description="B&K 5128"', 'date', {});
-		physical.rigEvidence = source.rigEvidence;
-		expect(partitionFor(physical, 'headphone')).toBe('headphone-5128');
-	});
+	it.each(['evidenced', 'verified'] as const)(
+		'does not route headphone rows using an IEM %s 5128 family',
+		(evidenceClass) => {
+			const source = sourceFor(
+				{ id: 'mixed', username: 'mixed', name: 'Mixed', url: 'https://mixed.invalid/', dbType: 'IEMs' },
+				'',
+				'date',
+				{}
+			);
+			source.rigEvidence = { class: evidenceClass, family: '5128', rationale: 'IEM rig evidence' };
+			expect(partitionFor(source, 'iem')).toBe('iem-5128');
+			expect(partitionFor(source, 'headphone', entryForm(phone('HP Test', 'Model')).sourceIsolated)).toBe(
+				'headphone-source-mixed'
+			);
+			const physical = sourceFor(
+				{ ...source, dbType: 'Headphones' },
+				'rig_description="B&K 5128"',
+				'date',
+				{}
+			);
+			physical.rigEvidence = source.rigEvidence;
+			expect(partitionFor(physical, 'headphone')).toBe('headphone-5128');
+		}
+	);
 	it.each([
 		'Average IEM',
 		'Average Headphone',

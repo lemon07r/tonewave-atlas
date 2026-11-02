@@ -10,7 +10,9 @@ import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { buildRedirects } from './redirects.ts';
 import { HttpCache } from './cache.ts';
-import { datasetVersion, DIRECTORY_URL, ROOT, sha256 } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, phoneBook, ROOT, sha256 } from './common.ts';
+import { identity, variant } from './transform.ts';
+import { modification } from './quality.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -112,95 +114,133 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
-	it('quarantines source-chain products but retains named tests, headphones and insertion-depth fits offline', async () => {
-		const groups = [
-			{
-				name: 'DAC Test',
-				phones: [
-					{ name: 'Reference', file: ['Reference'] },
-					{ name: 'DAC Test', file: ['Portable DAC', 'Other Amp'] }
-				]
-			},
-			{
-				name: 'Maker',
-				phones: [
-					{
-						name: 'Pocket Dongle',
-						file: ['Dongle Filter A', 'Dongle Apple'],
-						suffix: ['Green Filter', 'Same IEM, Apple Dongle']
-					},
-					{ name: 'Reference', file: ['Maker Reference'] },
-					{ name: 'Test Pilot', file: ['Maker Test Pilot'] },
-					{ name: 'Model with DAC', file: ['Model with DAC'] },
-					{ name: 'Model', file: ['Model stock'] },
-					{
-						name: 'Model (Green Filter Depth Test)',
-						file: ['Model Depth -1', 'Model Depth -2', 'Model Depth -3']
+	it.each(['clone 711', 'B&K 5128'])(
+		'quarantines source-chain products but retains named tests, headphones and insertion-depth fits offline on %s',
+		async (rig) => {
+			const groups = [
+				{
+					name: 'DAC Test',
+					phones: [
+						{ name: 'Reference', file: ['Reference'] },
+						{ name: 'DAC Test', file: ['Portable DAC', 'Other Amp'] }
+					]
+				},
+				{
+					name: 'Maker',
+					phones: [
+						{
+							name: 'Pocket Dongle',
+							file: ['Dongle Filter A', 'Dongle Apple'],
+							suffix: ['Green Filter', 'Same IEM, Apple Dongle']
+						},
+						{ name: 'Reference', file: ['Maker Reference'] },
+						{ name: 'Test Pilot', file: ['Maker Test Pilot'] },
+						{ name: 'Model with DAC', file: ['Model with DAC'] },
+						{ name: 'Pocket DAC', file: ['Pocket DAC DIY mod'] },
+						{ name: 'Portable Dongle', file: ['Portable Dongle'], suffix: ['DIY cable'] },
+						{ name: 'Model', file: ['Model stock'] },
+						{
+							name: 'Model (Green Filter Depth Test)',
+							file: ['Model Depth -1', 'Model Depth -2', 'Model Depth -3']
+						}
+					]
+				},
+				{
+					name: 'HP Test',
+					phones: [
+						{ name: 'Maker Headphone', file: ['HP Test Maker Headphone'] },
+						{ name: 'Unnamed Headphone', file: ['HP Test Unnamed Headphone'] }
+					]
+				}
+			];
+			const files = groups.flatMap((g) => g.phones.flatMap((p) => p.file));
+			const { paths } = await fixture(`rig_description="${rig}"`, [
+				[bookUrl, JSON.stringify(groups)],
+				...files.map((f): [string, string] => [`${base}data/${encodeURIComponent(f + ' L.txt')}`, curve(80)])
+			]);
+			await writeFile(
+				resolve(paths.root, 'data/aliases.json'),
+				JSON.stringify({ brands: { Maker: 'Maker' } })
+			);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+			await build(paths);
+			const { catalog, manifest, report } = await result(paths);
+			expect(catalog.products.map((p) => p.model).sort()).toEqual([
+				'Model',
+				'Model with DAC',
+				'Reference',
+				'Test Pilot'
+			]);
+			expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual(
+				[
+					'Reference',
+					'Portable DAC',
+					'Other Amp',
+					'Dongle Filter A',
+					'Dongle Apple',
+					'Pocket DAC DIY mod',
+					'Portable Dongle'
+				].sort()
+			);
+			const depth = catalog.measurements.filter((m) => m.variant.file.includes('Depth'));
+			expect(depth).toHaveLength(3);
+			expect(depth.every((m) => m.productId === catalog.products.find((p) => p.model === 'Model')?.id)).toBe(
+				true
+			);
+			expect(depth.every((m) => m.variant.kind === 'fit' && !m.variant.isDefault)).toBe(true);
+			for (const m of depth) expect(m.variant.label).toContain(m.variant.file.match(/-\d+/)?.[0]);
+			const headphones = JSON.parse(
+				gunzipSync(
+					await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
+				).toString()
+			) as Catalog;
+			expect(headphones.products.map((p) => [p.brand, p.model]).sort()).toEqual(
+				[
+					['Maker', 'Headphone'],
+					['Unbranded (reviewer)', 'Unnamed Headphone']
+				].sort()
+			);
+			expect(
+				headphones.measurements.every((m) => m.partition === `headphone-source-${manifest.sources[0]?.id}`)
+			).toBe(true);
+			const next: Catalog = { ...catalog, redirects: { products: {}, measurements: {} } };
+			const existingMeasurement = catalog.measurements[0],
+				source = manifest.sources[0];
+			if (!existingMeasurement || !source) throw new Error('Missing retained fixture');
+			// Reconstruct the real historical identity/file/index IDs, not arbitrary unmapped IDs.
+			const previous: Catalog = { ...catalog, products: [], measurements: [] };
+			const quarantined = new Set(report.quality.quarantine.map((q) => q.file));
+			for (const raw of phoneBook(groups).phones)
+				for (const [index, file] of raw.file.entries()) {
+					if (!quarantined.has(file)) continue;
+					const phone = modification(raw, index);
+					const p = identity(phone.brand, phone.name, 'iem', { maker: 'Maker' });
+					const id = `m-${sha256(`${source.id}\0${p.id}\0${file}\0${index}`).slice(0, 20)}`;
+					let product = previous.products.find((old) => old.id === p.id);
+					if (!product) {
+						product = { id: p.id, brand: p.brand, model: p.model, form: 'iem', measurementIds: [] };
+						previous.products.push(product);
 					}
-				]
-			},
-			{
-				name: 'HP Test',
-				phones: [
-					{ name: 'Maker Headphone', file: ['HP Test Maker Headphone'] },
-					{ name: 'Unnamed Headphone', file: ['HP Test Unnamed Headphone'] }
-				]
-			}
-		];
-		const files = groups.flatMap((g) => g.phones.flatMap((p) => p.file));
-		const { paths } = await fixture('rig_description="clone 711"', [
-			[bookUrl, JSON.stringify(groups)],
-			...files.map((f): [string, string] => [`${base}data/${encodeURIComponent(f + ' L.txt')}`, curve(80)])
-		]);
-		await writeFile(resolve(paths.root, 'data/aliases.json'), JSON.stringify({ brands: { Maker: 'Maker' } }));
-		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
-		await build(paths);
-		const { catalog, manifest, report } = await result(paths);
-		expect(catalog.products.map((p) => p.model).sort()).toEqual([
-			'Model',
-			'Model with DAC',
-			'Reference',
-			'Test Pilot'
-		]);
-		expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual(
-			['Reference', 'Portable DAC', 'Other Amp', 'Dongle Filter A', 'Dongle Apple'].sort()
-		);
-		const depth = catalog.measurements.filter((m) => m.variant.file.includes('Depth'));
-		expect(depth).toHaveLength(3);
-		expect(depth.every((m) => m.productId === catalog.products.find((p) => p.model === 'Model')?.id)).toBe(
-			true
-		);
-		expect(depth.every((m) => m.variant.kind === 'fit' && !m.variant.isDefault)).toBe(true);
-		for (const m of depth) expect(m.variant.label).toContain(m.variant.file.match(/-\d+/)?.[0]);
-		const headphones = JSON.parse(
-			gunzipSync(
-				await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
-			).toString()
-		) as Catalog;
-		expect(headphones.products.map((p) => [p.brand, p.model]).sort()).toEqual(
-			[
-				['Maker', 'Headphone'],
-				['Unbranded (reviewer)', 'Unnamed Headphone']
-			].sort()
-		);
-		expect(
-			headphones.measurements.every((m) => m.partition === `headphone-source-${manifest.sources[0]?.id}`)
-		).toBe(true);
-		const next: Catalog = { ...catalog, redirects: { products: {}, measurements: {} } };
-		const existingProduct = catalog.products[0],
-			existingMeasurement = catalog.measurements[0];
-		if (!existingProduct || !existingMeasurement) throw new Error('Missing retained fixture');
-		const gone = { ...existingProduct, id: 'non-product' };
-		const removed = {
-			...existingMeasurement,
-			id: 'removed',
-			productId: gone.id,
-			provenance: { ...existingMeasurement.provenance, originalUrls: [`${base}data/Reference%20L.txt`] }
-		};
-		buildRedirects([{ ...catalog, products: [gone], measurements: [removed] }], [next]);
-		expect(next.redirects?.products['non-product']).toBeUndefined();
-		expect(next.redirects?.measurements['removed']).toBeUndefined();
-	});
+					product.measurementIds.push(id);
+					previous.measurements.push({
+						...existingMeasurement,
+						id,
+						productId: p.id,
+						variant: variant(phone, index, id),
+						provenance: {
+							...existingMeasurement.provenance,
+							originalUrls: [`${base}data/${encodeURIComponent(file + ' L.txt')}`]
+						}
+					});
+				}
+			expect(previous.measurements.map((m) => m.variant.file).sort()).toEqual(
+				report.quality.quarantine.map((q) => q.file).sort()
+			);
+			buildRedirects([previous], [next]);
+			for (const p of previous.products) expect(next.redirects?.products[p.id]).toBeUndefined();
+			for (const m of previous.measurements) expect(next.redirects?.measurements[m.id]).toBeUndefined();
+		}
+	);
 	it('retains separately labelled same-response fits and every channel before default reconciliation', async () => {
 		const phones = [
 			{ name: 'Model', file: ['Model stock tips'], suffix: ['stock tips'] },
