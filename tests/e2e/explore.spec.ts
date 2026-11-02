@@ -17,7 +17,7 @@ for (const theme of ['light', 'dark'] as const) {
 			const errors: string[] = [];
 			page.on('pageerror', (error) => errors.push(error.message));
 			await page.goto('/explore');
-			await page.getByRole('searchbox', { name: 'Filter IEMs' }).fill('Truthear');
+			await page.getByRole('searchbox', { name: 'Filter IEMs' }).fill('Truthear Hexa');
 			await expect(page.getByRole('link', { name: 'Hexa', exact: true })).toBeVisible();
 			await expect(page.locator('.catalog-row')).not.toHaveCount(40);
 			await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('Truthear');
@@ -59,10 +59,10 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.screenshot({ path: join(shots, `pages-product-${info.project.name}-${theme}.png`) });
 			const target = page.getByRole('combobox', { name: 'EQ target product', exact: true });
-			await target.fill('Truthear Nova');
+			await target.fill('TRUTHEAR NOVA');
 			await page
 				.getByRole('option')
-				.filter({ has: page.getByText('Truthear Nova', { exact: true }) })
+				.filter({ has: page.locator('.option-title').filter({ hasText: /^TRUTHEAR NOVA$/ }) })
 				.click();
 			await target.press('Escape');
 			const table = page.getByRole('table', { name: 'Parametric EQ filters' });

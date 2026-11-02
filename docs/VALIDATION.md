@@ -17,9 +17,10 @@ Additional edge tests cover sparse alignment anchors, unobservable singleton fit
 invalid options and filter types, NaN-frequency eligibility, missing target pivots, grouped notches,
 and negative-shelf overshoot requiring the treble cap's verified feasible fallback.
 
-`pnpm test` currently passes 63 tests in five files, including the existing smoothing tests. This
+`pnpm verify` passes 405 tests in 38 files, including numerical, service, worker and component tests. This
 establishes numerical behaviour for the exercised cases, not perceptual equivalence or real-data
-recommendation quality. No real-source held-out result has been measured in this lane.
+recommendation quality. Published real-source held-out validation is described below; no listener
+validation is claimed.
 
 ## Benchmarks
 
@@ -70,12 +71,11 @@ exercise dataset-backed curve caching. A standalone Vite production build of the
 the ES worker
 successfully (48.87 kB worker, 6.01 kB client before gzip); scratch build output was removed.
 
-`pnpm format`, `pnpm lint`, `pnpm check` and `pnpm test` pass. Knip is not clean before UI integration:
-it reports the unreferenced client/standalone atlas benchmark and exported public types
-`PartitionSummary`, `SimilarMatch`, `TasteItem`, `DetailMeasurement`, alongside existing engine/dataset
-exports and UI/test dependencies (`uplot`, `@axe-core/playwright`, `vitest-browser-svelte`).
+The integrated app passes `pnpm verify`, including format, lint, types, knip and tests, and
+`pnpm build`. The production analysis worker is 54.30 kB before gzip. The unused ingestion-only
+support-threshold export was made private; no test imported it.
 
-Run `node benchmarks/atlas.ts` after `pnpm data:pull`. Same machine/Node as the engine timings above;
+Earlier partial-dataset baseline: `node benchmarks/atlas.ts` after `pnpm data:pull`, same machine/Node as the engine timings above;
 dataset `3c9d923462f8b79c98aa4ef9`, 2,082 IEM products (2,102 products across both forms), 4,293 iem-711
 measurements, top K=20. One cold request, one resident request, then one taste request with three
 likes; no synthetic curve generation in the timed paths. Disk-backed fetch is included, browser
@@ -108,3 +108,35 @@ With those fixes, `node benchmarks/atlas.ts` on the same dataset/machine measure
 similar, **2.39 ms** resident similar and **8.97 ms** taste, each with 20 winners. All existing budgets
 remain met; these are another single local observation under the timing scope above, not a controlled
 comparison with the earlier run.
+
+### Full-dataset app integration (2026-11-02)
+
+Dataset **`208ae49722c1645d1b838cd4`** contains **7,952 products** (6,705 IEMs, 1,247 headphones),
+with **24,458 iem-711 measurements**. `node benchmarks/atlas.ts`, on the same machine/Node and
+with the timing scope above, measured:
+
+| Service workload                                                  |     ms | Budget ms |
+| ----------------------------------------------------------------- | -----: | --------: |
+| First similar: manifest + catalog + rank decode + consensus index | 958.59 |     1,500 |
+| Resident similar, including top-K source ranges                   |   6.46 |        50 |
+| Resident taste, including model and winner explanations           |  17.01 |       150 |
+
+Cold/resident similar and taste each returned 20 winners; all budgets pass. This run uses the new
+validated correction default. Published iem-711 statistics report sufficient support and positive
+pooled mean improvement overall and in every fold: **1.781 → 1.588 dB (−10.9%)**, fold improvements
+**0.184–0.202 dB**, **50,823 held-out same-product pairs**. Low-support partitions remain uncorrected;
+this is observational dataset validation, not physical calibration or evidence of listener preference.
+
+The 44 synthetic service tests include lazy target caching/provenance, bidirectional rig refusal,
+an independently specified 3 dB shelf with reduced PEQ residual, default correction on/off, missing
+and nonpositive validation, explicit unsupported requests, and uncorrected detail/PEQ behavior.
+
+Full Playwright integration used the external config on isolated port **4189**, desktop Chromium
+and Pixel 7: **26 scenarios passed**, including axe checks, product and reference EQ, attribution,
+harmonisation notices, comparison, profile persistence and method/source pages. The initial run
+passed 16 scenarios; ten passed after fixing stale full-data test fixtures, and the two other
+scenarios affected by the shared selector change passed again. The canonical full-data model is
+`TRUTHEAR NOVA`, not the separate “Nova (Azla Sedna Shorts)” product; selectors now match complete
+option titles. The catalog-filter fixture uses “Truthear Hexa” because “Truthear” now exceeds the
+40-row page size. No assertions were removed or weakened. Reference EQ ran in both themes on both
+viewports; its result attribution and rig-filtered target list also passed axe checks.
