@@ -147,7 +147,7 @@ describe('taste model', () => {
 		expect(score?.uncertainRegions.some((r) => r.low === 8000)).toBe(true);
 		expect(scoreTasteCandidate(bass(0), buildTasteModel([item('bad', bass(0), 'dislike')]))).toBeNull();
 	});
-	it('models punch as sub-bass balance, sibilance as narrow energy, and traits without level bias', () => {
+	it('models the legacy balance id as sub-bass balance, sibilance as bounded narrow RMS, and traits without level bias', () => {
 		const dull = bass(0),
 			punch = Float64Array.from(RANK_GRID, (f) => (f < 60 ? 5 : 0));
 		expect(dislikeTrait(punch, 'bass-lacks-punch')?.value).toBe(5);

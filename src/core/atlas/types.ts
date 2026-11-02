@@ -91,10 +91,13 @@ export interface ReferenceInfo {
 	measurementIds: string[];
 	sources: Source[];
 }
+export type SourceMode = 'coverage' | 'only';
 export interface RankFilters {
 	maxPriceUsd?: number;
 	minPriceUsd?: number;
 	sources?: string[];
+	/** coverage (default): eligibility only; only: pool reference/candidate measurements from these sources. */
+	sourceMode?: SourceMode;
 	/** Include tuning candidates, including the reference product's tunings in similar(). */
 	includeTunings?: boolean;
 }
@@ -130,6 +133,7 @@ export interface SimilarResult {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
+	sourceMode: SourceMode;
 	rankFrequencies: Float64Array;
 	rankWeights: Float64Array;
 	treblePenalty: number;
@@ -158,6 +162,7 @@ export interface TasteResult {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
+	sourceMode: SourceMode;
 	rankFrequencies: Float64Array;
 	rankWeights: Float64Array;
 	model: {
@@ -177,6 +182,8 @@ export interface TasteResult {
 	results: {
 		candidate: CandidateInfo;
 		fit: TasteFit;
+		/** Exact scored liked-member curve; offsetDb aligns this row's returned rankCurve to it. */
+		nearestLiked: { id: string; rankCurve: Float64Array; offsetDb: number } | null;
 		tasteId: number;
 		/** Scored packed values aligned to this taste centre with ordinary rankWeights. */
 		rankCurve: Float64Array;
@@ -196,6 +203,7 @@ export interface CompareResult {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
+	sourceMode: SourceMode;
 	rankFrequencies: Float64Array;
 	rankWeights: Float64Array;
 	treblePenalty: number;

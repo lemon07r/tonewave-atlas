@@ -1,5 +1,5 @@
 import { median, type Curve } from '../analysis/common.ts';
-import { responseDistance } from '../analysis/distance.ts';
+import { distanceSummary } from '../analysis/distance.ts';
 import type { CurvePack } from '../dataset/codec.ts';
 import type { Catalog, Measurement, Partition, PartitionStatistics, Product } from '../dataset/types.ts';
 import { RANK_GRID, RANK_SIZE } from '../grid.ts';
@@ -28,17 +28,48 @@ export interface PartitionIndex {
 	products: Map<string, AtlasCandidate>;
 	measurements: Map<string, IndexedCurve>;
 	matrix: Float32Array;
+	sourceIds: readonly string[] | undefined;
+	excludedSourceProducts: Set<string>;
 }
 
-/** Align to the first adequately covered curve by uniform-weight LS level, then median each bin. */
+/** Deterministic overlap medoid: most adequate partners, then smallest median shape distance,
+ * then self coverage, then measurement id. Stable accumulation order makes permutations identical.
+ * No extrapolation, and curves without adequate anchor overlap remain excluded.
+ */
 export function consensus(curves: readonly IndexedCurve[], frequencies: Curve): Consensus | null {
-	const anchor = curves.find(
-		(curve) => responseDistance(curve.values, curve.values, { frequencies }) !== null
-	);
+	const options = { frequencies };
+	const eligible = curves
+		.filter((curve) => distanceSummary(curve.values, curve.values, options))
+		.slice()
+		.sort((a, b) => a.measurement.id.localeCompare(b.measurement.id));
+	const scores = eligible.map((curve) => ({ curve, distances: [] as number[], points: 0 }));
+	for (let i = 0; i < scores.length; i++) {
+		const a = scores[i];
+		if (!a) continue;
+		a.points = distanceSummary(a.curve.values, a.curve.values, options)?.points ?? 0;
+		for (let j = i + 1; j < scores.length; j++) {
+			const b = scores[j];
+			if (!b) continue;
+			const d = distanceSummary(a.curve.values, b.curve.values, options);
+			if (d) {
+				a.distances.push(d.distance);
+				b.distances.push(d.distance);
+			}
+		}
+	}
+	const anchor = scores
+		.map((s) => ({ ...s, typical: s.distances.length ? median(s.distances) : Infinity }))
+		.sort(
+			(a, b) =>
+				b.distances.length - a.distances.length ||
+				a.typical - b.typical ||
+				b.points - a.points ||
+				a.curve.measurement.id.localeCompare(b.curve.measurement.id)
+		)[0]?.curve;
 	if (!anchor) return null;
 	const aligned: IndexedCurve[] = [];
-	for (const curve of curves) {
-		const d = responseDistance(curve.values, anchor.values, { frequencies });
+	for (const curve of [anchor, ...eligible.filter((c) => c !== anchor)]) {
+		const d = distanceSummary(curve.values, anchor.values, options);
 		if (d)
 			aligned.push({
 				measurement: curve.measurement,
@@ -85,7 +116,8 @@ export function buildPartitionIndex(
 	catalog: Catalog,
 	partition: Partition,
 	pack: CurvePack,
-	harmonise = false
+	harmonise = false,
+	sourceIds?: readonly string[]
 ): PartitionIndex {
 	if (pack.kind !== 'rank' || pack.partition !== partition.id || pack.points !== RANK_SIZE)
 		throw new Error('Rank pack does not match partition/grid');
@@ -93,12 +125,17 @@ export function buildPartitionIndex(
 	const metadata = new Map(
 		catalog.measurements.filter((m) => m.partition === partition.id).map((m) => [m.id, m])
 	);
+	const excludedSourceProducts = new Set<string>();
 	const measurements = new Map<string, IndexedCurve>();
 	let harmonised = false;
 	const byProduct = new Map<string, IndexedCurve[]>();
 	for (const curve of pack.curves) {
 		const measurement = metadata.get(curve.measurementId);
 		if (!measurement || curve.channel !== 'avg') continue;
+		if (sourceIds && !sourceIds.includes(measurement.sourceId)) {
+			excludedSourceProducts.add(measurement.productId);
+			continue;
+		}
 		if (measurements.has(measurement.id)) throw new Error('Duplicate rank measurement');
 		const offset = harmonise ? statistics?.sourceOffsets[measurement.sourceId] : undefined;
 		const values = Float64Array.from(curve.values, (v, i) => {
@@ -151,5 +188,15 @@ export function buildPartitionIndex(
 	candidates.forEach((c, i) => {
 		matrix.set(c.values, i * RANK_SIZE);
 	});
-	return { partition, statistics, harmonised, candidates, products, measurements, matrix };
+	return {
+		partition,
+		statistics,
+		harmonised,
+		candidates,
+		products,
+		measurements,
+		matrix,
+		sourceIds,
+		excludedSourceProducts
+	};
 }
