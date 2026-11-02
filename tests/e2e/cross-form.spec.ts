@@ -8,9 +8,20 @@ const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) a
 const catalog = JSON.parse(
 	gunzipSync(readFileSync(`static/data/${manifest.version}/catalog-headphone.json.gz`)).toString()
 ) as Catalog;
-const hd600 = catalog.products.find((product) => product.id === 'p-d579af27c01cc5f9baa0');
-const mv1 = catalog.products.find((product) => product.id === 'p-22a64e04ddf0f1eed442');
-if (!hd600 || !mv1) throw new Error('Cross-form fixtures require the published HD 600 and MDR-MV1.');
+function fixtureProduct(data: Pick<Catalog, 'products' | 'redirects'>, id: string) {
+	const current = data.products.find((product) => product.id === id);
+	if (current) return current;
+	const aliases = data.redirects?.products;
+	const target = aliases && Object.hasOwn(aliases, id) ? aliases[id] : undefined;
+	const redirected = data.products.find((product) => product.id === target);
+	if (!redirected)
+		throw new Error(
+			`Cross-form fixture product ${id} has no current product or valid published product redirect in catalog ${manifest.version}.`
+		);
+	return redirected;
+}
+const hd600 = fixtureProduct(catalog, 'p-d579af27c01cc5f9baa0');
+const mv1 = fixtureProduct(catalog, 'p-22a64e04ddf0f1eed442');
 const hdId = hd600.id,
 	mvId = mv1.id;
 const hdName = `${hd600.brand} ${hd600.model}`;
@@ -55,6 +66,19 @@ test.afterEach(async ({ page }) => {
 	await page.unrouteAll({ behavior: 'wait' });
 });
 
+test('fixture products prefer current IDs, follow retired IDs and reject missing redirect targets', () => {
+	const fixture = {
+		products: [hd600, mv1],
+		redirects: { products: { retired: hdId, [hdId]: mvId, broken: 'absent-target' }, measurements: {} }
+	};
+	expect(fixtureProduct(fixture, hdId)).toBe(hd600);
+	expect(fixtureProduct(fixture, 'retired')).toBe(hd600);
+	for (const id of ['missing', 'broken'])
+		expect(() => fixtureProduct(fixture, id)).toThrow(
+			`Cross-form fixture product ${id} has no current product or valid published product redirect`
+		);
+});
+
 test('Discover follows a misfiled headphone link without adding history or losing its one-time named note', async ({
 	page
 }) => {
@@ -89,7 +113,7 @@ test('Explore and Compare open the other catalog and retain product, measurement
 	page
 }) => {
 	await page.goto('/explore?product=misfiled-mv1&unknown=keep#main');
-	await expect(page.getByRole('heading', { name: 'MDR-MV1', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: mv1.model, exact: true })).toBeVisible();
 	expect(new URL(page.url()).searchParams.get('form')).toBe('headphones');
 	expect(new URL(page.url()).searchParams.get('product')).toBe(mvId);
 	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
