@@ -61,7 +61,7 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
   the worker. Requests contain ids/settings; results are plain data with typed arrays copied through
   structured clone, so the worker's cached curves are not detached. Uploads stay in worker memory and
   are never sent to a server. Upload-to-dataset comparisons require the caller to choose the rig.
-- **Caching.** Dataset files live under a content-hashed version path and are served immutable;
+- **Caching.** Dataset files live under a content-hashed version path and are served immutable (`static/_headers`);
   `manifest.json` is revalidated by the browser HTTP cache. The service pins its first manifest for
   its lifetime; dispose/recreate to pick up a new dataset. Decoded reference targets, catalogs, rank packs and indexes
   stay in worker memory; decoded detail shards use an eight-shard LRU (configurable in the pure
