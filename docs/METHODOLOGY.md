@@ -117,11 +117,20 @@ separate evidence of sensitivity, never extra independent reviewers or extra pop
 3. Give each product one consensus curve, align those product curves to a common anchor by LS offset,
    and take the per-frequency median to obtain the population curve. This describes the dataset's
    measured product distribution, not an ideal target or a population of listeners.
-4. `validateSourceOffsets` removes the **entire held-out product** from training, estimates offsets
-   again, and reports mean pairwise same-product cross-source D before/after correction, pair count
-   and whether the mean improved. Unseen source offsets leave measurements unchanged. It does not
+4. `validateSourceOffsets(products, frequencies?, shrinkage=10, foldCount=5)` uses deterministic
+   **K-fold cross-validation by product** (K≥2). A product's fold is unsigned FNV-1a over its id's
+   UTF-16 code units, modulo K (initial hash 2166136261, multiplier 16777619). Every product in the
+   held-out fold is excluded from offset estimation, smoothing and shrinkage support. Input products
+   are sorted by id for reproducible accumulation; equal ids always stay in the same fold. Hashing is
+   stable but does not guarantee equally sized folds; empty folds are reported, not trained.
+   Each fold and the overall result report mean pairwise same-product D before/after correction,
+   pair count, mean and **median per-pair improvement** (D_before−D_after, positive is better), and
+   whether mean distance improved. Folds also report training and held-out product counts. Overall
+   summaries pool all valid pairs: they are not unweighted averages of fold means or fold medians.
+   No pairs gives null summaries. Unseen source offsets leave measurements unchanged. It does not
    silently enable harmonisation: real held-out improvement is needed for that product decision.
-   Validation recomputes training per product and is intended for build-time use, not the ranking loop.
+   Training runs at most K times instead of P times; with K fixed, work no longer grows quadratically
+   in product count (robust medians still require sorting). This remains a build-time operation.
 5. Fit variants, when supplied, get their own aligned MAD spread and mean D to their median. These
    describe sensitivity within the available measurements, not a model of any user's fit.
 
@@ -183,6 +192,35 @@ Final lower-is-better score = **best taste fit + sum of dislike penalties**. It 
 **not dB** or a calibrated liking probability. Fit, ordinary dB distances and every penalty stay
 separate. Explanations include closest like, signed band matches/differences, constraint traits and
 satisfaction/violation/unknown status, >8 kHz caution and bands with mean σ>2 dB.
+
+**Penalty scale is an explicit design choice.** Fit is a tolerance-weighted response distance in dB.
+Directional penalties use the numerical dB value of h and contribute strength·h²: approximately
+quadratic in the adverse dB excess beyond the margin, not another response distance. The implicit
+scale is one added score unit per squared dB, so a penalty of 1 ranks like adding 1 dB to fit. This
+is heuristic trade-off scaling, not a physical unit conversion or a listener-validated exchange rate.
+Near-duplicate penalties are bounded by **strength dB-equivalent** on that same additive scale (at
+most the score increment of adding strength dB to fit, reached at D=0). They do not grow quadratically.
+For one constraint at strength=1:
+
+| Violation beyond the 0.5 dB margin, z | Adverse trait excess over disliked item | Added score, h(z)² |
+| ------------------------------------: | --------------------------------------: | -----------------: |
+|                                  1 dB |                                  1.5 dB |              0.514 |
+|                                  2 dB |                                  2.5 dB |              2.764 |
+|                                  4 dB |                                  4.5 dB |             13.349 |
+
+Multiply these increments by strength (e.g. half at strength=.5), and sum across constraints. At
+or below the margin the increment is exactly zero. The UI should show fit in dB and penalties as
+separate **score increments**, rather than label the final score “dB distance.”
+
+`rankTastePacked` scans an N×120 float32 matrix with scalar two-pass distances and a size-K max-heap.
+`buildTasteModel` prepares taste eligibility, weights, disliked trait levels, regional sample indices
+and the narrow-peak smoothing kernel once; the scan allocates no per-candidate curves, records or
+explanations. Regional traits are evaluated directly on packed rows; sibilance smooths only the
+required 5–9 kHz samples using the same finite-neighbour kernel as the full scorer. The scan computes
+only best-taste fit and constraint penalties (plus the full scorer's ordinary-weight overlap check).
+Only the K winners receive complete `TasteFit` explanations via `scoreTasteCandidate`. Ties retain
+input order; missing comparisons are excluded under the same rules. Treat built models and rated
+curves as immutable; use `correctTaste` for centre edits, which preserve prepared eligibility.
 
 Confidence is qualitative. Moderate requires ≥3 positives in **every** taste, median within-taste
 D≤1.5 dB, mean σ≤2 dB below 8 kHz, and no conflicts. Strong additionally requires ≥5 per taste, an

@@ -7,9 +7,12 @@ identities, an independent complex transfer-function evaluation, known synthetic
 and generated symmetry/offset-invariance properties (fast-check). Controlled taste cases cover
 similar vs dissimilar likes, directional dislike plateaus, fit-only exclusion, conflicts, corrections,
 uncertainty and support. Cross-source tests exercise robust pooling, level removal, shrinkage and
-leave-product-out leakage prevention. PEQ tests include notch avoidance and summed treble caps.
+held-out-fold leakage prevention, stable hash assignment, unequal-fold aggregation and median
+pair improvements. Randomised packed taste rankings match exhaustive full explanations across all
+dislike reasons, multiple tastes, corrected centres, missing data, zero weights and input-order ties.
+PEQ tests include notch avoidance and summed treble caps.
 
-`pnpm test` currently passes 41 tests in five files, including the existing smoothing tests. This
+`pnpm test` currently passes 47 tests in five files, including the existing smoothing tests. This
 establishes numerical behaviour for the exercised cases, not perceptual equivalence or real-data
 recommendation quality. No real-source held-out result has been measured in this lane.
 
@@ -25,12 +28,14 @@ of timings. Ops/s means candidates ranked or curves fitted, not entire 30,000-it
 
 Measured 2026-11-02, Linux, AMD Ryzen 7 9800X3D, Node v26.12.1:
 
-| Workload                                            |       ms |     ops/s |
-| --------------------------------------------------- | -------: | --------: |
-| Single-reference rank, 30,000 candidates            |    12.49 | 2,401,531 |
-| Taste rank, 30,000 candidates, 3 likes + 2 dislikes |   798.24 |    37,583 |
-| PEQ fit, 1 curve                                    |    34.80 |        29 |
-| PEQ fit, 50 curves                                  | 1,467.16 |        34 |
+| Workload                                                   |       ms |     ops/s |
+| ---------------------------------------------------------- | -------: | --------: |
+| Single-reference rank, 30,000 candidates                   |    12.48 | 2,402,986 |
+| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes |    64.07 |   468,253 |
+| PEQ fit, 1 curve                                           |    34.28 |        29 |
+| PEQ fit, 50 curves                                         | 1,517.14 |        33 |
 
-Checksum: 6.091697. The packed single-reference scan allocates only for the K winners; full taste
-ranking currently constructs explanations for every candidate, a known optimisation opportunity.
+Checksum: 6.091697 (unchanged from the exhaustive scorer). Both packed ranking scans construct full
+explanations only for the K winners. Packed taste ranking replaces the prior 798.24 ms exhaustive
+explanation workload with a 64.07 ms scalar scan plus winner explanations (~12.5× faster here, below
+the 100 ms target). Warm-up now runs a full packed taste scan, not 100 exhaustive candidates.
