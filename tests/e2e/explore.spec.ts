@@ -6,6 +6,15 @@ import { expect, test } from '@playwright/test';
 const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
 mkdirSync(shots, { recursive: true });
 
+test('catalog search preserves exact-match relevance ahead of alphabetical prefix matches', async ({
+	page
+}) => {
+	await page.goto('/explore');
+	await page.getByRole('searchbox', { name: 'Filter IEMs' }).fill('hexa');
+	await expect(page.locator('.catalog-row').first().getByRole('heading')).toHaveText('Hexa');
+	await expect(page.locator('.catalog-row').filter({ hasText: 'Hexad' }).first()).toBeVisible();
+});
+
 for (const theme of ['light', 'dark'] as const) {
 	test.describe(theme, () => {
 		test.use({ colorScheme: theme });

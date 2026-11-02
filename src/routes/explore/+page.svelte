@@ -40,7 +40,9 @@
 					? b.sourceCount - a.sourceCount || a.model.localeCompare(b.model)
 					: sort === 'price'
 						? (a.priceUsd?.[0] ?? Infinity) - (b.priceUsd?.[0] ?? Infinity) || a.model.localeCompare(b.model)
-						: `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`)
+						: query.trim()
+							? 0
+							: `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`)
 			)
 	);
 	let visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));

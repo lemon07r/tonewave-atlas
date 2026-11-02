@@ -23,3 +23,25 @@ test('searches ten thousand products without a dependency or a quadratic catalog
 	expect(search('brnad hexa')).toHaveLength(60);
 	expect(performance.now() - started).toBeLessThan(500);
 });
+
+test('nonblank unsupported text is not treated as an empty query', () => {
+	for (const query of ['ø', '耳机', '---']) expect(productSearch(catalog)(query)).toEqual([]);
+	expect(productSearch(catalog)('  ')).toEqual(catalog);
+});
+
+test('numeric model tokens require exact matches even for long or joined model numbers', () => {
+	const search = productSearch([
+		{ brand: 'Final', model: 'E5000' },
+		{ brand: 'Final', model: 'E4000' },
+		{ brand: 'Moondrop', model: 'Chu 20' }
+	]);
+	expect(search('e6000')).toEqual([]);
+	expect(search('Chu 2')).toEqual([]);
+	expect(search('e5000')).toEqual([{ brand: 'Final', model: 'E5000' }]);
+});
+
+test('honors every pasted search term instead of truncating after twelve', () => {
+	const prefix = Array.from({ length: 12 }, () => 'hexa').join(' ');
+	expect(productSearch(catalog)(`${prefix} impossible`)).toEqual([]);
+	expect(productSearch(catalog)(`${prefix} truthear`)).toEqual([catalog[0]]);
+});

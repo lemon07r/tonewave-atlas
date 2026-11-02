@@ -41,8 +41,8 @@ export function productSearch<T extends { brand: string; model: string }>(produc
 		tokens: searchTokens(`${product.brand} ${product.model}`)
 	}));
 	return (query: string, limit = 60): T[] => {
-		const needles = searchTokens(query).slice(0, 12);
-		if (!needles.length) return products.slice(0, limit);
+		const needles = searchTokens(query);
+		if (!needles.length) return query.trim() ? [] : products.slice(0, limit);
 		return index
 			.flatMap(({ product, order, tokens }) => {
 				let score = 0;
@@ -53,8 +53,8 @@ export function productSearch<T extends { brand: string; model: string }>(produc
 							best = 0;
 							break;
 						}
-						if (token.startsWith(needle)) best = Math.min(best, 0.25);
-						if (needle.length >= 4) {
+						if (!/\d/.test(needle) && token.startsWith(needle)) best = Math.min(best, 0.25);
+						if (needle.length >= 4 && !/\d/.test(needle)) {
 							const bound = needle.length >= 8 ? 2 : 1;
 							const distance = edits(needle, token, bound);
 							if (distance <= bound) best = Math.min(best, distance);
