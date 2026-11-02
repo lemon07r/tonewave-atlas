@@ -31,9 +31,9 @@ test('explains how to start without pretending a curve is loaded', async () => {
 test('renders all series and an accessible octave-resolution table', async () => {
 	const screen = await render(FrChart, { series });
 	await expect.element(screen.getByRole('figure', { name: 'Frequency response' })).toBeVisible();
-	await expect.element(screen.getByRole('button', { name: 'Hide Curve A' })).toBeVisible();
-	await expect.element(screen.getByRole('button', { name: 'Hide Curve B' })).toBeVisible();
-	await expect.element(screen.getByRole('button', { name: 'Hide Reference' })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: /^1\s*Curve A$/ })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: /^2\s*Curve B$/ })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: /^3\s*Reference$/ })).toBeVisible();
 	expect(
 		[...screen.container.querySelectorAll('.legend-row line')].map((line) =>
 			line.getAttribute('stroke-dasharray')
@@ -61,9 +61,9 @@ test('subtracts the selected baseline and toggles series without removing table 
 	await screen.getByText('View chart data', { exact: true }).click();
 	const firstRow = screen.container.querySelector('tbody tr');
 	expect(firstRow?.textContent).toBe('20 Hz+5.0-5.00.0');
-	await screen.getByRole('button', { name: 'Hide Curve A' }).click();
+	await screen.getByRole('button', { name: /^1\s*Curve A$/ }).click();
 	await expect
-		.element(screen.getByRole('button', { name: 'Show Curve A' }))
+		.element(screen.getByRole('button', { name: /^1\s*Curve A$/ }))
 		.toHaveAttribute('aria-pressed', 'false');
 	await expect.element(screen.getByRole('columnheader', { name: 'Curve A' })).toBeVisible();
 });

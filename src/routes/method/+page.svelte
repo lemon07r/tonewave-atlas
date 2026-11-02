@@ -1,6 +1,38 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { browser } from '$app/env';
+	import { SvelteMap } from 'svelte/reactivity';
+	import { analysis, formFromUrl } from '#lib/atlas.ts';
+	import { catalog, dateLabel, rigLabel } from '#lib/product/data.ts';
+	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
+	let summary = $state.raw<AtlasSummary | null>(null);
+	let counts = $state.raw<Map<string, number>>(new Map());
+	let error = $state('');
+	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
+	let sources = $derived(summary?.sources.filter((s) => s.form === form) ?? []);
+	$effect(() => {
+		const selectedForm = form;
+		let active = true;
+		error = '';
+		summary = null;
+		void Promise.all([analysis().then((service) => service.summary()), catalog(selectedForm)])
+			.then(([data, metadata]) => {
+				if (!active) return;
+				const perSource = new SvelteMap<string, number>();
+				for (const m of metadata.measurements)
+					perSource.set(m.sourceId, (perSource.get(m.sourceId) ?? 0) + 1);
+				summary = data;
+				counts = perSource;
+			})
+			.catch((e: unknown) => {
+				if (active) error = String(e);
+			});
+		return () => {
+			active = false;
+		};
+	});
 </script>
 
 <svelte:head
@@ -47,13 +79,26 @@
 				<span class="eyebrow">02 / Fair comparisons</span>
 				<h2>Compare like with like.</h2>
 				<p>
-					Different measurement rigs can give different responses for the same product. Matching will keep rig
-					families separate rather than quietly treating a 711-family coupler and a B&K 5128 as
-					interchangeable.
+					Matching measures response distance: the weighted RMS difference in measured shape, in dB. Lower
+					means closer on the rig, not a percentage match or a prediction of enjoyment. A weighted
+					least-squares level offset removes differences in overall measurement level before comparison.
 				</p>
 				<p>
-					The difference view subtracts a selected baseline at each frequency. Zero means equal measured level
-					at that point; positive means more, negative means less. It does not automatically align the curves.
+					Balanced weighting gives less influence to uncertain high frequencies. Bass, vocal and treble focus
+					change the weights, not the underlying measurements. Current partition statistics are absent;
+					matching uses a conservative default reliability profile, not measured error bars.
+				</p>
+				<p>
+					A product reference is the aligned, per-frequency median of its default measurements within one rig
+					partition. Tunings are separate opt-in candidates, not quietly averaged into the default. Fit and
+					unit variants remain inspectable evidence of variation. A per-reviewer distance range is the
+					observed minimum and maximum distance to the reference, not a confidence interval.
+				</p>
+				<p>
+					711-family and B&K 5128 rigs are never pooled or ranked together; headphone rigs have separate
+					partitions too. Compare can explicitly overlay different rigs, with a caution and rig labels. Its
+					curves first receive the same balanced, reliability-weighted level offset to the first curve. The
+					difference view then subtracts the selected baseline point by point, without an extra alignment.
 				</p>
 			</section>
 			<section id="uncertainty">
@@ -65,9 +110,9 @@
 					the same acoustic system.
 				</p>
 				<p>
-					Where supplied, shaded envelopes show lower and upper bounds alongside a curve. Their meaning must
-					come from the source or analysis that produced them; a band is not automatically a confidence
-					interval.
+					Product shading shows the minimum and maximum of the aligned default measurements when at least two
+					sources contribute. It describes the available observations, not the range of all units or a
+					statistical confidence interval. A single source does not establish certainty.
 				</p>
 				<p>
 					Frequency response alone does not describe distortion, spatial perception or every aspect of a
@@ -78,25 +123,76 @@
 				<span class="eyebrow">04 / Sources & attribution</span>
 				<h2>The measurements belong in the story.</h2>
 				<p>
-					No measurement dataset is connected in this preview. When data is available, each curve must retain
-					its source, rig, variant and processing details. PNG exports include the attribution supplied with
-					the chart.
+					The catalog draws from public squig.link reviewer databases. Each measurement retains its source,
+					rig, original files, variant and processing history. Product pages link to that evidence, and PNG
+					exports retain curve attribution. Hardware and reviewer-listed USD prices are not independently
+					verified.
 				</p>
 				<p>
-					The planned catalog draws on publicly shared measurement databases. Public availability is not
-					permission to erase authorship: source links and reuse terms must travel with the data. A product
-					with several sources should show their disagreement, not only its most flattering curve.
+					Public availability is not a redistribution licence. Unless explicitly granted, permission is
+					“public, not explicitly licensed.” Attribution is not a substitute for permission. We publish
+					resampled curves, not raw text files, and honour source-owner removal requests through exclusions
+					and a rebuild. For correction, exclusion or takedown, <a
+						href="https://github.com/lemon07r/tonewave-atlas/issues">open a GitHub issue</a
+					>.
+				</p>
+				{#if error}<Notice kind="caution" title="Source data unavailable">{error}</Notice
+					>{:else if !summary}<p role="status">Loading dataset sources…</p>{:else}
+					<p class="small mono">
+						Dataset {summary.version}<br />Built {new Date(summary.builtAt).toISOString().slice(0, 10)} · {form ===
+						'headphone'
+							? 'Headphone'
+							: 'IEM'} sources
+					</p>
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex (The overflowing source table must be keyboard-scrollable.) -->
+					<div class="source-table" role="region" aria-label="Scrollable measurement sources" tabindex="0">
+						<table aria-label="Measurement data sources">
+							<thead
+								><tr
+									><th scope="col">Source</th><th scope="col">Rig / partition</th><th scope="col"
+										>Measurements</th
+									><th scope="col">Crawled</th><th scope="col">Permission</th></tr
+								></thead
+							><tbody
+								>{#each sources as source (source.id)}<tr
+										><th scope="row"><a href={source.url} rel="external">{source.name}</a></th><td
+											>{source.rig || rigLabel(source.partition)}{source.rigInferred ? ' (inferred)' : ''}<br
+											/><span class="mono">{source.partition}</span></td
+										><td>{counts.get(source.id) ?? 0}</td><td>{dateLabel(source.crawledAt)}</td><td
+											>{source.permission}</td
+										></tr
+									>{/each}</tbody
+							>
+						</table>
+					</div>
+				{/if}
+				<p>
+					Full definitions: <a href="https://github.com/lemon07r/tonewave-atlas/blob/main/docs/METHODOLOGY.md"
+						>methodology and maths</a
+					>
+					·
+					<a href="https://github.com/lemon07r/tonewave-atlas/blob/main/docs/DATA_SOURCES.md"
+						>data sources and rights</a
+					>.
 				</p>
 			</section>
 			<section id="privacy">
 				<span class="eyebrow">05 / Local by design</span>
 				<h2>Your taste stays yours.</h2>
 				<p>
-					There is no account and no tracking. Analysis is designed to run in your browser. The theme
-					preference is stored locally; taste profiles and shareable comparison settings will be connected in
-					the next phase.
+					There is no account and no tracking. Curve analysis and EQ fitting run in your browser’s worker.
+					Uploaded measurement text is never sent to a server. Theme preference stays locally; comparison
+					product and measurement IDs, channel, smoothing and baseline can be shared in the URL.
 				</p>
-				<a class="method-back" href={resolve('/')}>Back to Discover <span aria-hidden="true">→</span></a>
+				<p>
+					Product-to-product EQ fits a constrained 48 kHz filter response. Its before/after distance is the
+					level-aligned RMS residual over 20 Hz–10 kHz. Notches and high frequencies are treated
+					conservatively. This approximates another product’s measured curve on the same rig, not its sound in
+					your ear.
+				</p>
+				<a class="method-back" href={resolve(`/${form === 'headphone' ? '?form=headphones' : ''}`)}
+					>Back to Discover <span aria-hidden="true">→</span></a
+				>
 			</section>
 		</article>
 	</div>
@@ -143,6 +239,9 @@
 		border-bottom: var(--hairline) solid var(--line);
 		scroll-margin-top: 32px;
 	}
+	article {
+		min-width: 0;
+	}
 	article section:last-child {
 		border: 0;
 		margin-bottom: 0;
@@ -160,6 +259,26 @@
 	article :global(.notice) {
 		margin-top: 24px;
 	}
+	.source-table {
+		overflow-x: auto;
+		max-width: 100%;
+		margin: 24px 0;
+	}
+	table {
+		border-collapse: collapse;
+		width: 100%;
+		font-size: var(--text-xs);
+	}
+	th,
+	td {
+		text-align: left;
+		padding: 12px 8px;
+		border-bottom: 1px solid var(--line);
+		vertical-align: top;
+	}
+	td .mono {
+		overflow-wrap: anywhere;
+	}
 	.method-back {
 		display: inline-block;
 		margin-top: 16px;
@@ -173,7 +292,7 @@
 	}
 	@media (max-width: 700px) {
 		.method-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 			gap: 36px;
 			margin-top: 36px;
 		}
