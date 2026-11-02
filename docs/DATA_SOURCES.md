@@ -135,6 +135,16 @@ report; the build log prints a per-partition summary of support, band spread and
 
 Blank/placeholder identities and unresolved leading markers are quarantined. Numeric models such as
 Binary 1900 are legitimate when their maker is named; wholly symbolic/numeric identities are not.
+Complete source-chain category names (`Test`, `DAC Test`, `Amp Test`, `Cable Test`, source-chain
+tests/comparisons) and models explicitly declared as DACs, amplifiers or dongles are non-products.
+This is not a substring ban: named models containing `Test` or named `Reference`, and transducer
+setups such as `Model with DAC`, remain. `HP Test`/`Headphone Test` is instead a headphone category:
+its named measurements stay in a source-isolated headphone partition, with the category removed from
+the maker field. Known maker prefixes can be recovered; otherwise the complete source name stays
+source-local unbranded, without guessing an equivalence to another named headphone. Quarantined
+non-products have no redirects.
+Identity checks also run before per-file modification metadata is appended; a modified dongle remains
+a non-product. A setup qualifier only protects a transducer subject, not `DAC with amplifier`.
 Explicit fake/replica/counterfeit names or file descriptors, clone/copy product names, and unidentified
 one-character custom names are non-products. Clone accessories alone do not make the product fake.
 Earphones Archive's `*` is a mixed index category, not a uniform fake flag (its index, config and page
@@ -225,6 +235,14 @@ Recognized tip vocabulary includes stock/standard/original, silicone/foam, ear/t
 CP codes and ABP-T; SpinFit W1/Omni, Azla/Sedna Short/Light/Crystal/Origin, Divinus Velvet, Baroque,
 Moondrop Spring, Final E, JVC Spiral Dot, Sennheiser foam, TENNMAK SoFoam and KZ tips. Other names,
 colors and codes are not assumed neutral merely because the same suffix also contains “tip”.
+
+A terminal parenthesized `Depth Test`/`Insertion Depth Test`, optionally preceded by a declared filter,
+folds into an already accepted exact maker/model parent as insertion-fit metadata. Filter and numeric
+depth labels survive, including the first file's depth; no parent is invented when none exists.
+A same-source unsuffixed default takes precedence over a depth experiment regardless of entry order.
+Depth-only sources retain the existing coverage fallback, with explicit fit labels rather than an
+assumption of stock equivalence. Filename depths survive generic suffixes; attribution stays in filenames,
+not display labels.
 
 Before rig evidence and statistics, labelled switch defaults are reconciled **per product**, with
 one vote per source's unambiguous existing default state. A unique plurality selects the common state.
@@ -325,12 +343,14 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `47e17d0fbadf1919b2caade0`: **9,614 products / 40,821 measurements / 138 databases / 118 publishers**.
-Its **286 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
-100 invalid identities/markers/unidentified customs, 24 target/calibration/delta/sandbox and two population
-averages; these are candidates, not counts of previously published removals. **86 unresolved state
+Build `bd5618f51ff28af2d3f6d189`: **9,610 products / 40,802 measurements / 138 databases / 118 publishers**.
+Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
+87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
+24 target/calibration/delta/sandbox and two population averages; these are candidates, not counts of
+previously published removals. **86 unresolved state
 groups** now have one source-order default each; **zero duplicate source defaults** remain. Against
-published `ba2578bd5a41b28acce7e040`, catalogs resolve **600 retired product / 862 retired measurement IDs**;
-their complete inherited maps contain **622 product / 887 measurement redirects**. LOCO reports
+published `47e17d0fbadf1919b2caade0`, catalogs resolve **four retired product / three retired measurement IDs**;
+the three quarantined products' **19 measurements** have no redirect. Complete inherited maps contain
+**626 product / 890 measurement redirects**. LOCO reports
 **37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.

@@ -48,6 +48,71 @@ const product = (id = 'parent', model = 'Volume S'): Product => ({
 	measurementIds: []
 });
 
+describe('insertion-depth identity folds', () => {
+	const products = () =>
+		new Map([
+			['parent', product('parent', 'Model')],
+			['depth', product('depth', 'Model (Green Filter Depth Test)')]
+		]);
+	it.each([true, false])(
+		'keeps the same-source unsuffixed default regardless of depth-first order: %s',
+		(depthFirst) => {
+			const depth = row('source', 'Model Depth -1', true, 'depth');
+			const parent = row('source', 'Model');
+			depth.measurement.variant.label = '';
+			parent.measurement.variant.label = '';
+			mergeSwitchIdentities(products(), depthFirst ? [depth, parent] : [parent, depth]);
+			expect(parent.measurement.variant).toMatchObject({ kind: 'default', isDefault: true });
+			expect(depth.measurement.variant).toMatchObject({ kind: 'fit', isDefault: false });
+			expect(depth.measurement.variant.label).toContain('Depth -1');
+		}
+	);
+	it('retains distinct filename depths behind identical generic suffixes', () => {
+		const rows = [
+			row('source', 'Model'),
+			row('source', 'Model Depth -1', true, 'depth'),
+			row('source', 'Model Depth -2', false, 'depth', 'fit')
+		];
+		for (const r of rows.slice(1)) r.measurement.variant.label = 'Insertion Depth';
+		mergeSwitchIdentities(products(), rows);
+		for (const r of rows.slice(1)) {
+			expect(r.measurement.variant.label).toContain(r.measurement.variant.file);
+			expect(r.measurement.variant.label).toContain('Insertion Depth');
+		}
+	});
+	it('strips attribution from an unlabeled depth filename without changing the file', () => {
+		const depth = row('source', 'Model Depth -1 (by Reviewer)', true, 'depth');
+		depth.measurement.variant.label = '';
+		mergeSwitchIdentities(products(), [row('source', 'Model'), depth]);
+		expect(depth.measurement.variant.label).toBe('Model Depth -1 · Green Filter Depth Test');
+		expect(depth.measurement.variant.file).toBe('Model Depth -1 (by Reviewer)');
+	});
+	it('does not duplicate a filename depth already present in the suffix', () => {
+		const depth = row('source', 'Model Depth -1', false, 'depth', 'fit');
+		depth.measurement.variant.label = 'Model Depth -1';
+		mergeSwitchIdentities(products(), [row('source', 'Model'), depth]);
+		expect(depth.measurement.variant.label).toBe('Model Depth -1 · Green Filter Depth Test');
+	});
+	it.each(['fit', 'unit', 'tuning'] as const)(
+		'retains depth-only source coverage without erasing the %s label or history',
+		(kind) => {
+			const ps = products();
+			const depth = row('depth-only', 'Model Depth -1', false, 'depth', kind);
+			const rows = [row('other-source', 'Model'), depth];
+			mergeSwitchIdentities(ps, rows);
+			finaliseDefaults(ps, rows, []);
+			expect(depth.measurement.variant).toMatchObject({ kind: 'default', isDefault: true });
+			expect(depth.measurement.variant.label).toContain('Depth -1');
+			// A fit-only suffix on a source's only file is promoted while folding; other kinds use the coverage fallback.
+			expect(depth.measurement.provenance.processing).toContain(
+				kind === 'fit'
+					? 'recognized tip/fit identity: Softears Model (Green Filter Depth Test) -> Softears Model; Green Filter Depth Test'
+					: `default coverage: deterministic coverage fallback; previous kind ${kind}; original label retained`
+			);
+		}
+	);
+});
+
 describe('final partition-aware default coverage', () => {
 	const products = () => new Map([['parent', product()]]);
 	it('does not replace existing defaults with an earlier non-default while breaking a tie', () => {
