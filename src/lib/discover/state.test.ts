@@ -51,6 +51,13 @@ test('routes one like, two to four likes, dislikes and five rated products; comf
 	expect(discoveryRoute(likes.slice(0, 1), 'auto')).toBe('similar');
 	for (const n of [2, 3, 4]) expect(discoveryRoute(likes.slice(0, n), 'auto')).toBe('compare');
 	expect(discoveryRoute(likes, 'auto')).toBe('taste');
+	expect(
+		discoveryRoute(
+			[...likes.slice(0, 4), { ...like, productId: 'neutral', rating: 'neutral', strength: 0 }],
+			'auto'
+		)
+	).toBe('taste');
+	expect(soundItems([{ ...like, rating: 'neutral', strength: 0 }])).toEqual([]);
 	expect(discoveryRoute([like, { ...like, productId: 'b', rating: 'dislike' }], 'auto')).toBe('taste');
 	expect(
 		discoveryRoute([like, { ...like, productId: 'b', rating: 'dislike', soundRelated: false }], 'auto')

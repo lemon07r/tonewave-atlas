@@ -86,7 +86,7 @@
 	let octaveIndices = $derived(Array.from({ length: 10 }, (_, i) => Math.floor((i * size) / 10)));
 	const compactRegionLabels = ['Sub', 'Bass', 'Low', 'Vocal', 'Upper', 'Treb.', 'Air'];
 	function colour(index: number, reference: boolean | undefined) {
-		return reference ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
+		return reference && index === 0 ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
 	}
 	function focusSeries(index: number | null) {
 		plot?.setSeries(index === null ? null : index + 1, { focus: true });
@@ -121,7 +121,11 @@
 		const ink = style.getPropertyValue('--muted').trim();
 		const line = style.getPropertyValue('--line').trim();
 		const colours = current.map((curve) =>
-			style.getPropertyValue(curve.reference ? '--muted' : `--curve-${(curve.index % 7) + 1}`).trim()
+			style
+				.getPropertyValue(
+					curve.reference && curve.index === 0 ? '--muted' : `--curve-${(curve.index % 7) + 1}`
+				)
+				.trim()
 		);
 		const range = chartRange(
 			current
@@ -325,7 +329,9 @@
 			let y = chartTop + chartHeight + 24;
 			series.forEach((item, index) => {
 				ctx.lineWidth = item.reference ? 1.5 : 2;
-				ctx.strokeStyle = style.getPropertyValue(item.reference ? '--muted' : `--curve-${(index % 7) + 1}`);
+				ctx.strokeStyle = style.getPropertyValue(
+					item.reference && index === 0 ? '--muted' : `--curve-${(index % 7) + 1}`
+				);
 				ctx.setLineDash(dash(index, item.reference));
 				ctx.beginPath();
 				ctx.moveTo(24, y - 4);

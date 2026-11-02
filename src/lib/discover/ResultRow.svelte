@@ -130,7 +130,9 @@
 			{describeBands(bands)}{#if tradeoff}
 				· versus {referenceNames[0] ?? 'the first reference'}{/if}
 		</p>{/if}
-	{#each prices as price (price)}<p class="price">{price}</p>{/each}
+	{#if prices[0]}<p class="price">{prices[0]}</p>{:else}<p class="price">
+			Reviewer-listed USD price unavailable
+		</p>{/if}
 	<div class="actions">
 		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
 			>{selected ? 'Remove from chart' : 'Show on chart'}</button
@@ -211,6 +213,8 @@
 				</table>
 			</div>{/each}
 		{#if error}<Notice kind="caution">{error}</Notice>{/if}
+		{#if prices.length > 1}<h4>All reviewer-listed USD prices</h4>
+			{#each prices.slice(1) as price (price)}<p class="price-listing">{price}</p>{/each}{/if}
 		<ul class="sources">
 			{#each sources as source (source.url)}<li>
 					<a href={source.url} target="_blank" rel="external noreferrer">{source.label} database</a>
@@ -222,6 +226,10 @@
 </li>
 
 <style>
+	.price-listing {
+		margin-block: 8px;
+		color: var(--muted);
+	}
 	.rating-fields {
 		display: grid;
 		gap: 12px;

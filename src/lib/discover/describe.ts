@@ -16,16 +16,19 @@ export const bandLabels: Record<Band, string> = {
 
 /** Signed candidate-minus-reference band means after the engine's level alignment. */
 export function describeBands(bands: readonly BandDistance[]): string {
-	const phrases = bands.flatMap(({ band, meanDb }) => {
-		if (meanDb === null || !Number.isFinite(meanDb) || Math.abs(meanDb) < WORDING.omit) return [];
-		const magnitude = Math.abs(meanDb);
-		return [
-			{
-				text: `${magnitude < WORDING.slight ? 'slightly ' : magnitude >= WORDING.much ? 'much ' : ''}${meanDb > 0 ? 'more' : 'less'} ${bandLabels[band]}`,
-				lessReliable: band === 'treble' || band === 'air'
-			}
-		];
-	});
+	const phrases = [...bands]
+		.sort((a, b) => b.contribution - a.contribution || Math.abs(b.meanDb ?? 0) - Math.abs(a.meanDb ?? 0))
+		.flatMap(({ band, meanDb }) => {
+			if (meanDb === null || !Number.isFinite(meanDb) || Math.abs(meanDb) < WORDING.omit) return [];
+			const magnitude = Math.abs(meanDb);
+			return [
+				{
+					text: `${magnitude < WORDING.slight ? 'slightly ' : magnitude >= WORDING.much ? 'much ' : ''}${meanDb > 0 ? 'more' : 'less'} ${bandLabels[band]}`,
+					lessReliable: band === 'treble' || band === 'air'
+				}
+			];
+		})
+		.slice(0, 2);
 	const text = phrases.map((phrase) => phrase.text).join(', ');
 	const caveat = phrases.some((phrase) => phrase.lessReliable)
 		? ' · differences above 8 kHz are less reliable'

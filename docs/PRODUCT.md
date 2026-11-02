@@ -13,7 +13,7 @@ invented scores.
 
 ## Principles
 
-1. **One obvious first step.** "Find IEMs that sound like…" → pick one → useful results in seconds.
+1. **One obvious first step.** Add a product you know → give it an explicit rating → inspect measured matches.
 2. **Explain in plain words, back it with numbers.** Every claim ("a little brighter around vocals")
    comes from a calculation the user can expand and inspect.
 3. **Honest uncertainty.** Measurements disagree across rigs, units and insertion depth. Say so where
@@ -26,7 +26,7 @@ invented scores.
 
 ## Information architecture
 
-- **Discover** (home) — similar-to search and the taste profile (likes, dislikes, reasons). Results
+- **Discover** (home) — one reference-and-preference workspace (explicit ratings and optional reasons). Results
   with explanations, filters (budget, rig, source, variant kind) and focus presets.
 - **Compare** — up to ~6 curves with difference view, normalisation, smoothing, region overlays,
   L/R/variants, targets, image export, shareable URL.
@@ -39,15 +39,17 @@ account area.
 
 ## Core flows
 
-1. _Similar to one IEM_: search → pick product (and variant if it matters) → ranked matches with
-   "why" and "where it differs" → compare or add to profile.
-2. _Taste profile_: add several IEMs as love / like / neutral / dislike, optional reasons → the model
+1. _Start a workspace_: search → add an unrated product → choose Like/Love (and variant if it matters)
+   → measured response matches with differences → compare, chart or rate a result with Undo.
+2. _Refine preferences_: add products as unrated, then explicitly love / like / neutral / dislike, with optional reasons → the model
    summarises what the likes share, shows separate tastes if they differ, applies dislike reasons as
    directional constraints → personalised ranking with per-result explanations → user can correct the
    inferred preferences directly.
 3. _Region focus_: "match mainly the bass/mids", "avoid extra treble energy", custom weights.
-4. _Several references_: show trade-offs (Pareto set) instead of averaging them into a target that
-   resembles none.
+4. _Several references_: two to four sound-related likes default to trade-offs (mean/minimax and Pareto
+   filtering), with an optional taste view. Dislikes or five rated items use the taste model.
+   Fit/comfort-only evidence stays out of sound ranking. A local measurement can be a single reference
+   after choosing its rig; its contents never enter storage or the URL.
 5. _EQ path_: how close a cheaper IEM gets to a reference with a few PEQ filters; export filters.
 
 ## Competitive landscape (Nov 2026)

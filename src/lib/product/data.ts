@@ -7,7 +7,7 @@ import type { Channel } from '#lib/compare/url.ts';
 export function dateLabel(value: string): string {
 	const date = new Date(value);
 	return Number.isNaN(date.valueOf())
-		? value
+		? value.trim() || 'date unknown'
 		: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 export function priceListings(

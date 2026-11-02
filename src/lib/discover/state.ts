@@ -102,7 +102,7 @@ export function discoveryRoute(
 	if (
 		view === 'taste' ||
 		active.some((item) => item.rating === 'dislike') ||
-		active.filter((item) => item.rating !== 'neutral').length >= 5
+		items.filter((item) => item.soundRelated && item.rating !== 'unrated').length >= 5
 	)
 		return 'taste';
 	return likes.length === 1 ? 'similar' : 'compare';

@@ -16,6 +16,7 @@
 	import { analysis, productList, formFromUrl } from '#lib/atlas.ts';
 	import { channelSpread, mainPartition } from '#lib/product/data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { productSearch } from '#lib/product-search.ts';
 	import {
 		parseCompare,
 		serialiseCompare,
@@ -56,13 +57,10 @@
 	let baseline = $state('');
 	const details = new SvelteMap<string, Promise<ProductDetail>>();
 	const weights = makeWeights(GRID);
+	let search = $derived(productSearch(products));
 	let items = $derived(
-		products
-			.filter(
-				(p) =>
-					!selectionState.products.includes(p.id) &&
-					`${p.brand} ${p.model}`.toLowerCase().includes(query.toLowerCase())
-			)
+		search(query, 60)
+			.filter((p) => !selectionState.products.includes(p.id))
 			.slice(0, 40)
 			.map((p) => ({
 				id: p.id,
@@ -290,9 +288,10 @@
 {:else}
 	<div class="page">
 		<div class="page-heading">
-			<p class="eyebrow">Look closer. Listen for yourself.</p>
 			<h1>Compare responses.</h1>
-			<p>Measured shapes, side by side. Add up to six curves; a curve is not a verdict.</p>
+			<p>
+				Add up to six products or measurements. Inspect differences, select variants and share the overlay.
+			</p>
 		</div>
 		<div class="compare-grid">
 			<section class="stack" aria-label="Comparison selection">

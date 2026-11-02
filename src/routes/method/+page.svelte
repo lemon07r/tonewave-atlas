@@ -80,7 +80,6 @@
 		</nav>
 		<article>
 			<section id="reading">
-				<span class="eyebrow">01 / Reading a response</span>
 				<h2>What does a curve tell you?</h2>
 				<p>
 					A frequency-response curve shows the measured level at different frequencies. The left is bass; the
@@ -97,7 +96,6 @@
 				>
 			</section>
 			<section id="comparison">
-				<span class="eyebrow">02 / Fair comparisons</span>
 				<h2>Compare like with like.</h2>
 				<p>
 					Matching measures response distance: the weighted RMS difference in measured shape, in dB. Lower
@@ -137,7 +135,6 @@
 				</p>
 			</section>
 			<section id="uncertainty">
-				<span class="eyebrow">03 / Honest uncertainty</span>
 				<h2>Precision is not certainty.</h2>
 				<p>
 					Seal, tips, insertion depth, unit variation and measurement setup can all change a curve.
@@ -155,7 +152,6 @@
 				</p>
 			</section>
 			<section id="sources">
-				<span class="eyebrow">04 / Sources & attribution</span>
 				<h2>The measurements belong in the story.</h2>
 				<p>
 					The catalog draws from public squig.link reviewer databases. Each measurement retains its source,
@@ -224,7 +220,6 @@
 				</p>
 			</section>
 			<section id="privacy">
-				<span class="eyebrow">05 / Local by design</span>
 				<h2>Your taste stays yours.</h2>
 				<p>
 					There is no account and no tracking. Curve analysis and EQ fitting run in your browser’s worker.

@@ -5,6 +5,7 @@
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
 	import { priceListings } from '#lib/product/data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { productSearch } from '#lib/product-search.ts';
 	import ProductView from '#lib/product/ProductView.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import Skeleton from '#lib/components/Skeleton.svelte';
@@ -24,13 +25,10 @@
 	let currentPage = $state(0);
 	const pageSize = 40;
 	let brands = $derived([...new Set(products.map((p) => p.brand))].sort((a, b) => a.localeCompare(b)));
+	let search = $derived(productSearch(products));
 	let filtered = $derived(
-		products
-			.filter(
-				(p) =>
-					(!brand || p.brand === brand) &&
-					`${p.brand} ${p.model}`.toLowerCase().includes(query.trim().toLowerCase())
-			)
+		search(query, products.length)
+			.filter((p) => !brand || p.brand === brand)
 			.sort((a, b) =>
 				sort === 'reviewers'
 					? b.sourceCount - a.sourceCount || a.model.localeCompare(b.model)
@@ -101,8 +99,7 @@
 	{:else if detail}<ProductView {detail} {products} {headphones} sources={summary?.sources ?? []} />
 	{:else if !error}
 		<div class="page-heading">
-			<p class="eyebrow">Follow the evidence</p>
-			<h1>A catalog of measured sound.</h1>
+			<h1>Explore the measurements.</h1>
 			<p>
 				Find a product. See every available measurement, variant and source — including where they disagree.
 			</p>

@@ -21,13 +21,13 @@ test('theme changes synchronize browser chrome with the active paper colour', as
 	localStorage.removeItem('tonewave-theme');
 	const meta = document.createElement('meta');
 	meta.name = 'theme-color';
-	meta.content = '#f6f4ee';
+	meta.content = '#f4f0e6';
 	document.head.append(meta);
 	try {
 		const screen = await render(AppShell, { children });
 		await screen.getByRole('button', { name: 'Theme: system. Switch to light theme' }).click();
 		await screen.getByRole('button', { name: 'Theme: light. Switch to dark theme' }).click();
-		expect(meta.content).toBe('#1c211f');
+		expect(meta.content).toBe('#171b25');
 		await screen.getByRole('button', { name: 'Theme: dark. Switch to system theme' }).click();
 		expect(meta.content).toBe(getComputedStyle(document.documentElement).getPropertyValue('--paper').trim());
 	} finally {

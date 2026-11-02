@@ -34,7 +34,9 @@ export function strength(rating: WorkspaceItem['rating']): number {
 /** Unrated and non-sound evidence must never enter an engine query. */
 export function soundItems(items: readonly WorkspaceItem[]): TasteItem[] {
 	return items.flatMap((item) =>
-		item.rating !== 'unrated' && item.soundRelated ? [{ ...item, rating: item.rating }] : []
+		item.rating !== 'unrated' && item.rating !== 'neutral' && item.soundRelated
+			? [{ ...item, rating: item.rating }]
+			: []
 	);
 }
 const record = (value: unknown): value is Record<string, unknown> =>

@@ -33,4 +33,11 @@
 		border-radius: var(--radius);
 		font-size: var(--text-sm);
 	}
+	.toast p {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.toast :global(button) {
+		flex-shrink: 0;
+	}
 </style>

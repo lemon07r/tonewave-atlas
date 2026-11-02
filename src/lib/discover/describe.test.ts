@@ -11,10 +11,10 @@ test('uses editorial thresholds with exact boundary and signed-direction expecta
 		'No band mean differs by 0.75 dB or more where measured.'
 	);
 	expect(describeBands([band(0.75, 'sub-bass'), band(-1.999, 'presence')])).toBe(
-		'Slightly more sub-bass, slightly less presence'
+		'Slightly less presence, slightly more sub-bass'
 	);
 	expect(describeBands([band(2), band(-3.999, 'mid'), band(4, 'low-mid')])).toBe(
-		'More bass, less mids, much more lower mids'
+		'Much more lower mids, less mids'
 	);
 	expect(describeBands([band(-4, 'air')])).toBe('Much less air · differences above 8 kHz are less reliable');
 	expect(describeBands([band(NaN)])).toContain('No band mean');
