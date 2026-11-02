@@ -4,17 +4,12 @@
  */
 export const GRID_POINTS_PER_OCTAVE = 24;
 export const GRID_SIZE = 240;
-export const GRID_F0 = 20;
+const GRID_F0 = 20;
 
 export const GRID: Float64Array = Float64Array.from(
 	{ length: GRID_SIZE },
 	(_, k) => GRID_F0 * 2 ** (k / GRID_POINTS_PER_OCTAVE)
 );
-
-/** Fractional grid index of a frequency (may be out of range). */
-export function gridIndex(hz: number): number {
-	return Math.log2(hz / GRID_F0) * GRID_POINTS_PER_OCTAVE;
-}
 
 /** Coarser view used for ranking: every `step`-th grid point (step 2 → 1/12 octave, 120 points). */
 export const RANK_STEP = 2;

@@ -10,7 +10,8 @@ export default defineConfig({
 		baseURL: 'http://localhost:4173',
 		trace: 'retain-on-failure'
 	},
-	expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
+	// CI runners are slower; the first query in each page builds the analysis index in a fresh worker.
+	expect: { timeout: process.env.CI ? 15_000 : 5_000, toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
 	projects: [
 		{ name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
 		{ name: 'mobile', use: { ...devices['Pixel 7'] } }

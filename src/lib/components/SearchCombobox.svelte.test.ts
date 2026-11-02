@@ -13,7 +13,8 @@ const items: SearchItem[] = [
 
 test('filters, highlights and selects by keyboard while focus stays on the input', async () => {
 	const onselect = vi.fn<(item: SearchItem) => void>();
-	const screen = await render(SearchCombobox, { items, onselect });
+	const onquery = vi.fn();
+	const screen = await render(SearchCombobox, { items, onselect, onquery });
 	const input = screen.getByRole('combobox', { name: 'Search products' });
 	await input.fill('atlas');
 	await expect.element(input).toHaveAttribute('aria-expanded', 'true');
@@ -22,6 +23,7 @@ test('filters, highlights and selects by keyboard while focus stays on the input
 	expect(screen.container.querySelector('mark')?.textContent).toBe('Atlas');
 	await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
 	expect(onselect).toHaveBeenCalledWith(items[1]);
+	expect(onquery).toHaveBeenLastCalledWith('Atlas Beta');
 	await expect.element(input).toHaveValue('Atlas Beta');
 	await expect.element(input).toHaveFocus();
 	await expect.element(input).toHaveAttribute('aria-expanded', 'false');
@@ -69,4 +71,39 @@ test('slash focuses search without stealing typing from another input', async ()
 	await expect.element(screen.getByRole('combobox')).toHaveFocus();
 	await userEvent.keyboard('/');
 	await expect.element(screen.getByRole('combobox')).toHaveValue('/');
+	const other = document.createElement('input');
+	screen.container.append(other);
+	other.focus();
+	await userEvent.keyboard('/');
+	expect(other.value).toBe('/');
+	expect(document.activeElement).toBe(other);
+});
+
+test('clears the active option after pointer-style focus loss and refocus', async () => {
+	const screen = await render(SearchCombobox, { items, onselect: () => {} });
+	const input = screen.getByRole('combobox');
+	await input.click();
+	await userEvent.keyboard('{ArrowDown}');
+	await expect.element(input).toHaveAttribute('aria-activedescendant');
+	const other = document.createElement('input');
+	screen.container.append(other);
+	other.focus();
+	input.element().focus();
+	await expect.element(input).toHaveAttribute('aria-expanded', 'true');
+	await expect.element(input).not.toHaveAttribute('aria-activedescendant');
+});
+
+test('updates a persistent status region outside the hidden popup', async () => {
+	const screen = await render(SearchCombobox, { items, onselect: () => {} });
+	const status = screen.container.querySelector('[role="status"]');
+	expect(status?.closest('[hidden]')).toBeNull();
+	await screen.getByRole('combobox').fill('Atlas');
+	await screen.rerender({ loading: true });
+	expect(screen.container.querySelector('[role="status"]')).toBe(status);
+	await expect.element(screen.getByRole('status')).toHaveTextContent('Searching…');
+	await screen.rerender({ loading: false, items: [] });
+	expect(screen.container.querySelector('[role="status"]')).toBe(status);
+	await expect
+		.element(screen.getByRole('status'))
+		.toHaveTextContent('No matching products. Try another name.');
 });

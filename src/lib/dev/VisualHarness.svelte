@@ -120,11 +120,11 @@
 		</section>
 	</div>
 </div>
-{#if toast}<Toast
-		message="Preference saved in this demo."
-		onundo={() => (toast = false)}
-		ondismiss={() => (toast = false)}
-	/>{/if}
+<Toast
+	message={toast ? 'Preference saved in this demo.' : ''}
+	onundo={() => (toast = false)}
+	ondismiss={() => (toast = false)}
+/>
 
 <style>
 	.page-heading {

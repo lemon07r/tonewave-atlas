@@ -50,13 +50,15 @@
 	let exportError = $state('');
 	let levelLabel = $derived(mode === 'difference' ? 'Difference (dB)' : 'Level (dB)');
 	let baseline = $derived(series.find((item) => item.id === baselineId) ?? series[0]);
+	let partialEnvelope = $derived(series.some((item) => Boolean(item.lo) !== Boolean(item.hi)));
 	let valid = $derived(
-		series.every(
-			(item) =>
-				item.values.length === GRID_SIZE &&
-				(!item.lo || item.lo.length === GRID_SIZE) &&
-				(!item.hi || item.hi.length === GRID_SIZE)
-		)
+		!partialEnvelope &&
+			series.every(
+				(item) =>
+					item.values.length === GRID_SIZE &&
+					(!item.lo || item.lo.length === GRID_SIZE) &&
+					(!item.hi || item.hi.length === GRID_SIZE)
+			)
 	);
 	let curves = $derived(
 		valid
@@ -70,6 +72,7 @@
 			: []
 	);
 	const octaveIndices = Array.from({ length: 10 }, (_, i) => i * 24);
+	const compactRegionLabels = ['Sub', 'Bass', 'Low', 'Vocal', 'Upper', 'Treb.', 'Air'];
 	function colour(index: number, reference: boolean | undefined) {
 		return reference ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
 	}
@@ -360,11 +363,13 @@
 	</div>
 	<p id={`${id}-summary`} class="sr-only">
 		{summary}
-		{series.length}
-		{series.length === 1 ? 'curve' : 'curves'}. {mode === 'difference'
-			? `Values are subtracted from ${baseline?.label ?? 'the baseline'} at each frequency, with no additional alignment.`
-			: 'Missing measurements remain gaps.'}
-		{series.length > 0 ? 'A data table is available below.' : 'No measurements selected.'}
+		{#if !valid}Chart data and its table are unavailable because the supplied curves or uncertainty bounds are
+			invalid.
+		{:else}{series.length}
+			{series.length === 1 ? 'curve' : 'curves'}. {mode === 'difference'
+				? `Values are subtracted from ${baseline?.label ?? 'the baseline'} at each frequency, with no additional alignment.`
+				: 'Missing measurements remain gaps.'}
+			{series.length > 0 ? 'A data table is available below.' : 'No measurements selected.'}{/if}
 	</p>
 	{#if controls && series.length > 0}<div class="chart-controls">
 			<SegmentedControl
@@ -399,7 +404,7 @@
 					type="button"
 					style:flex={Math.log(region.hi / region.lo)}
 					aria-describedby={`${id}-region-description`}
-					aria-pressed={activeRegion === i}
+					class:active={activeRegion === i}
 					onpointerenter={() => (activeRegion = i)}
 					onpointerleave={() => (activeRegion = null)}
 					onfocus={() => (activeRegion = i)}
@@ -408,7 +413,10 @@
 					onkeydown={(event) => {
 						if (event.key === 'Escape') activeRegion = null;
 					}}
-					aria-label={`${region.label}, ${region.lo} to ${region.hi} Hz`}>{region.short}</button
+					aria-label={`${region.label}, ${region.lo} to ${region.hi} Hz`}
+					><span class="region-label-wide">{region.short}</span><span class="region-label-compact"
+						>{compactRegionLabels[i] ?? region.short}</span
+					></button
 				>{/each}
 		</div>
 		<p class="region-description" id={`${id}-region-description`}>
@@ -418,7 +426,7 @@
 		</p>{/if}
 	{#if series.length > 0 && valid}<div class="readout-heading">
 			<label for={`${id}-frequency`}>Inspect frequency</label><span class="mono"
-				>{frequencyLabel(GRID[readIndex] ?? 20)} Hz</span
+				>{Math.round(GRID[readIndex] ?? 20)} Hz</span
 			>
 		</div>
 		<input
@@ -441,7 +449,6 @@
 					<button
 						type="button"
 						aria-pressed={!hidden.includes(curve.id)}
-						aria-label={`${hidden.includes(curve.id) ? 'Show' : 'Hide'} ${curve.label}`}
 						onpointerenter={() => {
 							focusSeries(curve.index);
 						}}
@@ -499,7 +506,9 @@
 			</div></Disclosure
 		>{/if}
 	{#if !valid}<Notice kind="caution"
-			>Chart unavailable: every curve and uncertainty bound must use the {GRID_SIZE}-point frequency grid.</Notice
+			>Chart unavailable: {partialEnvelope
+				? 'lower and upper uncertainty bounds must be supplied together.'
+				: `every curve and uncertainty bound must use the ${GRID_SIZE}-point frequency grid.`}</Notice
 		>{/if}
 	{#if exportError}<p class="small" role="alert">{exportError}</p>{/if}
 	<figcaption><a href={resolve('/method')}>Sources and limitations</a></figcaption>
@@ -598,10 +607,13 @@
 		font-size: 9px;
 		letter-spacing: -0.02em;
 	}
-	.regions button[aria-pressed='true'] {
+	.regions button.active {
 		color: var(--accent);
 		text-decoration: underline;
 		text-underline-offset: 4px;
+	}
+	.region-label-compact {
+		display: none;
 	}
 	.region-description {
 		font-size: var(--text-xs);
@@ -699,10 +711,15 @@
 			min-height: 64px;
 		}
 		.regions button {
-			writing-mode: vertical-rl;
-			min-height: 48px;
-			font-size: 10px;
-			padding: 6px 4px;
+			min-height: 44px;
+			font-size: 9px;
+			padding: 6px 2px;
+		}
+		.region-label-wide {
+			display: none;
+		}
+		.region-label-compact {
+			display: inline;
 		}
 		.legend-value {
 			font-size: 10px;

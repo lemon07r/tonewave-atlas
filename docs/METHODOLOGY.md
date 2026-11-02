@@ -146,6 +146,15 @@ Per-source/per-bin counts and actual fold pair counts remain essential; the part
 establish adequate support for every correction bin or source. Low-support estimates are exploratory,
 unsupported bins remain missing (JSON `null`), and this label never enables harmonisation by itself.
 
+Similar/taste requests omitting `harmonise` enable correction only when support is sufficient and
+pooled mean improvement is finite and positive both overall and in every reported fold (with a
+complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
+explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
+`harmonised` only when finite published offsets were applied. Detail charts and PEQ remain uncorrected.
+In the **2026-11 dataset build**, five-fold iem-711 validation reduced held-out same-product pair
+distance **1.781 → 1.588 dB (−10.9%)**, with fold improvements **0.184–0.202 dB** over **50,823 pairs**.
+This validates correction for this dataset, not physical calibration or listener preference.
+
 ### Estimation and held-out validation
 
 The ingestion caller supplies one curve per product/source within a partition, after choosing
@@ -299,6 +308,52 @@ confidence intervals**. The renderer says “measured” and “relative to the 
 the caller can supply another form factor. No population input means no inferred statements.
 Per-band user corrections add dB to a copy of a taste centre; they do not rewrite learned evidence,
 confidence or the original inferred summary.
+
+## Plain-language wording and Discover presentation
+
+Chart inspection shows frequency rounded to the nearest whole Hz, while compact axis labels use kHz
+above 1 kHz. Levels are rounded to one decimal dB, with rounded zero always unsigned. Non-finite
+samples or overflowing baseline differences remain gaps. Both lower and upper uncertainty envelopes
+must be supplied together on the same 240-point display grid; invalid arrays are rejected rather
+than silently shown without their bounds.
+
+Discover describes signed, level-aligned candidate-minus-reference band means (candidate minus the
+best-fitting taste centre in profile mode). Absolute means below 0.75 dB are omitted; 0.75 to below
+2 dB uses “slightly”, 2 to below 4 dB uses unqualified “more”/“less”, and 4 dB or greater uses “much”.
+These are editorial brevity thresholds, **not audibility or statistical significance thresholds**.
+The omission threshold suppresses small numerical differences relative to the conservative default
+spread (about 1–6 dB across frequency); even “much” does not prove a perceptual difference. Missing
+bands are never described as equal. Treble/air wording carries the above-8-kHz reliability caveat.
+The expanded table reports all available signed means, RMS values, regional coverage and contribution;
+overall coverage is the engine's fraction of eligible rank samples. Distance and tilt are shown to one
+decimal, in dB and dB/octave respectively. Lower response distance means closer measured shape, not
+better sound. Reviewer ranges retain the service's participating-source count; endpoints that round
+to the same one-decimal value are shown once, and absent ranges are not invented. A description that
+mentions treble or air appends one plain-language reliability note for differences above 8 kHz, rather
+than repeating it for each band. Listing amounts use only published USD values, attributed to their listing source and crawl
+month/year; they are not current price or availability claims.
+
+Profile inputs map love to strength 1, like to 0.6, dislike to 1, and neutral to 0 (excluded). The engine
+also doubles love's positive centre weight, so a love has weight 2 versus a like's 0.6 before optional
+liked-aspect weighting. Fit/comfort-only items remain stored but do not inform the sound model.
+Taste results show ordinary response distance to the centre and nearest liked item separately from
+the tolerance-weighted fit distance; the combined ranking score/constraint penalty is **not dB** and
+is not presented as response distance. “Matched” bands means below the editorial 0.75 dB threshold,
+not perceptual equivalence. Confidence and constraints retain the service's evidence; confidence reasons
+use plain language without changing support counts, measured ranges or uncertainty.
+
+Measured product displays use GRID detail curves/consensus. Discover removes arbitrary source levels
+by weighted LS alignment of display curves to the first curve on GRID, using the active similar-mode
+focus (balanced in profile mode) and default reliability weights. This display-only offset does not
+change ranking or explanations, which use RANK_GRID and the service's weights. Missing samples stay
+missing; display difference mode then subtracts the fixed baseline without further alignment.
+“Taste N centre (derived)” is a model,
+not a measurement: the returned corrected 120-point rank centre is mapped exactly to even GRID
+indices, with odd indices linearly interpolated in log frequency between finite neighbours. Missing
+neighbours remain gaps, and GRID index 239 is NaN (no extrapolation past the last rank point).
+This adds no measured resolution. Corrections (−4…+4 dB per band in Discover) are already included
+by the service and are not applied twice. At most five candidate curves may be overlaid, in addition
+to reference/model curves. Difference display subtracts the chosen baseline without further alignment.
 
 ## Multiple references and adjustable targets
 

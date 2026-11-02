@@ -19,10 +19,17 @@
 		onchange?: (value: number) => void;
 	} = $props();
 	const id = $props.id();
+	function precision(number: number): number {
+		const [mantissa = '', exponent = '0'] = String(number).split('e');
+		return Math.max(0, (mantissa.split('.')[1]?.length ?? 0) - Number(exponent));
+	}
 	function update(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		if (!Number.isFinite(input.valueAsNumber)) return;
-		value = Math.min(max, Math.max(min, Math.round((input.valueAsNumber - min) / step) * step + min));
+		const snapped = Math.round((input.valueAsNumber - min) / step) * step + min;
+		const rounded = Number(snapped.toFixed(Math.min(100, Math.max(precision(step), precision(min)))));
+		value = Math.min(max, Math.max(min, rounded));
+		input.value = String(value);
 		onchange?.(value);
 	}
 </script>

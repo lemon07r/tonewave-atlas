@@ -30,7 +30,9 @@
 			/* Phase 2 connects the catalog and analysis worker. */
 		}}
 	/>
-	<p class="search-note">Matches use measurements from the same rig family.</p>
+	<p class="search-note">
+		Matches will use measurements from the same rig family once the catalog is connected.
+	</p>
 {:else}
 	<section class="profile-panel" aria-label="Your taste profile">
 		<div>
@@ -50,7 +52,9 @@
 				/* Phase 2 adds a real catalog product to the profile. */
 			}}
 		/>
-		<p class="search-note">Matches use measurements from the same rig family.</p>
+		<p class="search-note">
+			Matches will use measurements from the same rig family once the catalog is connected.
+		</p>
 		<p class="catalog-note">
 			The catalog is not connected yet. Ratings and reasons become available after adding a product.
 		</p>
@@ -120,7 +124,7 @@
 	@media (max-width: 640px) {
 		.discovery-mode :global(span) {
 			padding: 8px;
-			font-size: 12px;
+			font-size: var(--text-xs);
 			min-height: 48px;
 		}
 	}
