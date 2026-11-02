@@ -10,13 +10,15 @@ export function classifyEq(text: string): 'none' | 'neutral' | 'factory' | 'ambi
 		return 'post-hoc';
 	// Signed/decimal gain lists, not numbered factory names such as 336xx, EQ1 or 3A Games.
 	if (
-		/\beq\s*[:=-]?\s*(?:custom\s*)?[+-]?\d+(?:\.\d+)?(?:\s*[, +-]\s*[+-]?\d+(?:\.\d+)?){2,}/i.test(clean) ||
+		/\beq\s*[:=-]?\s*(?:custom\s*)?[+-]?\d+(?:\.\d+)?(?:\s*dB)?(?:\s*[, +-]\s*[+-]?\d+(?:\.\d+)?(?:\s*dB)?){2,}/i.test(
+			clean
+		) ||
 		(/[+-]\d+(?:\.\d+)?\s*dB\s*\/\s*oct\b/i.test(clean) && /\beq\b/i.test(clean))
 	)
 		return 'post-hoc';
 	// An explicitly unaltered user/PEQ slot is still the product as sold.
 	if (
-		/\b(?:(?:user|custom)\s+eq|eq\s+(?:user|custom))\s*(?:all\s*(?:set\s+to\s*)?(?:0|zero)|\(0\s*gain\))|\bpeq\s*[:=-]?\s*(?:0(?:\s*dB)?\b|no\s+gain|zero\s+gain|default\b|off\b|none\b)|\b0\s*dB\s+peq\b|\beq\s+baseline\b[^()]*\bzero\b/i.test(
+		/\b(?:(?:user|custom)\s+eq|eq\s+(?:user|custom))\s*[:=-]?\s*(?:all\s*(?:set\s+to\s*)?(?:0|zero)|\(0\s*gain\)|\(?0\s*dB\b)|\bpeq\s*[:=-]?\s*(?:0(?:\s*dB)?\b|no\s+gain|zero\s+gain|default\b|off\b|none\b)|\b0\s*dB\s+peq\b|\beq\s+baseline\b[^()]*\bzero\b/i.test(
 			clean
 		)
 	)

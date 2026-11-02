@@ -61,6 +61,30 @@ async function fixture(config = '') {
 }
 
 describe('crawl preflight', () => {
+	it('uses suffix context before fetching zero-gain user slots, while skipping declared EQ gains', async () => {
+		const { paths, bodies, request } = await fixture('default_channels=["L"]');
+		const base = 'https://reviewer.squig.link/';
+		bodies.set(
+			`${base}data/phone_book.json`,
+			JSON.stringify([
+				{
+					name: 'Brand',
+					phones: [
+						{
+							name: 'Model',
+							file: ['Model Custom EQ', 'Model processed'],
+							suffix: ['(0 gain)', 'EQ +3 dB, -2 dB, +1 dB']
+						}
+					]
+				}
+			])
+		);
+		const url = `${base}data/Model%20Custom%20EQ%20L.txt`;
+		bodies.set(url, '20 70\n20000 80');
+		await crawl(['--sites', 'reviewer'], paths);
+		expect(request.mock.calls.map(([url]) => href(url)).filter((url) => url.endsWith('.txt'))).toEqual([url]);
+		expect((await cached(url, paths.cache))?.entry.status).toBe(200);
+	});
 	it('discovers and caches the page config after root config.js returns 404', async () => {
 		const { paths, bodies, request, snapshot } = await fixture();
 		const base = 'https://reviewer.squig.link/';

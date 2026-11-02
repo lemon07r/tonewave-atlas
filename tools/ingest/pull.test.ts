@@ -45,9 +45,17 @@ describe('dataset pull', () => {
 		);
 		s.forms = ['iem', 'headphone'];
 		s.partitions = ['iem-5128', 'headphone-5128'];
+		const legacy = { ...s, rigEvidence: undefined, forms: undefined, partitions: undefined };
+		for (const field of ['rigEvidence', 'forms', 'partitions'] as const) {
+			expect(datasetVersion([file], [{ ...legacy, [field]: s[field] }])).not.toBe(
+				datasetVersion([file], [legacy])
+			);
+		}
 		const v = datasetVersion([file], [s]);
 		const m = { ...manifest, version: v, sources: [s], files: [{ ...file, path: `${v}/${file.path}` }] };
 		expect(validateManifest(m).sources).toEqual([s]);
+		const invalidSource = { ...s, rigEvidence: { ...s.rigEvidence, class: ['verified'] } };
+		expect(() => validateManifest({ ...m, sources: [invalidSource] })).toThrow('Invalid rig evidence');
 		expect(() =>
 			validateManifest({ ...m, sources: [{ ...s, rigEvidence: { ...s.rigEvidence, projection: 'bad' } }] })
 		).toThrow('rig evidence statistic');

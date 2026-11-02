@@ -63,7 +63,8 @@ export function validateManifest(value: unknown): Manifest {
 		if (
 			evidence !== undefined &&
 			(!record(evidence) ||
-				!['verified', 'evidenced', 'unknown'].includes(String(evidence.class)) ||
+				typeof evidence.class !== 'string' ||
+				!['verified', 'evidenced', 'unknown'].includes(evidence.class) ||
 				![null, '711', '5128'].includes(evidence.family as string | null) ||
 				typeof evidence.rationale !== 'string' ||
 				!evidence.rationale.trim())
