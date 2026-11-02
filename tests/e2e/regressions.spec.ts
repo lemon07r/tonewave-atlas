@@ -69,9 +69,20 @@ test('pending results retain their returned reference headings, evidence and Com
 	page
 }) => {
 	await page.addInitScript(() => {
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the original Worker receiver via .call below.
-		const post = Worker.prototype.postMessage;
-		Worker.prototype.postMessage = function (
+		const pending: (() => void)[] = [];
+		Object.assign(window, {
+			discoveryQueries: {
+				pending,
+				release: () => {
+					document.documentElement.dataset.delayQueries = 'false';
+					for (const send of pending.splice(0)) send();
+				}
+			}
+		});
+		// The service returned by create() is a Comlink proxy on a transferred port.
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the original MessagePort receiver via .call below.
+		const post = MessagePort.prototype.postMessage;
+		MessagePort.prototype.postMessage = function (
 			message: unknown,
 			transfer?: Transferable[] | StructuredSerializeOptions
 		) {
@@ -81,23 +92,32 @@ test('pending results retain their returned reference headings, evidence and Com
 				document.documentElement.dataset.delayQueries === 'true' &&
 				Array.isArray(path) &&
 				['similar', 'compare', 'taste'].includes(String(path[0]));
+			// Hold the real request until the pending-state assertions finish, rather
+			// than racing the browser's actions against a fixed timeout.
 			if (delay)
-				window.setTimeout(() => {
+				pending.push(() => {
 					post.call(this, message, options);
-				}, 1500);
+				});
 			else post.call(this, message, options);
 		};
 	});
 	await page.goto(shared([like(reference), like(volume), like(nova)]));
 	await expect(page.locator('.result-row')).toHaveCount(20);
+	const results = page.getByRole('region', { name: 'Measured matches', exact: true });
+	await expect(results).toHaveAttribute('aria-busy', 'false');
 	await page.evaluate(() => {
 		document.documentElement.dataset.delayQueries = 'true';
 	});
 	await page.getByRole('button', { name: 'Remove Softears Volume S', exact: true }).click();
-	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
-		'aria-busy',
-		'true'
-	);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as unknown as { discoveryQueries: { pending: unknown[] } }).discoveryQueries.pending.length
+			)
+		)
+		.toBeGreaterThan(0);
+	await expect(results).toHaveAttribute('aria-busy', 'true');
 	const first = page.locator('.result-row').first();
 	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toBeVisible({ timeout: 1000 });
 	await expect(first.getByRole('link', { name: 'Compare', exact: true })).toHaveAttribute(
@@ -111,9 +131,10 @@ test('pending results retain their returned reference headings, evidence and Com
 			exact: true
 		})
 	).toBeVisible();
-	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
-		'aria-busy',
-		'false'
-	);
+	await expect(results).toHaveAttribute('aria-busy', 'true');
+	await page.evaluate(() => {
+		(window as unknown as { discoveryQueries: { release: () => void } }).discoveryQueries.release();
+	});
+	await expect(results).toHaveAttribute('aria-busy', 'false');
 	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toHaveCount(0);
 });
