@@ -86,13 +86,18 @@ export async function crawl(
 				http.fetch(new URL('data/phone_book.json', db.url).href)
 			]);
 			if (bookResponse.entry.status !== 200) throw new Error(`Phone book HTTP ${bookResponse.entry.status}`);
+			// A root config that now fails keeps its last-good body (status 200 plus lastFailure), so a
+			// stale root still triggers page discovery and is used only if no linked config succeeds.
 			let configResponse = rootConfigResponse;
-			if (configResponse.entry.status !== 200) {
+			if (configResponse.entry.status !== 200 || configResponse.entry.lastFailure) {
 				const pageResponse = await http.fetch(db.url);
 				if (pageResponse.entry.status === 200) {
 					retained(db.id, pageResponse);
 					const configUrl = configScriptUrl(new TextDecoder().decode(pageResponse.body), db.url);
-					if (configUrl) configResponse = await http.fetch(configUrl);
+					if (configUrl) {
+						const linked = await http.fetch(configUrl);
+						if (linked.entry.status === 200) configResponse = linked;
+					}
 				}
 			}
 			if (configResponse.entry.status !== 200)

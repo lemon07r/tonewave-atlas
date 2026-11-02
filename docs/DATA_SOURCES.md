@@ -2,7 +2,7 @@
 
 Tonewave Atlas discovers reviewer databases from the public [squig.link directory](https://squig.link/squigsites.json).
 Each database supplies its configuration (`config.js` at the database root, or the config script
-its page references), brand/model index (`data/phone_book.json`), and channel text
+that its page references), brand/model index (`data/phone_book.json`), and channel text
 files. The manifest and catalogs attribute every included database; each measurement records its
 original file URLs, database link, REW date when present, HTTP Last-Modified, and processing steps.
 Reviewer-listed prices are retained verbatim; only explicit dollar/USD forms are parsed, with no
@@ -16,8 +16,9 @@ availability is not a redistribution licence, and the squig graph software's lic
 rights to reviewers' measurements. We publish resampled curves, not the raw text files. Attribution
 and links are retained; they are not a substitute for permission.
 
-The site is non-commercial and credits every database it uses. Every database in the directory is
-included unless `data/exclusions.json` lists it, including reviewers on the network's `optedOut` list
+The site is non-commercial and credits every database it uses. Every openly served IEM and headphone
+database in the directory is crawled unless `data/exclusions.json` lists it (earbud databases are not
+supported), including reviewers on the network's `optedOut` list
 in `squigsites.js` (squig.link uses that list to hide shop links; we do not read it as a data
 opt-out). The maintainer contacts reviewers for consent where possible. Crinacle's hangout.audio is
 never crawled: it serves encrypted files behind an access check, and we do not bypass access

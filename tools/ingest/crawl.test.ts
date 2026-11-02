@@ -78,6 +78,34 @@ describe('crawl preflight', () => {
 		expect((await snapshot()).errors).toEqual([]);
 		expect((await snapshot()).excluded.filter(({ id }) => id.startsWith('reviewer-'))).toEqual([]);
 	});
+	it.each([true, false])(
+		'prefers a linked page config over a stale root config (linked available: %s)',
+		async (linkedAvailable) => {
+			const { paths, bodies, request, snapshot } = await fixture(
+				'const DIR = "data/", default_channels = ["R"];'
+			);
+			const base = 'https://reviewer.squig.link/';
+			const configUrl = `${base}assets/js/config.js`;
+			bodies.set(`${base}data/Model%20R.txt`, '20 70\n20000 80');
+			await crawl(['--sites', 'reviewer'], paths);
+			bodies.delete(`${base}config.js`);
+			bodies.set(base, '<script src="assets/js/config.js"></script>');
+			if (linkedAvailable) bodies.set(configUrl, 'const DIR = "data/", default_channels = ["R"];');
+			request.mockClear();
+			await crawl(['--sites', 'reviewer'], paths);
+			const urls = request.mock.calls.map(([url]) => href(url));
+			expect(urls).toContain(base);
+			expect(urls).toContain(configUrl);
+			expect((await cached(configUrl, paths.cache))?.entry.status).toBe(linkedAvailable ? 200 : 404);
+			expect((await cached(`${base}config.js`, paths.cache))?.entry).toMatchObject({
+				status: 200,
+				lastFailure: { status: 404 }
+			});
+			expect((await snapshot()).errors.map(({ error }) => error)).toEqual(
+				linkedAvailable ? [] : [expect.stringContaining(`Using last-good ${base}config.js`)]
+			);
+		}
+	);
 	it('keeps a successful root config without requesting the index page', async () => {
 		const { paths, request, snapshot } = await fixture();
 		await crawl(['--sites', 'reviewer'], paths);

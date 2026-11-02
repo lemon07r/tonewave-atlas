@@ -173,7 +173,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 		useTime(bookCache.entry.fetchedAt);
 		let configCache = await cached(new URL('config.js', db.url).href, paths.cache);
-		if (configCache?.entry.status !== 200) {
+		if (configCache?.entry.status !== 200 || configCache.entry.lastFailure) {
 			const pageCache = await cached(db.url, paths.cache);
 			if (pageCache?.entry.status === 200) {
 				useTime(pageCache.entry.fetchedAt);
@@ -185,7 +185,10 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					report.excluded.push({ id: db.id, reason: errorMessage(e) });
 					continue;
 				}
-				if (configUrl) configCache = await cached(configUrl, paths.cache);
+				if (configUrl) {
+					const linked = await cached(configUrl, paths.cache);
+					if (linked?.entry.status === 200) configCache = linked;
+				}
 			}
 		}
 		if (configCache?.entry.status !== 200) {

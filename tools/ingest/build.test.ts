@@ -123,6 +123,27 @@ describe('cached dataset build safety', () => {
 		expect(catalog.measurements).toHaveLength(1);
 		expect(report.excluded).toEqual([]);
 	});
+	it.each([true, false])(
+		'prefers a cached linked config over a stale root config (linked available: %s)',
+		async (linkedAvailable) => {
+			const pageConfigUrl = `${base}assets/js/config.js`;
+			const linkedConfig =
+				'const DIR = "data/", rig_description = "IEC 60318-4 711", measurement_calibration_file = "offset";';
+			const { paths, http } = await fixture(config, [
+				[base, '<script src="assets/js/config.js"></script>'],
+				...(linkedAvailable ? ([[pageConfigUrl, linkedConfig]] as [string, string][]) : [])
+			]);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })));
+			await http.fetch(configUrl);
+			if (!linkedAvailable) await http.fetch(pageConfigUrl);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch')));
+			await build(paths);
+			const { catalog, report } = await result(paths);
+			expect(catalog.measurements).toHaveLength(1);
+			expect(catalog.sources[0]?.partition).toBe(linkedAvailable ? 'iem-711' : 'iem-5128');
+			expect(report.retainedFailures.some((failure) => failure.url === configUrl)).toBe(!linkedAvailable);
+		}
+	);
 	it.each(['<script src="assets/js/graphtool.js"></script>', '<script src="assets/js/config.js"></script>'])(
 		'excludes a source when the cached index has no available config: %s',
 		async (html) => {

@@ -435,4 +435,4 @@ or sample rates may produce different results; the Wavelet curve approximates th
 See [VALIDATION.md](VALIDATION.md) for independent numerical tests and reproducible timings. Synthetic
 correctness does not establish perceptual validity. The cluster/penalty/confidence thresholds, default
 σ profile and reason mappings need evaluation against real within-partition overlaps and prospective
-user feedback. No real-data validation or listener study is claimed here.
+user feedback. Real-data validation covers measurement agreement only; no listener study is claimed.
