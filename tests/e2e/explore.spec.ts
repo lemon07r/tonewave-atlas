@@ -24,7 +24,9 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('Truthear');
 			const hexa = page.locator('.catalog-row').filter({ has: hexaLink });
 			await expect(hexa).toContainText('711-family coupler');
-			await expect(hexa.locator('.prices')).toContainText(/\$\d.* listed by .+, \w{3} \d{4}/);
+			await expect(hexa.locator('.prices')).toContainText(
+				/\$\d.* reviewer-listed price \(.+, seen \w{3} \d{4}; listing date unknown\)/
+			);
 			const listedPrices = (await hexa.locator('.prices p').allTextContents()).map((text) => text.trim());
 			expect(listedPrices.length).toBeGreaterThan(0);
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

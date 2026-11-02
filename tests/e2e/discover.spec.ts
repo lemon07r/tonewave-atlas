@@ -123,9 +123,12 @@ test('explicit Love and reasoned Dislike persist, explain measured constraints a
 	await expect(page.locator('.model > summary')).toHaveText('Taste model · 1 centre · limited support');
 	await page.locator('.model > summary').click();
 	await expect(
-		page.getByText('No supported preference description is available against typical IEMs in this dataset.', {
-			exact: true
-		})
+		page.getByText(
+			"There isn't enough consistent measurement evidence to describe how your liked products differ from typical IEMs in this dataset.",
+			{
+				exact: true
+			}
+		)
 	).toBeVisible();
 	await expect(page.locator('.model')).not.toContainText(
 		/population-relative|conservative default profile|positive examples/
@@ -201,6 +204,9 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 		'selected variant (High Impedance Setting): not measured on B&K 5128. Available on 711-family coupler.'
 	);
 	await expect(page.locator('.result-row')).toHaveCount(0);
+	await expect(page.locator('.results')).not.toContainText(
+		/p-9104c8bb39d66e906811|m-016c491c5c1e659cc5ac|iem-5128/
+	);
 	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 	await page.getByRole('button', { name: 'Use 711-family coupler', exact: true }).click();
 	await expect(page.locator('.result-row').first()).toBeVisible();

@@ -609,7 +609,7 @@
 				</div>
 				<p class="distance-note">
 					{result ? `${rigLabel(result.data.partition, summary?.sources)} · ` : ''}{route === 'taste'
-						? 'Taste ranking score · lower is closer, not a dB distance.'
+						? 'Taste ranking score · lower is closer; includes dislike penalties, not a dB distance. Each row also shows ordinary response distance in dB.'
 						: 'Response distance in dB · lower is closer, not better.'}
 				</p>
 				{#if loading}<p role="status" class="updating">
@@ -617,15 +617,13 @@
 					</p>
 					{#if !result}<Skeleton rows={4} />{/if}{/if}
 				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
-						>{queryError.message}<ReferenceDiagnostics
+						><ReferenceDiagnostics
 							{items}
 							{products}
 							partition={activePartition}
 							sources={summary?.sources ?? []}
-						/>{#if queryError.partitions?.length}<p>
-								All references, including selected variants, are measured on:
-							</p>
-							<div class="profile-actions">
+						/>{#if queryError.partitions?.length}<div class="compatible-rigs">
+								<span>All references, including selected variants, are measured on:</span>
 								{#each queryError.partitions as partition (partition)}<button
 										type="button"
 										onclick={() => {
@@ -657,7 +655,7 @@
 						/>
 					</div>
 					<p class="small muted">
-						The chart aligns candidates to the first reference; each distance column independently
+						The chart labels which reference each candidate is aligned to; each distance column independently
 						level-aligns to its own reference.
 					</p>{/if}
 				{#if result?.kind === 'taste'}<TasteSummary taste={result.data} {form} {nameFor} />{/if}
@@ -816,6 +814,21 @@
 		gap: 16px;
 		flex-wrap: wrap;
 		margin-block: 12px;
+	}
+	.compatible-rigs {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 12px;
+		margin-top: 12px;
+	}
+	.compatible-rigs button {
+		padding: 4px 0;
+		min-height: 32px;
+		background: none;
+		border: 0;
+		color: var(--accent);
+		text-decoration: underline;
 	}
 	.refine,
 	.workspace-tools {

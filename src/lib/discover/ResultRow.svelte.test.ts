@@ -48,7 +48,9 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 	await expect.element(screen.getByText('Response distance: 1.4 dB', { exact: true })).toBeVisible();
 	await expect.element(screen.getByText(/Switch 1 OFF \/ 2 ON/)).toBeVisible();
 	await expect.element(screen.getByText('More sub-bass', { exact: true })).toBeVisible();
-	await expect.element(screen.getByText('$129 listed by Reviewer, Nov 2026')).toBeVisible();
+	await expect
+		.element(screen.getByText('$129 reviewer-listed price (Reviewer, seen Nov 2026; listing date unknown)'))
+		.toBeVisible();
 	await expect
 		.element(screen.getByRole('link', { name: 'Compare', exact: true }))
 		.toHaveAttribute('href', '/compare?p=product-a&m=tuning-measurement');
@@ -70,15 +72,10 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 			uncertainRegions: []
 		}
 	});
-	await expect.element(screen.getByText('Taste ranking score: 3.2 score', { exact: true })).toBeVisible();
 	await expect
-		.element(
-			screen.getByText(
-				'Taste ranking score (not dB; lower is closer; includes dislike penalties) · ordinary distance 1.4 dB',
-				{ exact: true }
-			)
-		)
+		.element(screen.getByText('Taste ranking score: 3.2 score · Response distance: 1.4 dB', { exact: true }))
 		.toBeVisible();
+	await expect.element(screen.getByText('Measured by 1 reviewer', { exact: true })).toBeVisible();
 	await expect
 		.element(screen.getByRole('link', { name: 'Compare', exact: true }))
 		.toHaveAttribute('href', '/compare?form=headphones&p=product-a&m=tuning-measurement');

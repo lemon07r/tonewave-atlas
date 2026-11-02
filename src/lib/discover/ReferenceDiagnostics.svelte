@@ -51,9 +51,8 @@
 			{@const product = products.find((p) => p.id === item.productId)}
 			{@const diagnostic = referenceDiagnostic(item, product, measurements, partition)}
 			<li>
-				<strong>{product ? `${product.brand} ${product.model}` : item.productId}</strong>{diagnostic.variant
-					? ` · selected variant ${diagnostic.variant}`
-					: ' · default measurements'}:
+				<strong>{product ? `${product.brand} ${product.model}` : 'Unavailable product'}</strong
+				>{diagnostic.variant ? ` · selected variant ${diagnostic.variant}` : ' · default measurements'}:
 				{#if diagnostic.status === 'unknown-measurement'}the selected measurement is not available for this
 					product.
 				{:else if diagnostic.status === 'unknown-product'}not in this form-factor catalog.

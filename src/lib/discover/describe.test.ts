@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import type { BandDistance } from '#core/analysis/distance.ts';
 import type { CandidateInfo } from '#core/atlas/types.ts';
-import { describeBands, priceLines, reviewerSummary } from './describe.ts';
+import { describeBands, distanceExtremes, priceLines, reviewerSummary } from './describe.ts';
 
 function band(meanDb: number | null, name: BandDistance['band'] = 'bass'): BandDistance {
 	return { band: name, meanDb, rmsDb: null, contribution: 0, coverage: 1 };
@@ -27,11 +27,15 @@ test('mentions high-frequency reliability once, only when an affected difference
 	expect(describeBands([band(0.74, 'air')])).toBe('No band mean differs by 0.75 dB or more where measured.');
 });
 test('collapses equal rounded reviewer endpoints without hiding distinct rounded values', () => {
-	expect(reviewerSummary([0.66, 0.74], 3)).toBe('0.7 dB across 3 reviewers');
-	expect(reviewerSummary([0.64, 0.76], 3)).toBe('0.6–0.8 dB across 3 reviewers');
-	expect(reviewerSummary([0.7, 0.7], 1)).toBe('0.7 dB across 1 reviewer');
-	expect(reviewerSummary(null, 1)).toBe('1 reviewer');
-	expect(reviewerSummary(null, 3)).toBe('3 reviewers');
+	expect(reviewerSummary([0.66, 0.74], 3)).toBe(
+		'Measured by 3 reviewers · 0.7 dB to the reference across reviewers'
+	);
+	expect(reviewerSummary([0.64, 0.76], 3)).toBe(
+		'Measured by 3 reviewers · 0.6–0.8 dB to the reference across reviewers'
+	);
+	expect(reviewerSummary([0.7, 0.7], 1)).toBe('Measured by 1 reviewer');
+	expect(reviewerSummary(null, 1)).toBe('Measured by 1 reviewer');
+	expect(reviewerSummary(null, 3)).toBe('Measured by 3 reviewers');
 });
 test('never converts raw prices or prints an unattributed amount', () => {
 	const candidate = {
@@ -42,12 +46,21 @@ test('never converts raw prices or prints an unattributed amount', () => {
 	const listing = candidate.prices[0];
 	if (!listing) throw new Error('Test fixture requires a listing');
 	listing.usd = 129;
-	expect(priceLines(candidate)).toEqual(['$129 listed by Database A, Nov 2026']);
+	expect(priceLines(candidate)).toEqual([
+		'$129 reviewer-listed price (Database A, seen Nov 2026; listing date unknown)'
+	]);
 	listing.crawledAt = 'date not provided';
-	expect(priceLines(candidate)).toEqual(['$129 listed by Database A, date not provided']);
+	expect(priceLines(candidate)).toEqual([
+		'$129 reviewer-listed price (Database A, seen date unknown; listing date unknown)'
+	]);
 	listing.usd = Infinity;
 	expect(priceLines(candidate)).toEqual([]);
 	listing.usd = 129;
 	listing.sourceId = 'missing';
 	expect(priceLines(candidate)).toEqual([]);
+});
+
+test('marks exact objective extremes in text, including ties and missing coverage', () => {
+	expect(distanceExtremes([2, null, 1, 3])).toEqual(['', 'No coverage', 'Best', 'Worst']);
+	expect(distanceExtremes([1, 1])).toEqual(['Best / worst (tie)', 'Best / worst (tie)']);
 });

@@ -14,13 +14,13 @@ test('lists each service price with its summary source name and crawl month', ()
 			{ id: 'b', name: 'Reviewer B' }
 		])
 	).toEqual([
-		'$79 listed by Reviewer A, Mar 2026',
-		'$79 listed by Reviewer B, Apr 2026',
-		'$1,099 listed by Reviewer A, May 2026'
+		'$79 reviewer-listed price (Reviewer A, seen Mar 2026; listing date unknown)',
+		'$79 reviewer-listed price (Reviewer B, seen Apr 2026; listing date unknown)',
+		'$1,099 reviewer-listed price (Reviewer A, seen May 2026; listing date unknown)'
 	]);
 });
 
-test('omits non-USD prices and retains source IDs when a summary source is absent', () => {
+test('omits non-USD prices and unattributed listings when a summary source is absent', () => {
 	expect(
 		priceListings(
 			[
@@ -29,7 +29,7 @@ test('omits non-USD prices and retains source IDs when a summary source is absen
 			],
 			[]
 		)
-	).toEqual(['$20 listed by missing, Mar 2026']);
+	).toEqual([]);
 });
 
 test('has no price listing when the product has no service prices', () => {
@@ -47,5 +47,14 @@ test('rejects non-finite USD but preserves raw crawl-date evidence', () => {
 			})),
 			[{ id: 's', name: 'Source' }]
 		)
-	).toEqual(['$30 listed by Source, unknown date']);
+	).toEqual(['$30 reviewer-listed price (Source, seen date unknown; listing date unknown)']);
+});
+
+test('warns when the price was seen more than twelve months ago, never calling that the listing date', () => {
+	const sources = [{ id: 's', name: 'Reviewer' }];
+	const prices = [{ raw: '$20', usd: 20, sourceId: 's', crawledAt: '2025-10-01' }];
+	expect(priceListings(prices, sources, Date.parse('2026-11-02'))).toEqual([
+		'$20 reviewer-listed price (Reviewer, seen Oct 2025; listing date unknown) · may be out of date'
+	]);
+	expect(priceListings(prices, sources, Date.parse('2026-09-30'))[0]).not.toContain('out of date');
 });

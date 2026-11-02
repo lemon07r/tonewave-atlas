@@ -5,7 +5,7 @@
 	import type { TasteFit } from '#core/analysis/taste.ts';
 	import type { MultiReferenceResult } from '#core/analysis/multi-reference.ts';
 	import { dbLabel } from '#lib/chart.ts';
-	import { bandLabels, describeBands, priceLines, reviewerSummary } from './describe.ts';
+	import { bandLabels, describeBands, distanceExtremes, priceLines, reviewerSummary } from './describe.ts';
 	import { reasonLabels } from '#lib/profile/profile.ts';
 	import type { WorkspaceItem } from '#lib/profile/profile.ts';
 	import PreferenceFields from '#lib/profile/PreferenceFields.svelte';
@@ -72,6 +72,7 @@
 		};
 	});
 	let prices = $derived(priceLines(candidate));
+	let extremes = $derived(tradeoff ? distanceExtremes(tradeoff.distances) : []);
 	let evidenceTables = $derived(
 		referenceEvidence.length ? referenceEvidence : [{ label: fit ? 'taste centre' : 'reference', bands }]
 	);
@@ -95,26 +96,24 @@
 		<span class="distance mono"
 			><span class="sr-only"
 				>{fit ? 'Taste ranking score' : tradeoff ? 'Overall distance' : 'Response distance'}:&nbsp;</span
-			>{dbLabel(fit ? fit.score : distance)}&nbsp;<span>{fit ? 'score' : 'dB'}</span></span
+			>{dbLabel(fit ? fit.score : distance)}&nbsp;<span>{fit ? 'score' : 'dB'}</span>{#if fit}<span>
+					&nbsp;· <span class="sr-only">Response distance:&nbsp;</span>{dbLabel(fit.plainDistanceDb)} dB</span
+				>{/if}</span
 		>
 	</div>
-	{#if fit}<p class="ranking-score mono">
-			Taste ranking score (not dB; lower is closer; includes dislike penalties) · ordinary distance {fit.plainDistanceDb.toFixed(
-				1
-			)} dB
-		</p>{/if}
 	{#if match}<p class="reviewers">
 			{reviewerSummary(match.perSourceRange, match.sourceCount)}
 		</p>{/if}
 	{#if !match}<p class="reviewers">
-			{candidate.sources.length} contributing {candidate.sources.length === 1 ? 'source' : 'sources'} · reviewer
-			distance disagreement not returned for this model
+			{reviewerSummary(null, candidate.sources.length)}
 		</p>{/if}
 	{#if tradeoff}<div class="tradeoff table-scroll">
 			<table class="data-table">
 				<caption>Distance to each reference (dB)</caption><thead
 					><tr
-						>{#each referenceNames as name (name)}<th scope="col">{name}</th>{/each}</tr
+						>{#each referenceNames as name, i (name)}<th scope="col"
+								>{name}<span class="extreme">{extremes[i]}</span></th
+							>{/each}</tr
 					></thead
 				><tbody
 					><tr
@@ -129,8 +128,7 @@
 			</p>
 		</div>{/if}
 	{#if bands.length}<p class="description">
-			{describeBands(bands)}{#if tradeoff}
-				· versus {referenceNames[0] ?? 'the first reference'}{/if}
+			{describeBands(bands)}{tradeoff ? ` · versus ${referenceNames[0] ?? 'the first reference'}` : ''}
 		</p>{/if}
 	{#if prices[0]}<p class="price">{prices[0]}</p>{:else}<p class="price">
 			Reviewer-listed USD price unavailable
@@ -275,13 +273,12 @@
 	}
 	.distance {
 		font-size: 18px;
-		white-space: nowrap;
+		text-align: right;
 	}
 	.distance span {
 		font-size: 12px;
 	}
 	.description,
-	.ranking-score,
 	.reviewers,
 	.price,
 	.metrics,
@@ -350,6 +347,17 @@
 	.data-table th,
 	.data-table td {
 		padding: 8px 6px;
+	}
+	.tradeoff th,
+	.tradeoff td {
+		text-align: right;
+		vertical-align: top;
+		font-variant-numeric: tabular-nums;
+	}
+	.extreme {
+		display: block;
+		font-weight: 400;
+		min-height: 1.5em;
 	}
 	.metrics,
 	.fit p {

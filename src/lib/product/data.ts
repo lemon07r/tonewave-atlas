@@ -12,17 +12,21 @@ export function dateLabel(value: string): string {
 }
 export function priceListings(
 	prices: ProductListItem['prices'],
-	sources: readonly Pick<Source, 'id' | 'name'>[]
+	sources: readonly Pick<Source, 'id' | 'name'>[],
+	now = Date.now()
 ): string[] {
 	return [
 		...new Set(
-			prices.flatMap((price) =>
-				price.usd != null && Number.isFinite(price.usd)
-					? [
-							`$${price.usd.toLocaleString('en-US')} listed by ${sources.find((s) => s.id === price.sourceId)?.name ?? price.sourceId}, ${dateLabel(price.crawledAt)}`
-						]
-					: []
-			)
+			prices.flatMap((price) => {
+				const source = sources.find((s) => s.id === price.sourceId);
+				if (price.usd == null || !Number.isFinite(price.usd) || !source) return [];
+				const seen = new Date(price.crawledAt).valueOf();
+				const date = Number.isFinite(seen) ? dateLabel(price.crawledAt) : 'date unknown';
+				const stale = Number.isFinite(seen) && now - seen > 365.25 * 24 * 60 * 60 * 1000;
+				return [
+					`$${price.usd.toLocaleString('en-US', { maximumFractionDigits: 2 })} reviewer-listed price (${source.name}, seen ${date}; listing date unknown)${stale ? ' · may be out of date' : ''}`
+				];
+			})
 		)
 	];
 }
