@@ -25,6 +25,20 @@ test('real similar search, dB explanations, overlays, URL controls and reload', 
 	await expect(page).toHaveURL(/ref=p-/);
 	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
 	await expect(page.locator('.legend-row')).toHaveCount(2);
+	const headerJump = page.locator('.results > .section-heading > .chart-jump');
+	const rowJump = first.locator('.actions > .chart-jump');
+	await expect(headerJump).toHaveCount(1);
+	await expect(rowJump).toHaveCount(1);
+	if ((page.viewportSize()?.width ?? 0) <= 900) {
+		await expect(headerJump).toBeVisible();
+		await expect(rowJump).toBeVisible();
+		await rowJump.click();
+		await expect(page).toHaveURL(/#discover-chart$/);
+		await expect(page.getByRole('complementary', { name: 'Reference and match chart' })).toBeInViewport();
+	} else {
+		await expect(headerJump).toBeHidden();
+		await expect(rowJump).toBeHidden();
+	}
 	await expect(page).toHaveURL(/chart=/);
 	await page.getByRole('radio', { name: 'Bass', exact: true }).check();
 	await expect(page).toHaveURL(/focus=bass/);
@@ -75,6 +89,12 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 	await nova.getByRole('radio', { name: 'Dislike', exact: true }).check();
 	await nova.getByRole('checkbox', { name: 'Too much bass', exact: true }).check();
 	await expect(page.getByRole('region', { name: 'Taste model summary' })).toBeVisible();
+	await expect(
+		page.getByText('Not enough agreement yet to describe this taste against typical IEMs.', { exact: true })
+	).toBeVisible();
+	await expect(page.getByRole('region', { name: 'Taste model summary' })).not.toContainText(
+		/population-relative|conservative default profile|positive examples/
+	);
 	await expect(page.locator('.result-row').first()).toBeVisible();
 	await expect(
 		page.getByRole('button', { name: 'Hide Taste 1 centre (derived)', exact: true })

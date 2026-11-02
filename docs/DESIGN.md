@@ -105,16 +105,20 @@ not the surrounding layout. The fixture page has no production counterpart: use
 Results are a dense ordered list separated by hairlines, not a card grid. Each row leads with rank,
 brand/model, verbatim tuning label and one-decimal response distance in dB (lower is closer, not better).
 Numbers and units stay together. Reviewer ranges appear only when the service supplies them, with
-its participating-source count. USD listings retain source and crawl month/year; no raw-currency
+its participating-source count; equal one-decimal endpoints print as one value. Rig labels come from
+`src/lib/rigs.ts`, using catalog source names for source-specific headphone rigs when available.
+USD listings retain source and crawl month/year; no raw-currency
 conversion or current-price claim is implied. Show/remove chart buttons expose pressed state;
 Compare uses product IDs, and Product page links carry the selected product. Action targets are at
 least 24×24 px (currently 36 px tall) and wrap only as whole items, with 16 px gaps. View chart/back
-links connect the stacked mobile instrument and results without moving keyboard focus unexpectedly.
+links appear only at the stacked layout breakpoint (900 px and below), connecting the instrument and
+results without moving keyboard focus unexpectedly; desktop already has the visible sticky chart.
 
 The wording policy lives in `src/lib/discover/describe.ts` and the plain-language section of
 `docs/METHODOLOGY.md`: omit absolute band means below 0.75 dB, “slightly” below 2 dB, plain more/less
 below 4 dB, “much” from 4 dB. These are editorial thresholds, not audibility or significance claims.
-Treble/air statements flag lower reliability above 8 kHz. Expandable details retain signed band means,
+Treble/air differences share one trailing plain-language reliability note above 8 kHz per row.
+Expandable details retain signed band means,
 RMS, coverage, contribution, tilt, measured-source links and uncertainty rather than hiding the evidence
 behind a summary. Profile results separately explain nearest-liked distance, matched/differing bands,
 tolerance-weighted fit and each dislike constraint; the combined ranking score is not labelled dB.
@@ -124,9 +128,11 @@ or engine-supported dislike reasons, a fit/comfort-only checkbox and Remove. Dec
 checks are hidden from assistive technology so reason names remain stable. New additions start as Love,
 explicitly explained above the rows. Neutral and non-sound ratings stay stored but do not inform the
 model. Until there is a sound-related Like/Love, the page explains what is needed rather than querying
-an invented taste. Model groups list their actual members, service statements, qualitative confidence
+an invented taste. Model groups list their actual members, plain-language supported statements, qualitative confidence
 reasons, conflicts and unused evidence. Advanced per-band corrections alter model centres, not the
-learned statements or confidence.
+learned statements or confidence. Reader-facing taste wording lives in `src/lib/discover/taste-wording.ts`;
+it preserves the service's directions, support counts and measured ranges, explains default uncertainty
+without internal terminology, and retains unknown service reasons rather than hiding evidence.
 
 Profiles use `tonewave.profile.v1` localStorage, separated by form factor. Export includes both forms;
 import validates schema, reasons, aspects, strengths and IDs before replacing anything. Malformed or

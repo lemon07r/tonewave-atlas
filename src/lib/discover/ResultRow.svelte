@@ -78,7 +78,7 @@
 	<div class="actions">
 		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
 			>{selected ? 'Remove from chart' : 'Show on chart'}</button
-		>{#if selected}<a href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
+		>{#if selected}<a class="chart-jump" href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
 				href={resolve(
 					`/compare?p=${encodeURIComponent(referenceProductId)},${encodeURIComponent(candidate.product.id)}`
 				)}>Compare</a
@@ -217,6 +217,9 @@
 		color: var(--muted);
 		cursor: not-allowed;
 	}
+	.actions > .chart-jump {
+		display: none;
+	}
 	details {
 		margin-left: 34px;
 		font-size: var(--text-xs);
@@ -256,6 +259,11 @@
 		align-items: center;
 		min-block-size: 28px;
 		min-inline-size: 24px;
+	}
+	@media (max-width: 900px) {
+		.actions > .chart-jump {
+			display: inline-flex;
+		}
 	}
 	@media (max-width: 640px) {
 		.row-heading {

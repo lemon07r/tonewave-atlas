@@ -294,7 +294,8 @@ liked-aspect weighting. Fit/comfort-only items remain stored but do not inform t
 Taste results show ordinary response distance to the centre and nearest liked item separately from
 the tolerance-weighted fit distance; the combined ranking score/constraint penalty is **not dB** and
 is not presented as response distance. “Matched” bands means below the editorial 0.75 dB threshold,
-not perceptual equivalence. Confidence and constraints retain the service's qualitative explanations.
+not perceptual equivalence. Confidence and constraints retain the service's evidence; confidence reasons
+use plain language without changing support counts, measured ranges or uncertainty.
 
 Measured product displays use GRID detail curves/consensus. Discover removes arbitrary source levels
 by weighted LS alignment of display curves to the first curve on GRID, using the active similar-mode

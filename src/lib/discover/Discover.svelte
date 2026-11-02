@@ -39,6 +39,7 @@
 		type Profile
 	} from '#lib/profile/profile.ts';
 	import { bandLabels } from './describe.ts';
+	import { confidenceReason, describeTaste, emptyTasteSummary } from './taste-wording.ts';
 	import { rankToGrid } from './rank-to-grid.ts';
 	import { alignDisplaySeries } from './align-display.ts';
 	import { rigLabel } from '#lib/rigs.ts';
@@ -653,10 +654,12 @@
 							{#each taste.model.tastes as target (target.id)}<h4>
 									Taste {target.id + 1}: {target.members.map(nameFor).join(', ')}
 								</h4>
-								{#if target.statements.length}<ul>
-										{#each target.statements as statement (statement)}<li>{statement}</li>{/each}
+								{#if target.summary.length}<ul>
+										{#each target.summary as statement (statement.band)}<li>
+												{describeTaste(statement, form)}
+											</li>{/each}
 									</ul>{:else}<p>
-										No supported population-relative statements from these measurements.
+										{emptyTasteSummary(form)}
 									</p>{/if}{/each}
 							<p>
 								<strong
@@ -664,7 +667,9 @@
 								>
 							</p>
 							<ul>
-								{#each taste.model.confidence.reasons as reason (reason)}<li>{reason}</li>{/each}
+								{#each taste.model.confidence.reasons as reason (reason)}<li>
+										{confidenceReason(reason)}
+									</li>{/each}
 							</ul>
 							{#each taste.model.conflicts as conflict, index (`${conflict.liked}:${conflict.disliked}:${index}`)}<Notice
 									kind="caution"
@@ -878,10 +883,10 @@
 		height: 160px;
 	}
 	.chart-jump {
-		font-size: var(--text-xs);
-	}
-	.return-link {
 		display: none;
+		align-items: center;
+		min-block-size: 28px;
+		font-size: var(--text-xs);
 	}
 	.section-heading {
 		margin-bottom: 8px;
@@ -949,8 +954,10 @@
 		.chart-column {
 			position: static;
 		}
+		.chart-jump {
+			display: inline-flex;
+		}
 		.return-link {
-			display: inline-block;
 			margin-bottom: 16px;
 		}
 	}
