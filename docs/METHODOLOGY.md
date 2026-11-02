@@ -282,8 +282,10 @@ bands are never described as equal. Treble/air wording carries the above-8-kHz r
 The expanded table reports all available signed means, RMS values, regional coverage and contribution;
 overall coverage is the engine's fraction of eligible rank samples. Distance and tilt are shown to one
 decimal, in dB and dB/octave respectively. Lower response distance means closer measured shape, not
-better sound. Reviewer ranges retain the service's participating-source count; absent ranges are not
-invented. Listing amounts use only published USD values, attributed to their listing source and crawl
+better sound. Reviewer ranges retain the service's participating-source count; endpoints that round
+to the same one-decimal value are shown once, and absent ranges are not invented. A description that
+mentions treble or air appends one plain-language reliability note for differences above 8 kHz, rather
+than repeating it for each band. Listing amounts use only published USD values, attributed to their listing source and crawl
 month/year; they are not current price or availability claims.
 
 Profile inputs map love to strength 1, like to 0.6, dislike to 1, and neutral to 0 (excluded). The engine

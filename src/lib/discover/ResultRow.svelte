@@ -4,7 +4,7 @@
 	import type { BandDistance } from '#core/analysis/distance.ts';
 	import type { TasteFit } from '#core/analysis/taste.ts';
 	import { dbLabel } from '#lib/chart.ts';
-	import { bandLabels, describeBands, priceLines } from './describe.ts';
+	import { bandLabels, describeBands, priceLines, reviewerSummary } from './describe.ts';
 	import { reasonLabels } from '#lib/profile/profile.ts';
 	import { detail, curveSources, type CurveSource } from './display.ts';
 	import Notice from '#lib/components/Notice.svelte';
@@ -71,9 +71,7 @@
 		>
 	</div>
 	{#if match}<p class="reviewers">
-			{#if match.perSourceRange}{match.perSourceRange[0].toFixed(1)}–{match.perSourceRange[1].toFixed(1)} dB across
-				{match.sourceCount} reviewers{:else}{match.sourceCount}
-				{match.sourceCount === 1 ? 'reviewer' : 'reviewers'}{/if}
+			{reviewerSummary(match.perSourceRange, match.sourceCount)}
 		</p>{/if}
 	<p class="description">{describeBands(bands)}</p>
 	{#each prices as price (price)}<p class="price">{price}</p>{/each}

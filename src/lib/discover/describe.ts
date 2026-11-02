@@ -19,13 +19,30 @@ export function describeBands(bands: readonly BandDistance[]): string {
 		if (meanDb === null || !Number.isFinite(meanDb) || Math.abs(meanDb) < WORDING.omit) return [];
 		const magnitude = Math.abs(meanDb);
 		return [
-			`${magnitude < WORDING.slight ? 'slightly ' : magnitude >= WORDING.much ? 'much ' : ''}${meanDb > 0 ? 'more' : 'less'} ${bandLabels[band]}${band === 'treble' || band === 'air' ? ' (less reliable above 8 kHz)' : ''}`
+			{
+				text: `${magnitude < WORDING.slight ? 'slightly ' : magnitude >= WORDING.much ? 'much ' : ''}${meanDb > 0 ? 'more' : 'less'} ${bandLabels[band]}`,
+				lessReliable: band === 'treble' || band === 'air'
+			}
 		];
 	});
-	const text = phrases.join(', ');
+	const text = phrases.map((phrase) => phrase.text).join(', ');
+	const caveat = phrases.some((phrase) => phrase.lessReliable)
+		? ' · differences above 8 kHz are less reliable'
+		: '';
 	return text
-		? text.charAt(0).toUpperCase() + text.slice(1)
+		? text.charAt(0).toUpperCase() + text.slice(1) + caveat
 		: 'No band mean differs by 0.75 dB or more where measured.';
+}
+
+function roundedRange(range: readonly [number, number]): string {
+	const low = range[0].toFixed(1);
+	const high = range[1].toFixed(1);
+	return low === high ? low : `${low}–${high}`;
+}
+
+export function reviewerSummary(range: readonly [number, number] | null, count: number): string {
+	const reviewers = `${count} ${count === 1 ? 'reviewer' : 'reviewers'}`;
+	return range ? `${roundedRange(range)} dB across ${reviewers}` : reviewers;
 }
 
 export function priceLines(candidate: CandidateInfo): string[] {
