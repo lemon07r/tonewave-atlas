@@ -5,8 +5,6 @@ data reviewers publish.
 
 **[tonewave.lr7.dev](https://tonewave.lr7.dev)** · free · no account · no tracking
 
-![Discover: matches for a reference IEM, with the reference and match curves overlaid](docs/images/discover.png)
-
 Pick an IEM you know and get its closest measured matches, each with a plain description of where it
 differs: more bass, a recessed upper midrange, extra treble energy. Rate a few more and the ranking
 follows your taste instead of a single reference.
