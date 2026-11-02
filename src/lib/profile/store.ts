@@ -9,7 +9,10 @@ const restoredNotice =
 export function profileStore(storage: Storage, session?: Storage) {
 	let value = emptyProfile();
 	let previous: Profile | undefined;
+	// Read problems found at startup stay visible; write status messages are appended and replaced.
+	let readError = '';
 	let error = '';
+	const withRead = (message: string) => [readError, message].filter(Boolean).join(' ');
 	let sessionOnly = false;
 	let restoredSession = false;
 	try {
@@ -17,30 +20,32 @@ export function profileStore(storage: Storage, session?: Storage) {
 		if (saved) value = parseProfile(saved);
 	} catch {
 		sessionOnly = true;
-		error =
+		readError =
 			'Saved profile could not be read. It has not been overwritten. Edits stay in this session; export them to keep them.';
+		error = readError;
 	}
 	try {
 		const restored = session?.getItem(SESSION_KEY);
 		if (restored) {
 			value = parseProfile(restored);
 			sessionOnly = restoredSession = true;
-			error = error ? `${error} ${restoredNotice}` : restoredNotice;
+			error = withRead(restoredNotice);
 		}
 	} catch {
 		// Unreadable tab state means an Undo was in progress; never let the next edit overwrite canonical storage.
 		sessionOnly = true;
-		const notice =
-			'Restored tab state could not be read. Edits stay in this session; export them to keep them.';
-		error = error ? `${error} ${notice}` : notice;
+		readError = withRead(
+			'Restored tab state could not be read. Edits stay in this session; export them to keep them.'
+		);
+		error = readError;
 	}
 	function saveSession(next: Profile) {
 		try {
 			if (!session) throw new Error('Tab storage is unavailable');
 			session.setItem(SESSION_KEY, JSON.stringify(next));
-			error = restoredNotice;
+			error = withRead(restoredNotice);
 		} catch {
-			error = `${restoredNotice} Tab storage is unavailable; export before leaving this workspace.`;
+			error = withRead(`${restoredNotice} Tab storage is unavailable; export before leaving this workspace.`);
 		}
 	}
 	function write(next: Profile) {
@@ -51,9 +56,9 @@ export function profileStore(storage: Storage, session?: Storage) {
 		}
 		try {
 			storage.setItem(PROFILE_KEY, JSON.stringify(next));
-			error = '';
+			error = readError;
 		} catch {
-			error = 'Browser storage is unavailable. Export your profile to keep these edits.';
+			error = withRead('Browser storage is unavailable. Export your profile to keep these edits.');
 		}
 	}
 	return {
@@ -78,7 +83,7 @@ export function profileStore(storage: Storage, session?: Storage) {
 			value = before;
 			previous = undefined;
 			sessionOnly = restoredSession = true;
-			error = restoredNotice;
+			error = withRead(restoredNotice);
 			saveSession(before);
 		},
 		undo() {

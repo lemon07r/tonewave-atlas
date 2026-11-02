@@ -119,3 +119,13 @@ test('a recovered tab storage write clears the unavailable warning', () => {
 	expect(store.error).not.toContain('Tab storage is unavailable');
 	expect(store.error).toContain('session-only');
 });
+
+test('a successful tab-storage write keeps the unreadable saved-profile warning', () => {
+	const store = profileStore(
+		{ getItem: () => '{broken', setItem: vi.fn() },
+		{ getItem: () => JSON.stringify(edited), setItem: vi.fn() }
+	);
+	store.change(emptyProfile());
+	expect(store.error).toContain('has not been overwritten');
+	expect(store.error).toContain('session-only');
+});
