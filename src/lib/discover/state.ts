@@ -1,6 +1,6 @@
 import type { Focus } from '#core/analysis/weights.ts';
 import type { SourceMode, TasteRequest } from '#core/atlas/types.ts';
-import { parseProfile, soundItems, type WorkspaceItem } from '#lib/profile/profile.ts';
+import { parseProfile, PROFILE_LIMIT, soundItems, type WorkspaceItem } from '#lib/profile/profile.ts';
 
 export interface DiscoveryState {
 	rig: string;
@@ -14,17 +14,48 @@ export interface DiscoveryState {
 	sort: 'mean' | 'minimax';
 	pareto: boolean;
 	view: 'auto' | 'taste';
+	depth: number;
 	items: WorkspaceItem[] | undefined;
 	corrections: NonNullable<TasteRequest['corrections']>;
 	issue: string;
 }
 const ids = (text: string | null) => [...new Set((text ?? '').split(',').filter(Boolean))];
+export const FORM_SCOPED_DISCOVERY_KEYS = [
+	'ratings',
+	'ref',
+	'refs',
+	'm',
+	'rig',
+	'sources',
+	'sourceMode',
+	'edits',
+	'chart',
+	'mode',
+	'depth'
+] as const;
+
+/** Keep shared evidence in the URL, separately from each form's saved profile. */
+export function withForm(url: URL, form: 'iem' | 'headphone'): URL {
+	const next = new URL(url.href);
+	const outgoing = url.searchParams.get('form') === 'headphones' ? 'headphone' : 'iem';
+	if (outgoing === form) return next;
+	const items = parseDiscovery(next.searchParams).items;
+	if (items) next.searchParams.set(`ratings-${outgoing}`, JSON.stringify(items));
+	for (const key of [...FORM_SCOPED_DISCOVERY_KEYS, 'p', 'diff', 'product', 'measurement'])
+		next.searchParams.delete(key);
+	const incoming = next.searchParams.get(`ratings-${form}`);
+	if (incoming !== null) next.searchParams.set('ratings', incoming);
+	if (form === 'iem') next.searchParams.delete('form');
+	else next.searchParams.set('form', 'headphones');
+	return next;
+}
 
 /** Old explicit references become one Like. Saved v1 ratings remain explicit, including Love. */
 export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): DiscoveryState {
 	const focus = params.get('focus');
 	const alpha = Number(params.get('alpha'));
 	const max = Number(params.get('max'));
+	const depth = Number(params.get('depth'));
 	let items: WorkspaceItem[] | undefined;
 	let issue = '';
 	let corrections: DiscoveryState['corrections'] = [];
@@ -44,10 +75,15 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 				}
 			];
 		}
+	} catch {
+		items = [];
+		issue = 'This shared workspace contains invalid ratings. Your saved profile has not changed.';
+	}
+	try {
 		if (params.has('edits')) {
 			const raw: unknown = JSON.parse(params.get('edits') ?? '[]');
 			const bands = ['sub-bass', 'bass', 'low-mid', 'mid', 'presence', 'treble', 'air'];
-			if (!Array.isArray(raw) || raw.length > 20) throw new Error('Invalid corrections');
+			if (!Array.isArray(raw) || raw.length > PROFILE_LIMIT) throw new Error('Invalid corrections');
 			for (const edit of raw as unknown[]) {
 				if (
 					!edit ||
@@ -68,10 +104,8 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 			}
 		}
 	} catch {
-		items = [];
 		corrections = [];
-		issue =
-			'This shared workspace contains invalid ratings or corrections. Your saved profile has not changed.';
+		issue = issue || 'This shared workspace contains invalid corrections. Your ratings have been kept.';
 	}
 	return {
 		rig: params.get('rig') ?? '',
@@ -85,6 +119,7 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 		overlays: ids(params.get('chart')).slice(0, 5),
 		sort: params.get('sort') === 'minimax' ? 'minimax' : 'mean',
 		pareto: params.get('pareto') === '1',
+		depth: Number.isSafeInteger(depth) && depth >= 20 ? depth : 20,
 		view:
 			params.get('view') === 'taste' || ['profile', 'taste'].includes(params.get('mode') ?? '')
 				? 'taste'
@@ -120,11 +155,7 @@ export function discoveryRoute(
 	const active = soundItems(items);
 	const likes = active.filter((item) => item.rating === 'love' || item.rating === 'like');
 	if (!likes.length) return 'empty';
-	if (
-		view === 'taste' ||
-		active.some((item) => item.rating === 'dislike') ||
-		items.filter((item) => item.soundRelated && item.rating !== 'unrated').length >= 5
-	)
+	if (view === 'taste' || active.some((item) => item.rating === 'dislike') || active.length >= 5)
 		return 'taste';
 	return likes.length === 1 ? 'similar' : 'compare';
 }
@@ -135,7 +166,8 @@ export function withItems(
 	items: readonly WorkspaceItem[]
 ): URLSearchParams {
 	const next = new URLSearchParams(params.toString());
-	for (const key of ['mode', 'ref', 'm', 'edits', 'chart']) next.delete(key);
+	if (['profile', 'taste'].includes(next.get('mode') ?? '')) next.set('view', 'taste');
+	for (const key of ['mode', 'ref', 'm', 'edits', 'chart', 'depth']) next.delete(key);
 	next.set('ratings', JSON.stringify(items));
 	return next;
 }

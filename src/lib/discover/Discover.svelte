@@ -73,7 +73,7 @@
 	let queryError = $state.raw<AtlasError>();
 	let networkError = $state('');
 	let loading = $state(false);
-	let topK = $state(20);
+	let topK = $derived(settings.depth);
 	let upload = $state.raw<{ id: string; name: string; rig: string }>();
 	let uploadRig = $state('');
 	let uploadError = $state('');
@@ -197,7 +197,10 @@
 		void goto(resolve(`/?${params}` as PathnameWithSearchOrHash), { reset: false, replace });
 	}
 	function change(changes: Record<string, string | undefined>) {
-		navigate(withDiscoveryChanges(page.url.searchParams, changes));
+		const resetDepth = Object.keys(changes).some((key) => !['chart', 'edits', 'depth'].includes(key));
+		navigate(
+			withDiscoveryChanges(page.url.searchParams, { ...(resetDepth ? { depth: undefined } : {}), ...changes })
+		);
 	}
 	function updateItems(next: WorkspaceItem[], message = 'Workspace updated.') {
 		if (!store) return;
@@ -206,7 +209,6 @@
 		profile = store.value;
 		storageError = store.error;
 		undoMessage = message;
-		topK = 20;
 		navigate(withItems(page.url.searchParams, next));
 	}
 	function choose(product: ProductListItem) {
@@ -300,7 +302,7 @@
 			const parsed = await (await analysis()).parseUpload(await file.text(), file.name);
 			if (!parsed.ok) throw new Error(parsed.error);
 			upload = { id: parsed.uploadId, name: file.name, rig };
-			change({ rig, chart: undefined, sources: undefined });
+			change({ chart: undefined, sources: undefined });
 		} catch (cause) {
 			uploadError = errorText(cause);
 		} finally {
@@ -361,6 +363,13 @@
 		untrack(() => {
 			void migrateLocation(href, current);
 		});
+	});
+	$effect(() => {
+		const cached = scopedEdits[modelKey];
+		if (cached && JSON.stringify(cached) !== JSON.stringify(settings.corrections))
+			untrack(() => {
+				change({ edits: JSON.stringify(cached) });
+			});
 	});
 	$effect(() => {
 		if (!ready || catalogLoading || catalogError) return;
@@ -504,7 +513,6 @@
 							value={upload?.rig ?? settings.rig}
 							disabled={Boolean(upload)}
 							onchange={(event) => {
-								topK = 20;
 								change({
 									rig: event.currentTarget.value,
 									sources: undefined,
@@ -545,7 +553,6 @@
 							placeholder="No limit"
 							value={settings.max ?? ''}
 							onchange={(event) => {
-								topK = 20;
 								change({
 									max:
 										event.currentTarget.value &&
@@ -595,11 +602,9 @@
 						selected={settings.sources}
 						mode={settings.sourceMode}
 						onmodechange={(mode: SourceMode) => {
-							topK = 20;
 							change({ sourceMode: mode === 'only' ? 'only' : undefined });
 						}}
 						onchange={(ids: string[]) => {
-							topK = 20;
 							change({ sources: ids.join(',') });
 						}}
 					/>
@@ -851,7 +856,7 @@
 							type="button"
 							disabled={loading}
 							onclick={() => {
-								topK += 20;
+								change({ depth: String(topK + 20) });
 							}}>Show more matches</button
 						>{/if}{#if !result.data.results.length}<Notice
 							>No eligible matches on this rig with these filters. Try a wider budget or reset reviewers.</Notice

@@ -8,6 +8,7 @@
 	import Icon from './Icon.svelte';
 	import Button from './Button.svelte';
 	import SegmentedControl from './SegmentedControl.svelte';
+	import { withForm } from '#lib/discover/state.ts';
 	let { children }: { children: Snippet } = $props();
 	type Theme = 'system' | 'light' | 'dark';
 	let theme = $state<Theme>('system');
@@ -21,11 +22,7 @@
 	] as const;
 	let form = $derived(browser && page.url.searchParams.get('form') === 'headphones' ? 'headphones' : 'iems');
 	function setForm(value: string) {
-		const url = new URL(page.url.href);
-		for (const key of ['ratings', 'ref', 'm', 'rig', 'sources', 'edits', 'chart', 'mode'])
-			url.searchParams.delete(key);
-		if (value === 'iems') url.searchParams.delete('form');
-		else url.searchParams.set('form', value);
+		const url = withForm(new URL(page.url.href), value === 'headphones' ? 'headphone' : 'iem');
 		void goto(resolve(`${url.pathname}${url.search}${url.hash}` as PathnameWithSearchOrHash), {
 			reset: false
 		});

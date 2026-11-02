@@ -37,6 +37,11 @@ test('upload requests keep the declared rig and lock the independent discovery r
 	await expect(rig).toBeDisabled();
 	await expect(rig).toHaveValue('iem-711');
 	await expect(page.getByText(/Rig is locked to your upload/)).toBeVisible();
+	expect(new URL(page.url()).searchParams.get('rig')).toBe('iem-5128');
+	await page.getByRole('button', { name: 'Remove local reference', exact: true }).click();
+	await expect(rig).toHaveValue('iem-5128');
+	await expect(rig).toBeEnabled();
+	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
 });
 
 test('source-only reviewer Reset returns to coverage atomically instead of failing the query', async ({
@@ -71,6 +76,7 @@ test('reviewer changes clear serialised corrections belonging to the old taste m
 	);
 	await expect(page.locator('.result-row')).toHaveCount(20);
 	await page.locator('.refine > summary').click();
+	await expect(page).toHaveURL(/edits=/);
 	await page.getByRole('searchbox', { name: 'Search reviewers' }).fill(reviewer.name);
 	await page.locator('.source-options').getByRole('checkbox', { name: reviewer.name, exact: true }).check();
 	await expect(page).not.toHaveURL(/edits=/);
@@ -88,6 +94,71 @@ test('an unknown Neutral product does not block a valid Like', async ({ page }) 
 	await expect(page.locator('.results')).not.toContainText(
 		'A rated reference is not in this form-factor catalog'
 	);
+});
+
+test('a chart selection below the first page survives reload and sharing', async ({ page, context }) => {
+	await page.goto(shared([like(reference)]));
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await page.getByRole('button', { name: 'Show more matches', exact: true }).click();
+	await expect(page.locator('.result-row')).toHaveCount(40);
+	await page
+		.locator('.result-row')
+		.nth(25)
+		.getByRole('button', { name: 'Show on chart', exact: true })
+		.click();
+	await expect(page).toHaveURL(/chart=/);
+	const url = page.url();
+	for (const target of [page, await context.newPage()]) {
+		await target.goto(url);
+		await expect(target.locator('.result-row')).toHaveCount(40);
+		await expect(
+			target.locator('.result-row').nth(25).getByRole('button', { name: 'Remove from chart', exact: true })
+		).toBeVisible();
+		await expect(target.locator('.legend-row')).toHaveCount(2);
+	}
+});
+
+test('form switches retain shared workspaces and clear Compare selections', async ({ page }) => {
+	await page.goto(shared([like(reference)]));
+	const forms = page.getByRole('group', { name: 'Form factor', exact: true });
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await forms.getByRole('radio', { name: 'Headphones', exact: true }).check();
+	await expect(page.locator('.profile-row')).toHaveCount(0);
+	await forms.getByRole('radio', { name: 'IEMs', exact: true }).check();
+	await expect(page.locator('.profile-row')).toContainText('CrinEar Reference');
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await page.goto(`/compare?p=${reference},${volume}`);
+	await expect(page.getByTestId('comparison-row')).toHaveCount(2);
+	await forms.getByRole('radio', { name: 'Headphones', exact: true }).check();
+	await expect(page.getByTestId('comparison-row')).toHaveCount(0);
+	await expect(page).not.toHaveURL(/[?&]p=/);
+});
+
+test('Undo after a shared workspace edit restores the saved profile rather than the shared one', async ({
+	page
+}) => {
+	await page.addInitScript(
+		({ volume }) => {
+			localStorage.setItem(
+				'tonewave.profile.v1',
+				JSON.stringify({
+					version: 2,
+					profiles: {
+						iem: [{ productId: volume, rating: 'like', strength: 0.6, soundRelated: true }],
+						headphone: []
+					}
+				})
+			);
+		},
+		{ volume }
+	);
+	await page.goto(shared([like(reference)]));
+	await expect(page.locator('.profile-row')).toContainText('CrinEar Reference');
+	await page.getByRole('button', { name: 'Clear all', exact: true }).click();
+	await expect(page.locator('.profile-row')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(page.locator('.profile-row')).toContainText('Softears Volume S');
+	expect(await page.evaluate(() => localStorage.getItem('tonewave.profile.v1'))).toContain(volume);
 });
 
 test('pending results retain their returned reference headings, evidence and Compare links', async ({

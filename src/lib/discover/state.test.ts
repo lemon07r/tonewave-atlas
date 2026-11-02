@@ -1,5 +1,12 @@
-import { expect, test } from 'vitest';
-import { discoveryRoute, parseDiscovery, withItems, withDiscoveryChanges } from './state.ts';
+import { expect, test, vi } from 'vitest';
+import {
+	discoveryRoute,
+	parseDiscovery,
+	withItems,
+	withDiscoveryChanges,
+	withForm,
+	FORM_SCOPED_DISCOVERY_KEYS
+} from './state.ts';
 import { emptyProfile, parseProfile, soundItems, type WorkspaceItem } from '#lib/profile/profile.ts';
 import { profileStore } from '#lib/profile/store.ts';
 import { latestQuery } from './query.ts';
@@ -79,7 +86,7 @@ test('routes one like, two to four likes, dislikes and five rated products; comf
 			[...likes.slice(0, 4), { ...like, productId: 'neutral', rating: 'neutral', strength: 0 }],
 			'auto'
 		)
-	).toBe('taste');
+	).toBe('compare');
 	expect(soundItems([{ ...like, rating: 'neutral', strength: 0 }])).toEqual([]);
 	expect(discoveryRoute([like, { ...like, productId: 'b', rating: 'dislike' }], 'auto')).toBe('taste');
 	expect(
@@ -138,4 +145,75 @@ test('rejects older query successes and errors after a newer query or invalidati
 	controller.invalidate();
 	await pending;
 	expect(received).toEqual(['new']);
+});
+
+test('invalid corrections do not discard valid shared ratings or substitute saved ratings', () => {
+	for (const edits of ['{broken', '{}', '[{"tasteId":0,"bands":{"bass":5}}]']) {
+		const state = parseDiscovery(new URLSearchParams({ ratings: JSON.stringify([like]), edits }));
+		expect(state.items).toEqual([like]);
+		expect(state.corrections).toEqual([]);
+		expect(state.issue).toContain('invalid corrections');
+		expect(parseDiscovery(new URLSearchParams({ edits })).items).toBeUndefined();
+	}
+});
+
+test('corrections accept one entry per supported profile item, not just twenty', () => {
+	const edits = Array.from({ length: 200 }, (_, tasteId) => ({ tasteId, bands: { bass: 1 } }));
+	expect(parseDiscovery(new URLSearchParams({ edits: JSON.stringify(edits) })).corrections).toEqual(edits);
+	expect(parseDiscovery(new URLSearchParams({ edits: JSON.stringify([...edits, edits[0]]) })).issue).not.toBe(
+		''
+	);
+});
+
+test('every edit to a legacy taste URL retains the explicit taste view', () => {
+	for (const mode of ['taste', 'profile']) {
+		const next = withItems(new URLSearchParams({ mode }), [like, { ...like, productId: 'b' }]);
+		expect(next.has('mode')).toBe(false);
+		expect(parseDiscovery(next).view).toBe('taste');
+	}
+});
+
+test('form switches preserve shared ratings per form and clear all form-specific selections', () => {
+	const url = new URL('https://example.org/compare?focus=bass&unknown=keep#main');
+	for (const key of FORM_SCOPED_DISCOVERY_KEYS) url.searchParams.set(key, 'old');
+	url.searchParams.set('ratings', JSON.stringify([like]));
+	for (const key of ['p', 'diff', 'product', 'measurement']) url.searchParams.set(key, 'old');
+	const headphone = withForm(url, 'headphone');
+	for (const key of FORM_SCOPED_DISCOVERY_KEYS) expect(headphone.searchParams.has(key)).toBe(false);
+	for (const key of ['p', 'diff', 'product', 'measurement'])
+		expect(headphone.searchParams.has(key)).toBe(false);
+	headphone.searchParams.set('ratings', '[]');
+	const restored = withForm(headphone, 'iem');
+	expect(parseDiscovery(restored.searchParams).items).toEqual([like]);
+	expect(withForm(restored, 'headphone').searchParams.get('ratings')).toBe('[]');
+	expect(restored.searchParams.get('unknown')).toBe('keep');
+	expect(restored.hash).toBe('#main');
+});
+
+test('result depth round-trips and invalid depth falls back to the first page', () => {
+	expect(parseDiscovery(new URLSearchParams('depth=40')).depth).toBe(40);
+	for (const depth of ['NaN', 'Infinity', '-1', '21.5'])
+		expect(parseDiscovery(new URLSearchParams({ depth })).depth).toBe(20);
+	expect(withItems(new URLSearchParams('depth=40'), [like]).has('depth')).toBe(false);
+});
+
+test('an older query rejection is ignored after a newer query or invalidation', async () => {
+	for (const invalidate of [false, true]) {
+		const controller = latestQuery<string>();
+		const reject = vi.fn();
+		let fail: (cause: Error) => void = () => {};
+		const pending = controller.run(
+			() =>
+				new Promise((_, reject) => {
+					fail = reject;
+				}),
+			vi.fn(),
+			reject
+		);
+		if (invalidate) controller.invalidate();
+		else await controller.run(() => Promise.resolve('new'), vi.fn(), reject);
+		fail(new Error('old failure'));
+		await pending;
+		expect(reject).not.toHaveBeenCalled();
+	}
 });

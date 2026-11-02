@@ -201,6 +201,11 @@ test('Discover clears source filters on rig changes and keeps taste corrections 
 	await expect(correction).toHaveValue('0');
 	await rig.selectOption('iem-711');
 	await expect(correction).toHaveValue('0.5');
+	await expect(page).toHaveURL(/edits=/);
+	await page.reload();
+	await page.locator('.refine > summary').click();
+	await page.locator('.controls > details > summary').click();
+	await expect(correction).toHaveValue('0.5');
 	await accessible(page);
 });
 
