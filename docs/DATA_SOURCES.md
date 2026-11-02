@@ -165,14 +165,19 @@ brands, duplicate index rows, normalised identity collisions, and suspicious adj
 duplicate index rows are removed; duplicate measurement identities retain the first accepted entry
 with a report entry. Fuzzy names are never
 automatically merged. Abbreviations may remain separate products. Variant kinds retain the original
-label: replacement samples (`S2`, sample/unit 2, `(by person)`) take precedence as `unit`; tips, foam,
+label: explicit replacement samples (sample/unit 2) take precedence as `unit`; tips, foam,
 insertion and pads are `fit`; switches, filters, impedance, nozzles and DSP are `tuning`; cables and
 adapters are `setup`. Classification uses descriptors rather than the stock model's words. Default
 selection prefers explicit default/stock, neutral EQ/normal/standard/original, then ANC-off states;
 ties use source order. Without an obvious stock state, the first non-excluded, non-ambiguous file
 remains the fallback, including mode-only products such as CMF Buds Pro. Other modes are non-default
-tuning and cannot train consensus/statistics. Explicit sample 1 can be default; sample 2 cannot.
-B&W generation labels such as Pi7 S2, Px7 S3 and Px8 S2 are not replacement-sample labels. `quality.defaultSelections` and
+tuning unless required by the final coverage fallback below. Explicit sample 1 is initially eligible;
+replacement samples are initially excluded. `S1`–`S9` shorthand requires explicit sample/unit wording
+elsewhere in the source's phone book or other S-number measurements of the same maker/product at that
+source. Otherwise it is model text, not a sample claim. B&W generation labels such as Pi7 S2, Px7 S3
+and Px8 S2 are not replacement-sample labels. Parenthesized/bracketed `(by person)`, `(measured by person)`
+and similar credits are neutral attribution: stripped from variant labels/descriptors, retained verbatim
+in original filenames. `quality.defaultSelections` and
 `quality.tuningModes` retain the selection and accepted mode audit.
 
 Recognized terminal switch-state suffixes (high/low impedance, including “impedence”/“imp”, DU or
@@ -189,11 +194,12 @@ Tip suffixes include Stock Tip, branded tips, foam, wide/narrow/standard bore, C
 tip families. They become `fit` only when every token is a recognized tip term; a source's sole
 neutral tip option stays default, while additional split tip defaults prefer stock/standard/default
 then source order. Other tokens (including `02`/`12` in Hisenior T4's foam labels) stay in the variant
-label and make it non-default `tuning`, without guessing their meaning. Model designators such as
+label and make it `tuning` (initially non-default), without guessing their meaning. Model designators such as
 Pro/Max/II/2/S/Ultra/Plus, T4/X2, revisions, samples and mods prevent that suffix from being folded.
 Existing unit or tuning meaning wins over neutral tip metadata. Ambiguous tip suffixes are retained
 in `switchIdentity.tipAmbiguities`, with their tokens in each move and the default protection in
-processing provenance; a switch plurality cannot promote them.
+processing provenance; ordinary switch reconciliation cannot promote them, but final default coverage
+can select a fallback without erasing the tuning kind.
 Recognized tip vocabulary includes stock/standard/original, silicone/foam, ear/tip/bore descriptors,
 CP codes and ABP-T; SpinFit W1/Omni, Azla/Sedna Short/Light/Crystal/Origin, Divinus Velvet, Baroque,
 Moondrop Spring, Final E, JVC Spiral Dot, Sennheiser foam, TENNMAK SoFoam and KZ tips. Other names,
@@ -208,10 +214,23 @@ switch-state default. A different switch state wins over incidental tip/fit meta
 changes remain `fit`. CP100/CP145, ABP-T and wide-bore labels are recognized as tips. Unlabelled
 defaults are preserved, not acoustically assigned.
 Tied pluralities remain unresolved. DU and 00, or named modes and impedance positions, are **not**
-equated without evidence. Sources lacking the selected state can therefore have no explicit default;
-their measurements remain available as tuning variants. The reports `switchIdentity`,
+equated without evidence. Multiple defaults without an eligible selected labelled state remain unchanged
+and are listed as unresolved. The reports `switchIdentity`,
 `switchDefaults`, `variantReview` and `unknownVariants` retain moves, votes, per-source choices,
 every state/cable variant and residual unknown labels for audit.
+
+After final rig/partition assignment, **every measured (product, partition) must have a default**.
+Every (product, source, partition) must also have one except when a selected labelled switch state is
+absent at that source and another source supplies defaults for that product in the **same partition**.
+Singleton unit/fit/unknown groups always become default. Otherwise missing defaults use the lowest
+numbered sample (or first unit), stock/neutral fit first, or the existing tuning/default tie-break and
+source order. Fallback selection sets `isDefault` without rewriting `kind`, with processing provenance:
+a sample or ambiguous setting can represent an otherwise unusable product without being called stock.
+Multiple defaults are reduced only when the selected labelled state is present; no encoding is guessed.
+`defaultCoverage` records counts before/after finalisation, selections, justified exceptions and every
+unresolved multiple-default group with filenames. A fatal assertion runs before statistics/publication
+if product coverage or the source exception rule is violated. Counts against the previous published
+catalog are recorded separately in the audit below, not confused with pre-finalisation counts.
 Newer index schemas without `file` lists are reported as
 unsupported, not silently guessed. Source hardware, raw calibration, insertion, tips, seal and prices
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
@@ -469,12 +488,15 @@ every scanned database's form counts, all quarantine reasons and remaining confl
 
 ### Switch, accessory and residual-variant audit (November 2026)
 
-The final cached rebuild is **`c103d7e36980d1b60a2e4bc5`**: **9,610 products / 40,821 measurements /
+The switch/accessory round's cached rebuild was **`c103d7e36980d1b60a2e4bc5`**: **9,610 products / 40,821 measurements /
 138 databases / 118 publishers**, compared with `6417dab7343144186a57d2d9`'s 10,065 / 40,814.
 All existing measurement IDs survive; there are **zero removals in every partition** and seven
 restored ambiguous settings: Obodio's `vsk6+6`, `vsk6-6`, `vsk12+12`, `vsk12-12`, K7 max/min values,
 and Superreview's `Sony WH1000XM6 MRS V4`. All seven are non-default tuning, not claimed factory
 presets or confirmed user EQ. Explicit numeric EQ band lists and third-party processing stay excluded.
+The counts through the artifact-check subsection describe that round; the default-coverage correction
+below supersedes its default availability and harmonisation figures. The worked source listings reflect
+the corrected dataset.
 
 The state pass changes **128 product/source default sets across 50 products and 50 databases**.
 It reviews 237 products: 170 have a unique labelled-source plurality; 67 have tied or absent votes.
@@ -567,12 +589,143 @@ lists below were also mechanically compared against the final catalogs: all **13
 match. Before integrating the engine branch, `pnpm verify` passes **54 files / 727 tests**, with zero
 type errors or warnings. The rebuild used the complete local cache; no crawl was run.
 
+#### Default-coverage correction (November 2026)
+
+The corrected offline build is **`8e9325862f3449439a431f18`**, retaining **9,610 products / 40,821
+measurements / 138 databases / 118 publishers**. Against `c103d7e36980d1b60a2e4bc5`, there are **zero
+removals, zero additions and zero product/source identity changes**. Retained channel metadata, dates,
+prices, review URLs and original/calibration URLs match. Original filenames are unchanged, including
+measurer credits; only their neutral label/descriptor interpretation changes.
+
+**Default coverage**, counted directly from the two catalogs (before → after):
+
+| Form      | Measured product/partitions | Product/partitions without default | Product/source groups without default | Product/source groups with multiple defaults |
+| --------- | --------------------------: | ---------------------------------: | ------------------------------------: | -------------------------------------------: |
+| IEM       |                       8,315 |                        497 → **0** |                          775 → **57** |                                  60 → **93** |
+| Headphone |                       2,840 |                        210 → **0** |                           210 → **0** |                                    0 → **0** |
+| Total     |                      11,155 |                        707 → **0** |                          985 → **57** |                                  60 → **93** |
+
+There are 20,645 IEM and 2,860 headphone product/source groups. Product/source/partition counts are
+identical here. All 57 remaining source exceptions lack the selected labelled state and have defaults
+from another source in the same partition. None represents a product/partition without a default.
+After parsing/reconciliation, before final coverage, 526 product/partitions and 641 source groups lack
+defaults. Finalisation makes 584 selections (583 deterministic fallbacks and one matching labelled
+state), leaving zero and 57 respectively. The fatal coverage assertion passes; tests also reach its
+failure paths for missing product coverage and unjustified missing source coverage.
+
+The original 60 multiple-default sets are all unchanged: no selected labelled state is available to
+resolve them. The total rises to 93 because no-match inherited defaults are now preserved instead of
+cleared, and neutral attribution/context corrections expose further defaults. This is unresolved
+metadata, not 93 successful reconciliations. All 93 groups across 61 products are listed below; their
+full measurement IDs, filenames and suffixes are in `defaultCoverage.unresolvedMultipleDefaults`.
+
+Requested examples now have defaults: dchpgall's Infinity Ultra, QCY T1 and Aroma Audio Core are not
+units merely because of `(by …)`; Nymz's Olina Sample 2, Animagus's Odin Sample 3, TGX78's KR5 Sample 2
+Silver ATOM, Ankramutt's Hola S2 and Enemyspider's modified Q1 PRO retain unit meaning with
+`isDefault: true`. Aftersound's CADENZA 12 S2 has no supporting source sample context, so S2 remains
+model text. Hore's D-Fi Switch 1011 covers its isolated partition. Eighteen mixed-tip curves need
+coverage defaults but retain `tuning`; no stock or switch-equivalence claim is added.
+
+All **232 sizes/SHA-256 hashes**, **229 decoded binary packs**, **40,821 rank curves** and **80,361
+detail-channel curves** pass references/coverage checks. Of the 229 binary artifacts, **228 are
+byte-identical** to the previous round, including every detail pack; only the iem-711 rank pack changes,
+which embeds the recalculated statistics. The seven protected K7/MRS curves remain non-default tuning.
+All 130 worked source listings match the corrected catalogs; only four rows change: Reference/Hobbytalk,
+Canon Pro/Aftersound, Canon Pro/HBB and Butastur/TGX78.
+
+Updated held-out IEM harmonisation, using the unchanged engine and support rules:
+
+| Partition | Multi-source products | Sources | Held-out pairs | Mean before → after dB | Mean / median improvement dB | Fold mean-improvement range dB |
+| --------- | --------------------: | ------: | -------------: | ---------------------: | ---------------------------: | -----------------------------: |
+| iem-711   |                 2,448 |     107 |         84,793 |    1.765982 → 1.577772 |          0.188211 / 0.169648 |            0.178707 … 0.194769 |
+| iem-5128  |                    21 |       3 |             27 |    1.628695 → 1.611542 |          0.017153 / 0.021444 |            0.000576 … 0.110390 |
+
+All five folds improve in each partition. Per-bin product support is 1,954–2,448 and 19–21;
+5128 evidence remains small and no cross-rig conversion is implied.
+
+SHA-256: manifest `b029df51c3b95eac1dd5bd149651b9f614251ab517a645309c376ce409c981f3`;
+IEM catalog `b95135e770acc5866be30c0aa4b7114f432202347753e844aaece98db8035236`;
+headphone catalog `da4e21cfafee00513a87d30b3129daa25452957f45305b50d17c0e6788b203b5`.
+
+`pnpm verify` passes **58 files / 791 tests**, with zero Svelte/type errors or warnings. `origin/main`
+remains `0b6ff4a37d411d7d9781aebef3c2b740bd90aa48`; no further rebase is needed. No crawl or push is run.
+
+##### Unresolved multiple-default groups
+
+Counts in parentheses are defaults, not measurement totals. Source IDs omit only their trailing hash.
+No listed group has an available curve in its product's selected labelled state.
+
+| Product                                     | Unresolved source groups (default count)                                                                                                                                                 |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 64 Audio Ocean (Reference Nozzle +2dB Bass) | bloomaudio-iems (2)                                                                                                                                                                      |
+| ALPHA OMEGA OMEGA                           | hbb-iems (3)                                                                                                                                                                             |
+| Aroma Thunder                               | tgx78-iems (2)                                                                                                                                                                           |
+| Ashidavox EA-HF1                            | earphonesarchive-5128 (2)                                                                                                                                                                |
+| CCA CRA                                     | aden-iems (2); aftersound-iems (2); hbb-iems (2); hore-iems (2); jacstone-iems (2); melatonin-iems (2); nymz-iems (2); precog-iems (2); pw-iems (2); rg-iems (2); vortexreviews-iems (2) |
+| CCA Polaris                                 | aftersound-iems (7)                                                                                                                                                                      |
+| CCA Rhapsody                                | melatonin-iems (3)                                                                                                                                                                       |
+| CCA Trio                                    | mmagtech-iems (4)                                                                                                                                                                        |
+| CVJ Freedom                                 | ianfann-iems (4); isaiahse-iems (4)                                                                                                                                                      |
+| CVJ Konoka                                  | ianfann-iems (4)                                                                                                                                                                         |
+| CVJ KUMO                                    | ianfann-iems (3)                                                                                                                                                                         |
+| CVJ Mei                                     | aftersound-iems (4); ianfann-iems (4); isaiahse-iems (4)                                                                                                                                 |
+| CVJ Nami                                    | isaiahse-iems (4)                                                                                                                                                                        |
+| CVJ TXS                                     | aftersound-iems (4); ianfann-iems (4)                                                                                                                                                    |
+| Earfun Air Pro 4                            | dhrme-iems (2); fernandagunsan-iems (2); regancipher-iems (2)                                                                                                                            |
+| Hisenior Okavango                           | aftersound-iems (4)                                                                                                                                                                      |
+| Joyodio VZ10                                | aftersound-iems (9)                                                                                                                                                                      |
+| KBEAR Chrono                                | kuping-sensi-iems (2)                                                                                                                                                                    |
+| Kiwi Ears Quartet                           | cqtek-iems (4); harpo-iems (4); ianfann-iems (4); joshtbvo-iems (4)                                                                                                                      |
+| KZ AS24 Pro                                 | melatonin-iems (4)                                                                                                                                                                       |
+| KZ Castor Bass                              | mmagtech-iems (2)                                                                                                                                                                        |
+| KZ Castor Black                             | aftersound-iems (7)                                                                                                                                                                      |
+| KZ D-Fi                                     | aftersound-iems (6); ianfann-iems (15)                                                                                                                                                   |
+| KZ Duonic                                   | theaudiostore-iems (5)                                                                                                                                                                   |
+| KZ Krila                                    | hore-iems (2)                                                                                                                                                                            |
+| KZ Krilla                                   | aftersound-iems (5)                                                                                                                                                                      |
+| KZ Pisces                                   | theaudiostore-iems (5)                                                                                                                                                                   |
+| KZ Vader Pro                                | theaudiostore-iems (4)                                                                                                                                                                   |
+| KZ ZA12                                     | cqtek-iems (6)                                                                                                                                                                           |
+| KZ ZAT                                      | melatonin-iems (4)                                                                                                                                                                       |
+| KZ Zenith                                   | aftersound-iems (5)                                                                                                                                                                      |
+| KZ ZS10 Pro 2                               | cqtek-iems (6)                                                                                                                                                                           |
+| KZ ZS12 Pro X                               | aftersound-iems (6); theaudiostore-iems (5)                                                                                                                                              |
+| Moondrop Kadenz Bass+                       | arn-iems (2); atechreviews-iems (2); vortexreviews-iems (2)                                                                                                                              |
+| NF ACOUS NM2+                               | pw-iems (2)                                                                                                                                                                              |
+| NF Audio NA2+                               | cqtek-iems (2)                                                                                                                                                                           |
+| NF Audio NM2                                | cqtek-iems (2); vortexreviews-iems (2)                                                                                                                                                   |
+| NFAudio (NFAcous) NA2                       | soundignity-iems (2)                                                                                                                                                                     |
+| Night Oblivion Butastur                     | tgx78-iems (2)                                                                                                                                                                           |
+| Nightjar Duality switch+                    | eliseaudio-iems (2)                                                                                                                                                                      |
+| Plexsonic Strato                            | audioamigo-iems (2)                                                                                                                                                                      |
+| QDC Anole V14                               | eliseaudio-iems (3)                                                                                                                                                                      |
+| QDC Anole VX                                | eliseaudio-iems (6)                                                                                                                                                                      |
+| Sample Qb                                   | hbb-iems (2)                                                                                                                                                                             |
+| Samsung Galaxy Buds                         | aden-iems (2); precog-iems (2)                                                                                                                                                           |
+| Samsung Galaxy Buds (TWS)                   | lown-fi-iems (2)                                                                                                                                                                         |
+| Simgot ET142 Stainless Steel                | cqtek-iems (2)                                                                                                                                                                           |
+| Smabat X1                                   | cqtek-iems (2)                                                                                                                                                                           |
+| Snowy A8                                    | iemocean-iems (2)                                                                                                                                                                        |
+| Snowy88 A8                                  | soundcheck39-iems (2)                                                                                                                                                                    |
+| Sonicast Dirac+ mk2                         | dchpgall-iems (2)                                                                                                                                                                        |
+| Soundpeats Air5 Pro TWS                     | pw-iems (2)                                                                                                                                                                              |
+| Soundpeats Capsule3 Pro+                    | hobbytalk-iems (2); vortexreviews-iems (2)                                                                                                                                               |
+| Tansio Mirai X                              | tgx78-iems (4)                                                                                                                                                                           |
+| TinHiFi P1                                  | koi-iems (2)                                                                                                                                                                             |
+| TinHiFi T4                                  | hbb-iems (2); timmyv-iems (2)                                                                                                                                                            |
+| TRI Star River                              | isaiahse-iems (4)                                                                                                                                                                        |
+| TRN VX Pro                                  | eplv-iems (2); pw-iems (2); vortexreviews-iems (2)                                                                                                                                       |
+| Yanyin Canon 2                              | arn-iems (4); hbb-iems (4); ianfann-iems (4)                                                                                                                                             |
+| Yanyin Canon Pro                            | aftersound-iems (4); hbb-iems (3)                                                                                                                                                        |
+| Ys Sword                                    | soundignity-iems (2)                                                                                                                                                                     |
+
 #### Worked-example source listings
 
 The source listings below retain original filenames; a different original suffix follows in
 parentheses. Source IDs omit only their trailing hash. `none` means no eligible default or no tuning
-variant, not a missing measurement. Fit, unit, setup and unknown variants are retained but are not
-enumerated in these default/tuning lists; `variantReview` contains all kinds and full source IDs.
+variant, not a missing measurement. Non-default fit, unit, setup and unknown variants are retained but
+not enumerated here; coverage defaults are listed regardless of kind. `variantReview` contains all
+kinds and full source IDs.
 Unlabelled defaults are not evidence of a particular switch state. These results supersede the
 earlier switch-group examples above, not the historical artifact/removal counts.
 
@@ -647,7 +800,7 @@ shorter-bore and other tip alternatives are fit variants, not modes inferred fro
 - **flare-iems** (iem-711): default `CrinEar Reference`; tuning none.
 - **hbb-iems** (iem-711): default `Crin Ref`; tuning none.
 - **headphonezone-iems** (iem-711): default `Crinear Reference`; tuning none.
-- **hobbytalk-iems** (iem-711): default **none**; tuning `CrinEar Reference 75` ((75ohm Adapter)).
+- **hobbytalk-iems** (iem-711): default `CrinEar Reference S2`; tuning `CrinEar Reference 75` ((75ohm Adapter)).
 - **iemocean-iems** (iem-711): default `CrinEar Reference`; tuning `CrinEar Reference 10 Ohm` (10 Ohm adapter).
 - **jaraba-iems** (iem-711): default `Reference`; tuning none.
 - **jaytiss-iems** (iem-711): default `Crinears Reference`; tuning none.
@@ -703,11 +856,12 @@ unresolved defaults inherited from separate source-index products, not a complet
 #### Yanyin Canon Pro
 
 Selected state: `switch:bits:00`; source votes `{"switch:bits:11":1,"switch:du:uuu":1,"switch:du:dd":2,"switch:du:ud":1,"switch:bits:00":3,"switch:du:uu":1}`.
-DU-only sources without a separately labelled 00 state have no eligible explicit default. Their
-curves remain tuning; no DD/00 or two-/three-switch equivalence is invented. `Canon Pro 1on` remains
-a separate identity, outside the exact parent listing below.
+DU-only sources without a separately labelled 00 state have no eligible selected-state default.
+Aftersound/HBB retain unresolved inherited multiple defaults; other unmatched sources retain tuning
+without a default where another source covers the same partition. No DD/00 or two-/three-switch
+equivalence is invented. `Canon Pro 1on` remains separate, outside the exact parent listing below.
 
-- **aftersound-iems** (iem-711): default **none**; tuning `YANYIN CANON PRO UU` (UU); `YANYIN CANON PRO DD` (DD); `YANYIN CANON PRO UD` (UD); `YANYIN CANON PRO DU` (DU).
+- **aftersound-iems** (iem-711): default `YANYIN CANON PRO UU` (UU); `YANYIN CANON PRO DD` (DD); `YANYIN CANON PRO UD` (UD); `YANYIN CANON PRO DU` (DU); tuning none.
 - **audioamigo-iems** (iem-711): default `Yanyin Canon Pro 00` ((Switches: 00)); tuning `Yanyin Canon Pro 10 15 Ohm` ((Switches: 10, Impedance: 15 Ohms)); `Yanyin Canon Pro 11` ((Switches: 11)); `Yanyin Canon Pro 11 15 Ohm` ((Switches: 11, Impedance: 15 Ohms)); `Yanyin Canon Pro 10` ((Switches: 10)); `Yanyin Canon Pro 11 30 Ohm` ((Switches: 11, Impedance: 30 Ohms)); `Yanyin Canon Pro 10 30 Ohm` ((Switches: 10, Impedance: 30 Ohms)); `Yanyin Canon Pro 00 15 Ohm` ((Switches: 00, Impedance: 15 Ohms)); `Yanyin Canon Pro 00 30 Ohm` ((Switches: 00, Impedance: 30 Ohms)).
 - **boizoff-iems** (iem-711): default `Canon Pro (00) (TENNMAK SoFoam tips) ✓`; tuning `Canon Pro (11) (any stock silicone tips)`; `Canon Pro (01) (TENNMAK SoFoam tips) ✓`; `Canon Pro (10) (TENNMAK SoFoam tips) ✓`; `Canon Pro (11) (TENNMAK SoFoam tips) ✓`.
 - **breampike-iems** (iem-711): default `Yanyin Canon Pro 00` ((switches: 00)); tuning `Yanyin Canon Pro 11` ((switches: 11)); `Yanyin Canon Pro 01` ((switches: 01)); `Yanyin Canon Pro 10` ((switches: 10)).
@@ -716,7 +870,7 @@ a separate identity, outside the exact parent listing below.
 - **earphonesarchive-5128** (iem-5128): default **none**; tuning `Yanyin Canon Pro (UD)`; `Yanyin Canon Pro (DU)`; `Yanyin Canon Pro (DD)`; `Yanyin Canon Pro (UU)`.
 - **foxtoldmeso-5128** (iem-5128): default `Yanyin Canon Pro`; tuning none.
 - **gadgetrytech-iems** (iem-711): default **none**; tuning `Yanyin Canon Pro (UDU)` ((UDU)); `Yanyin Canon Pro (DUD)` ((DUD)); `Yanyin Canon Pro (UUU)` ((UUU)); `Yanyin Canon Pro (DDU)` ((DDU)); `Yanyin Canon Pro (DDD)` ((DDD)); `Yanyin Canon Pro (DUU)` ((DUU)).
-- **hbb-iems** (iem-711): default `Yan Can P`; tuning `Yan Can Dd` (DD); `Yan C Uu` (UU).
+- **hbb-iems** (iem-711): default `Yan Can Dd` (DD); `Yan Can P`; `Yan C Uu` (UU); tuning none.
 - **iemocean-iems** (iem-711): default `Yanyin Canon Pro 12` (12); tuning none.
 - **joycesreview-iems** (iem-711): default `Yanyin Canon Pro`; tuning none.
 - **soundcheck39-iems** (iem-711): default `Yanyin Canon Pro 00` (00); tuning `Yanyin Canon Pro 10` (10); `Yanyin Canon Pro 01` (01); `Yanyin Canon Pro 11` (11).
@@ -729,6 +883,7 @@ Selected state: `switch:du:dd`; source votes `{"switch:bits:00":2,"switch:du:dd"
 Bits and named bass/treble toggles are not equated with DD. Separate `Butastur 02`, `12` and `s2`
 identities remain outside the exact parent listing; their multi-position/sample meanings are not
 silently stripped.
+TGX78's two inherited defaults remain unresolved because neither has the selected DD label.
 
 - **breampike-iems** (iem-711): default **none**; tuning `night oblivion butastur 01` ((switches: 01)); `night oblivion butastur 10` ((switches: 10)); `night oblivion butastur 11` ((switches: 11)); `night oblivion butastur 00` ((switches: 00)).
 - **ducbloke-iems** (iem-711): default `Night Oblivion Butastur`; tuning none.
@@ -741,5 +896,5 @@ silently stripped.
 - **mmagtech-iems** (iem-711): default `Night Oblivion Butastur s.DD Foam` (s.DD (Foam)); tuning `Night Oblivion Butastur s.UU Foam` (s.UU (Foam)); `Night Oblivion Butastur s.DU Foam` (s.DU (Foam)); `Night Oblivion Butastur s.UD Foam` (s.UD (Foam)).
 - **precog-iems** (iem-711): default `Night Oblivion Butastur`; tuning none.
 - **superreview-iems** (iem-711): default `Night Oblivion Butastur (DD)` ((switches: DD)); tuning `Night Oblivion Butastur (UU)` ((switches: UU)); `Night Oblivion Butastur (UD)` ((switches: UD)); `Night Oblivion Butastur (DU)` ((switches: DU)).
-- **tgx78-iems** (iem-711): default **none**; tuning `Butasturoo` (00); `Butastur10` (10).
+- **tgx78-iems** (iem-711): default `Butasturoo` (00); `Butastur10` (10); tuning none.
 - **zerostresslevel-iems** (iem-711): default **none**; tuning `Night Oblivion Butastur (Bass Off, Treble On) Deep` ((Bass: Off, Treble: On) Deep); `Night Oblivion Butastur (Bass On, Treble On)` ((Bass: On, Treble: On)); `Night Oblivion Butastur (Bass Off, Treble Off) Deep` ((Bass: Off, Treble: Off) Deep); `Night Oblivion Butastur (Bass Off, Treble Off) Shallow` ((Bass: Off, Treble: Off) Shallow); `Night Oblivion Butastur (Bass On, Treble Off)` ((Bass: On, Treble: Off)); `Night Oblivion Butastur (Bass On, Treble On) Shallow` ((Bass: On, Treble: On) Shallow); `Night Oblivion Butastur (Bass Off, Treble Off)` ((Bass: Off, Treble: Off)); `Night Oblivion Butastur (Bass On, Treble On) Deep` ((Bass: On, Treble: On) Deep); `Night Oblivion Butastur (Bass Off, Treble On) Shallow` ((Bass: Off, Treble: On) Shallow); `Night Oblivion Butastur (Bass Off, Treble On)` ((Bass: Off, Treble: On)); `Night Oblivion Butastur (Bass On, Treble Off) Deep` ((Bass: On, Treble: Off) Deep); `Night Oblivion Butastur (Bass On, Treble Off) Shallow` ((Bass: On, Treble: Off) Shallow).
