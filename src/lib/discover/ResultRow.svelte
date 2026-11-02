@@ -66,8 +66,8 @@
 					· {candidate.variantLabel}</span
 				>{/if}
 		</h3>
-		<span class="distance mono" aria-label={`Response distance ${distance.toFixed(1)} dB`}
-			>{distance.toFixed(1)} <span>dB</span></span
+		<span class="distance mono"
+			><span class="sr-only">Response distance:&nbsp;</span>{distance.toFixed(1)} <span>dB</span></span
 		>
 	</div>
 	{#if match}<p class="reviewers">
@@ -80,7 +80,7 @@
 	<div class="actions">
 		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
 			>{selected ? 'Remove from chart' : 'Show on chart'}</button
-		>{#if referenceProductId}<a
+		>{#if selected}<a href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
 				href={resolve(
 					`/compare?p=${encodeURIComponent(referenceProductId)},${encodeURIComponent(candidate.product.id)}`
 				)}>Compare</a

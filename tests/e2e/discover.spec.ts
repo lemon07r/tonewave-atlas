@@ -1,0 +1,105 @@
+import { expect, test, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+// The parallel pages lane owns localhost's IPv6 preview; this worktree serves IPv4 on the same port.
+test.use({ baseURL: 'http://127.0.0.1:4173' });
+
+async function pick(page: Page, searchLabel: string, model: string) {
+	await page.getByRole('combobox', { name: searchLabel, exact: true }).fill(model);
+	await page.getByRole('option', { name: new RegExp(`^${model} `) }).click();
+}
+async function accessible(page: Page) {
+	const report = await new AxeBuilder({ page })
+		.withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+		.analyze();
+	expect(report.violations).toEqual([]);
+	expect(report.incomplete.filter((issue) => issue.id === 'aria-prohibited-attr')).toEqual([]);
+}
+
+test('real similar search, dB explanations, overlays, URL controls and reload', async ({ page }) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.goto('/');
+	await pick(page, 'An IEM you enjoy', 'Truthear Hexa');
+	const first = page.locator('.result-row').first();
+	await expect(first).toBeVisible();
+	await expect(first.locator('.distance')).toHaveText(/Response distance: \d+\.\d dB/);
+	await expect(page).toHaveURL(/ref=p-/);
+	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
+	await expect(page.locator('.legend-row')).toHaveCount(2);
+	await expect(page).toHaveURL(/chart=/);
+	await page.getByRole('radio', { name: 'Bass', exact: true }).check();
+	await expect(page).toHaveURL(/focus=bass/);
+	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
+		'aria-busy',
+		'false'
+	);
+	await page.reload();
+	await expect(page.getByRole('heading', { name: 'Truthear Hexa', exact: true })).toBeVisible();
+	await expect(page.getByRole('radio', { name: 'Bass', exact: true })).toBeChecked();
+	await expect(page.locator('.legend-row')).toHaveCount(2);
+	await page.getByRole('radio', { name: 'Difference', exact: true }).check();
+	await expect(page.getByRole('combobox', { name: 'Difference baseline' })).toHaveValue('reference');
+	await page.locator('.chart-sources summary').click();
+	await expect(page.locator('.chart-sources a').first()).toHaveAttribute('href', /^https?:\/\//);
+	await first.locator('summary').click();
+	await expect(first.getByRole('table')).toBeVisible();
+	await expect(first.getByText(/Tilt .* dB\/oct/)).toBeVisible();
+	await accessible(page);
+	expect(errors).toEqual([]);
+});
+
+test('love and reasoned dislike produce a persistent, explained taste model', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('radio', { name: 'Match my taste profile', exact: true }).check();
+	await expect(page.getByText(/Add at least one sound-related Like or Love/)).toBeVisible();
+	await pick(page, 'Add an IEM to your profile', 'Truthear Hexa');
+	await pick(page, 'Add an IEM to your profile', 'Truthear Nova');
+	const nova = page.getByRole('region', { name: 'Truthear Nova', exact: true });
+	await nova.getByRole('radio', { name: 'Dislike', exact: true }).check();
+	await nova.getByRole('checkbox', { name: 'Too much bass', exact: true }).check();
+	await expect(page.getByRole('region', { name: 'Taste model summary' })).toBeVisible();
+	await expect(page.locator('.result-row').first()).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'Hide Taste 1 centre (derived)', exact: true })
+	).toBeVisible();
+	const first = page.locator('.result-row').first();
+	await first.locator('summary').click();
+	await expect(first.getByText(/Closest liked product: Truthear Hexa/)).toBeVisible();
+	await expect(first.getByText(/Too much bass: (satisfied|violated|unknown)/)).toBeVisible();
+	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
+	await expect(page.locator('.legend-row')).toHaveCount(2);
+	await page.reload();
+	await expect(
+		page
+			.getByRole('region', { name: 'Truthear Hexa', exact: true })
+			.getByRole('radio', { name: 'Love', exact: true })
+	).toBeChecked();
+	await expect(nova.getByRole('radio', { name: 'Dislike', exact: true })).toBeChecked();
+	await expect(nova.getByRole('checkbox', { name: 'Too much bass', exact: true })).toBeChecked();
+	await expect(page.getByRole('region', { name: 'Taste model summary' })).toBeVisible();
+	await expect(
+		page.locator('.result-row').getByRole('heading', { name: 'Truthear Hexa', exact: true })
+	).toHaveCount(0);
+	await expect(
+		page.locator('.result-row').getByRole('heading', { name: 'Truthear Nova', exact: true })
+	).toHaveCount(0);
+	await accessible(page);
+	await page.getByRole('button', { name: 'Clear profile', exact: true }).click();
+	await expect(page.getByText(/No IEMs in your profile yet/)).toBeVisible();
+	await page.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(nova.getByRole('radio', { name: 'Dislike', exact: true })).toBeChecked();
+});
+
+test('invalid import and unknown references are errors, not empty successful searches', async ({ page }) => {
+	await page.goto('/?ref=not-a-real-product');
+	await expect(page.getByText('Product is not in the catalog.', { exact: true }).first()).toBeVisible();
+	await expect(page.locator('.result-row')).toHaveCount(0);
+	await page.getByRole('radio', { name: 'Match my taste profile', exact: true }).check();
+	await page
+		.getByLabel('Import profile file')
+		.setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"version":2}') });
+	await expect(page.getByText(/Import failed: Expected a Tonewave version 1 profile/)).toBeVisible();
+	await expect(page.getByText(/No IEMs in your profile yet/)).toBeVisible();
+	await accessible(page);
+});

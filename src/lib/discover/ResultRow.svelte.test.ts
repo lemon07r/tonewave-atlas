@@ -39,7 +39,7 @@ test('shows actual dB distance, verbatim tuning, attributed price and product-id
 		referenceProductId: 'product-a',
 		onshow
 	});
-	await expect.element(screen.getByLabelText('Response distance 1.4 dB')).toBeVisible();
+	await expect.element(screen.getByText('Response distance: 1.4 dB', { exact: true })).toBeVisible();
 	await expect.element(screen.getByText(/Switch 1 OFF \/ 2 ON/)).toBeVisible();
 	await expect.element(screen.getByText('More sub-bass', { exact: true })).toBeVisible();
 	await expect.element(screen.getByText('$129 listed by Reviewer, Nov 2026')).toBeVisible();

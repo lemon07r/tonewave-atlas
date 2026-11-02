@@ -106,8 +106,12 @@
 			}))
 	);
 	let selectedProduct = $derived(products.find((p) => p.id === urlState.ref));
+	let referenceId = $derived(urlState.ref);
 	let activeResult = $derived(urlState.mode === 'similar' ? similar : taste);
-	let selectedCount = $derived(urlState.overlays.length);
+	let effectiveOverlays = $derived(
+		urlState.overlays.filter((id) => activeResult?.results.some((row) => row.candidate.id === id))
+	);
+	let selectedCount = $derived(effectiveOverlays.length);
 	let modelKey = $derived(JSON.stringify(items));
 	// Corrections are scoped to the current set/order of rated evidence, not recycled cluster IDs.
 	let correctionBands = $state<Record<string, Partial<Record<number, Partial<Record<Band, number>>>>>>({});
@@ -175,9 +179,9 @@
 	function toggleOverlay(id: string) {
 		changeUrl(
 			{
-				chart: urlState.overlays.includes(id)
-					? urlState.overlays.filter((x) => x !== id).join(',')
-					: [...urlState.overlays, id].slice(0, 5).join(',')
+				chart: effectiveOverlays.includes(id)
+					? effectiveOverlays.filter((x) => x !== id).join(',')
+					: [...effectiveOverlays, id].slice(0, 5).join(',')
 			},
 			true
 		);
@@ -242,7 +246,7 @@
 		};
 	});
 	$effect(() => {
-		const id = urlState.ref;
+		const id = referenceId;
 		referenceDetail = undefined;
 		referenceError = '';
 		if (!id) return;
@@ -623,10 +627,12 @@
 							</fieldset>{/each}{/if}
 				</Disclosure>
 			</div>
-			<section class="results" aria-label="Measured matches" aria-busy={loading}>
+			<section class="results" id="discover-results" aria-label="Measured matches" aria-busy={loading}>
 				<div class="section-heading">
 					<h2>{urlState.mode === 'similar' ? 'Similar sound' : 'Taste matches'}</h2>
-					<span class="eyebrow">{activeResult?.partition ?? 'Measured shape'}</span>
+					<a class="chart-jump" href="#discover-chart">View chart</a><span class="eyebrow"
+						>{activeResult?.partition ?? 'Measured shape'}</span
+					>
 				</div>
 				<p class="distance-note">
 					Response distance (dB) · lower is closer, not better. Up to five chart overlays.
@@ -707,7 +713,8 @@
 				{/if}
 			</section>
 		</section>
-		<aside class="chart-column" aria-label="Reference and match chart">
+		<aside class="chart-column" id="discover-chart" aria-label="Reference and match chart">
+			<a class="chart-jump return-link" href="#discover-results">Back to matches</a>
 			<FrChart
 				{series}
 				baselineId={urlState.mode === 'similar' ? 'reference' : `taste-${taste?.model.tastes[0]?.id ?? 0}`}
@@ -855,7 +862,16 @@
 	}
 	.results {
 		margin-top: 32px;
-		min-height: 352px;
+		min-height: 640px;
+	}
+	.results :global(.loading-row) {
+		height: 160px;
+	}
+	.chart-jump {
+		font-size: var(--text-xs);
+	}
+	.return-link {
+		display: none;
 	}
 	.section-heading {
 		margin-bottom: 8px;
@@ -915,6 +931,10 @@
 		}
 		.chart-column {
 			position: static;
+		}
+		.return-link {
+			display: inline-block;
+			margin-bottom: 16px;
 		}
 	}
 	@media (max-width: 640px) {
