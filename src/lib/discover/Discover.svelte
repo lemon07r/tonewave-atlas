@@ -35,6 +35,8 @@
 	import ChartPanel from './ChartPanel.svelte';
 	import TasteSummary from './TasteSummary.svelte';
 	import ResultRow from './ResultRow.svelte';
+	import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
+	import { compareEvidence } from './evidence.ts';
 
 	let { form }: { form: Form } = $props();
 	let settings = $derived(parseDiscovery(page.url.searchParams));
@@ -102,6 +104,11 @@
 		items
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
 			.map((i) => nameFor(i.productId))
+	);
+	let compareReferences = $derived(
+		items
+			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
+			.map(({ productId, measurementId }) => ({ productId, ...(measurementId ? { measurementId } : {}) }))
 	);
 	let modelKey = $derived(JSON.stringify({ form, rig: settings.rig, items }));
 	let scopedEdits = $state<Record<string, NonNullable<QuerySpec['state']['corrections']>>>({});
@@ -596,16 +603,12 @@
 					</p>
 					{#if !result}<Skeleton rows={4} />{/if}{/if}
 				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
-						>{queryError.message}{#if activePartition}<ul>
-								{#each items.filter((item) => item.soundRelated && ['like', 'love'].includes(item.rating) && !products
-											.find((p) => p.id === item.productId)
-											?.partitions.includes(activePartition)) as item (item.productId)}<li>
-										{nameFor(item.productId)} has no measurements on {rigLabel(
-											activePartition,
-											summary?.sources
-										)}.
-									</li>{/each}
-							</ul>{/if}{#if queryError.partitions?.length}<p>
+						>{queryError.message}<ReferenceDiagnostics
+							{items}
+							{products}
+							partition={activePartition}
+							sources={summary?.sources ?? []}
+						/>{#if queryError.partitions?.length}<p>
 								All references, including selected variants, are measured on:
 							</p>
 							<div class="profile-actions">
@@ -676,11 +679,14 @@
 									}}
 									onrate={rate}
 								/>{/each}
-						{:else}{#each result.data.results as row, index (row.candidate.id)}<ResultRow
+						{:else}{#each result.data.results as row, index (row.candidate.id)}{@const evidence =
+									compareEvidence(result.data, row.rankCurve, referenceNames)}<ResultRow
 									candidate={row.candidate}
 									rank={index + 1}
 									distance={(settings.sort === 'minimax' ? row.tradeoff.minimax : row.tradeoff.mean) ?? NaN}
-									bands={[]}
+									bands={evidence[0]?.bands ?? []}
+									referenceEvidence={evidence}
+									{compareReferences}
 									tradeoff={row.tradeoff}
 									{referenceNames}
 									referenceProductId={items.find((i) => i.soundRelated && ['like', 'love'].includes(i.rating))

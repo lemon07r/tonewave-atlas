@@ -26,6 +26,8 @@
 		onrate,
 		tradeoff,
 		referenceNames = [],
+		referenceEvidence = [],
+		compareReferences,
 		nameFor = (id) => id
 	}: {
 		candidate: CandidateInfo;
@@ -41,6 +43,8 @@
 		onrate?: (item: WorkspaceItem) => void;
 		tradeoff?: MultiReferenceResult;
 		referenceNames?: string[];
+		referenceEvidence?: { label: string; bands: BandDistance[] }[];
+		compareReferences?: { productId: string; measurementId?: string }[];
 		nameFor?: (id: string) => string;
 	} = $props();
 	let open = $state<boolean>(false);
@@ -66,6 +70,9 @@
 		};
 	});
 	let prices = $derived(priceLines(candidate));
+	let evidenceTables = $derived(
+		referenceEvidence.length ? referenceEvidence : [{ label: fit ? 'taste centre' : 'reference', bands }]
+	);
 	let formQuery = $derived(candidate.product.form === 'headphone' ? '&form=headphones' : '');
 	let matched = $derived(
 		bands.filter((b) => b.meanDb !== null && Math.abs(b.meanDb) < 0.75).map((b) => bandLabels[b.band])
@@ -119,13 +126,17 @@
 					: 'Another candidate is at least as close to every reference and closer to one'}
 			</p>
 		</div>{/if}
-	{#if bands.length}<p class="description">{describeBands(bands)}</p>{/if}
+	{#if bands.length}<p class="description">
+			{describeBands(bands)}{#if tradeoff}
+				· versus {referenceNames[0] ?? 'the first reference'}{/if}
+		</p>{/if}
 	{#each prices as price (price)}<p class="price">{price}</p>{/each}
 	<div class="actions">
 		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
 			>{selected ? 'Remove from chart' : 'Show on chart'}</button
 		>{#if selected}<a class="chart-jump" href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
-				href={resolve(`/compare?${compareQuery(candidate, referenceProductId)}`)}>Compare</a
+				href={resolve(`/compare?${compareQuery(candidate, compareReferences ?? referenceProductId)}`)}
+				>Compare</a
 			>{/if}<a href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}${formQuery}`)}
 			>Product page</a
 		>
@@ -179,16 +190,18 @@
 				Tilt {dbLabel(match.tilt, true)} dB/oct · Coverage {(match.coverage * 100).toFixed(0)}% · {match.points}
 				rank samples
 			</p>{/if}
-		{#if bands.length}<div class="table-scroll">
+		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence (evidence.label)}<div
+				class="table-scroll"
+			>
 				<table class="data-table">
-					<caption>Candidate minus {fit ? 'taste centre' : 'reference'}, after level alignment</caption><thead
+					<caption>Candidate minus {evidence.label}, after independent level alignment</caption><thead
 						><tr
 							><th scope="col">Band</th><th scope="col">Mean (dB)</th><th scope="col">RMS (dB)</th><th
 								scope="col">Coverage</th
 							><th scope="col">Contribution</th></tr
 						></thead
 					><tbody
-						>{#each bands as band (band.band)}<tr
+						>{#each evidence.bands as band (band.band)}<tr
 								><th scope="row">{bandLabels[band.band]}</th><td>{dbLabel(band.meanDb, true)}</td><td
 									>{dbLabel(band.rmsDb)}</td
 								><td>{(band.coverage * 100).toFixed(0)}%</td><td>{(band.contribution * 100).toFixed(0)}%</td
@@ -196,7 +209,7 @@
 							>{/each}</tbody
 					>
 				</table>
-			</div>{/if}
+			</div>{/each}
 		{#if error}<Notice kind="caution">{error}</Notice>{/if}
 		<ul class="sources">
 			{#each sources as source (source.url)}<li>
