@@ -24,10 +24,18 @@ export const aspectLabels = {
 	treble: 'Treble',
 	overall: 'Overall balance'
 } as const;
-export type Profile = { version: 1; profiles: Record<Form, TasteItem[]> };
-export const emptyProfile = (): Profile => ({ version: 1, profiles: { iem: [], headphone: [] } });
-export function strength(rating: RatedItem['rating']): number {
-	return rating === 'like' ? 0.6 : rating === 'neutral' ? 0 : 1;
+export type WorkspaceItem = Omit<TasteItem, 'rating'> & { rating: RatedItem['rating'] | 'unrated' };
+export type Profile = { version: 2; profiles: Record<Form, WorkspaceItem[]> };
+export const emptyProfile = (): Profile => ({ version: 2, profiles: { iem: [], headphone: [] } });
+export function strength(rating: WorkspaceItem['rating']): number {
+	return rating === 'like' ? 0.6 : rating === 'neutral' || rating === 'unrated' ? 0 : 1;
+}
+
+/** Unrated and non-sound evidence must never enter an engine query. */
+export function soundItems(items: readonly WorkspaceItem[]): TasteItem[] {
+	return items.flatMap((item) =>
+		item.rating !== 'unrated' && item.soundRelated ? [{ ...item, rating: item.rating }] : []
+	);
 }
 const record = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -38,8 +46,8 @@ const id = (value: unknown): value is string =>
 export function parseProfile(text: string): Profile {
 	if (text.length > 1_000_000) throw new Error('Profile file is too large (maximum 1 MB).');
 	const data: unknown = JSON.parse(text);
-	if (!record(data) || data.version !== 1 || !record(data.profiles))
-		throw new Error('Expected a Tonewave version 1 profile with both form factors.');
+	if (!record(data) || (data.version !== 1 && data.version !== 2) || !record(data.profiles))
+		throw new Error('Expected a Tonewave version 1 or 2 profile with both form factors.');
 	const result = emptyProfile();
 	for (const form of ['iem', 'headphone'] as const) {
 		const items = data.profiles[form];
@@ -52,11 +60,13 @@ export function parseProfile(text: string): Profile {
 				!id(item.productId) ||
 				seen.has(item.productId) ||
 				typeof item.rating !== 'string' ||
-				!['love', 'like', 'neutral', 'dislike'].includes(item.rating) ||
+				!['love', 'like', 'neutral', 'dislike', ...(data.version === 2 ? ['unrated'] : [])].includes(
+					item.rating
+				) ||
 				typeof item.soundRelated !== 'boolean'
 			)
 				throw new Error('Invalid or duplicate profile product, rating or sound-related flag.');
-			const rating = item.rating as TasteItem['rating'];
+			const rating = item.rating as WorkspaceItem['rating'];
 			if (item.strength !== strength(rating)) throw new Error('Invalid strength for this rating.');
 			if (item.measurementId !== undefined && !id(item.measurementId))
 				throw new Error('Invalid measurement ID.');

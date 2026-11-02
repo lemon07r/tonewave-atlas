@@ -1,12 +1,12 @@
 <script lang="ts">
-	export type RatingValue = 'love' | 'like' | 'neutral' | 'dislike';
+	export type RatingValue = 'unrated' | 'love' | 'like' | 'neutral' | 'dislike';
 	let {
 		label = 'Your impression',
 		value = $bindable(),
 		onchange
 	}: { label?: string; value?: RatingValue; onchange?: (value: RatingValue) => void } = $props();
 	const id = $props.id();
-	const ratings = ['love', 'like', 'neutral', 'dislike'] as const;
+	const ratings = ['unrated', 'love', 'like', 'neutral', 'dislike'] as const;
 </script>
 
 <fieldset>
@@ -38,7 +38,8 @@
 							/>{:else if rating === 'neutral'}<circle cx="12" cy="12" r="8" /><path
 								d="M8 12h8"
 							/>{:else}<circle cx="12" cy="12" r="8" /><path d="m6.5 17.5 11-11" />{/if}</svg
-					><span>{rating[0]?.toUpperCase()}{rating.slice(1)}</span></span
+					><span>{rating === 'unrated' ? 'Not rated' : `${rating[0]?.toUpperCase()}${rating.slice(1)}`}</span
+					></span
 				></label
 			>{/each}
 	</div>

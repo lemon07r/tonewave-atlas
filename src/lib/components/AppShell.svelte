@@ -22,6 +22,8 @@
 	let form = $derived(browser && page.url.searchParams.get('form') === 'headphones' ? 'headphones' : 'iems');
 	function setForm(value: string) {
 		const url = new URL(page.url.href);
+		for (const key of ['ratings', 'ref', 'm', 'rig', 'sources', 'edits', 'chart', 'mode'])
+			url.searchParams.delete(key);
 		if (value === 'iems') url.searchParams.delete('form');
 		else url.searchParams.set('form', value);
 		void goto(resolve(`${url.pathname}${url.search}${url.hash}` as PathnameWithSearchOrHash), {

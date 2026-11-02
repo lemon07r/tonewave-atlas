@@ -70,8 +70,14 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 			uncertainRegions: []
 		}
 	});
+	await expect.element(screen.getByText('Taste ranking score: 3.2 score', { exact: true })).toBeVisible();
 	await expect
-		.element(screen.getByText('Ranking score: 3.2 (not dB; lower is closer; includes dislike penalties)'))
+		.element(
+			screen.getByText(
+				'Taste ranking score (not dB; lower is closer; includes dislike penalties) · ordinary distance 1.4 dB',
+				{ exact: true }
+			)
+		)
 		.toBeVisible();
 	await expect
 		.element(screen.getByRole('link', { name: 'Compare', exact: true }))

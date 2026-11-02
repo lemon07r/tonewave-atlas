@@ -3,9 +3,12 @@
 	import type { CandidateInfo, SimilarMatch } from '#core/atlas/types.ts';
 	import type { BandDistance } from '#core/analysis/distance.ts';
 	import type { TasteFit } from '#core/analysis/taste.ts';
+	import type { MultiReferenceResult } from '#core/analysis/multi-reference.ts';
 	import { dbLabel } from '#lib/chart.ts';
 	import { bandLabels, describeBands, priceLines, reviewerSummary } from './describe.ts';
 	import { reasonLabels } from '#lib/profile/profile.ts';
+	import type { WorkspaceItem } from '#lib/profile/profile.ts';
+	import PreferenceFields from '#lib/profile/PreferenceFields.svelte';
 	import { detail, curveSources, type CurveSource } from './display.ts';
 	import Notice from '#lib/components/Notice.svelte';
 	import { compareQuery } from './actions.ts';
@@ -20,6 +23,9 @@
 		selected = false,
 		limitReached = false,
 		onshow,
+		onrate,
+		tradeoff,
+		referenceNames = [],
 		nameFor = (id) => id
 	}: {
 		candidate: CandidateInfo;
@@ -32,9 +38,13 @@
 		selected?: boolean;
 		limitReached?: boolean;
 		onshow: () => void;
+		onrate?: (item: WorkspaceItem) => void;
+		tradeoff?: MultiReferenceResult;
+		referenceNames?: string[];
 		nameFor?: (id: string) => string;
 	} = $props();
 	let open = $state<boolean>(false);
+	let draft = $state<WorkspaceItem>({ productId: '', rating: 'unrated', strength: 0, soundRelated: true });
 	let sources = $state.raw<CurveSource[]>([]);
 	let error = $state('');
 	$effect(() => {
@@ -74,16 +84,42 @@
 				>{/if}
 		</h3>
 		<span class="distance mono"
-			><span class="sr-only">Response distance:&nbsp;</span>{distance.toFixed(1)}&nbsp;<span>dB</span></span
+			><span class="sr-only"
+				>{fit ? 'Taste ranking score' : tradeoff ? 'Overall distance' : 'Response distance'}:&nbsp;</span
+			>{dbLabel(fit ? fit.score : distance)}&nbsp;<span>{fit ? 'score' : 'dB'}</span></span
 		>
 	</div>
 	{#if fit}<p class="ranking-score mono">
-			Ranking score: {fit.score.toFixed(1)} (not dB; lower is closer; includes dislike penalties)
+			Taste ranking score (not dB; lower is closer; includes dislike penalties) · ordinary distance {fit.plainDistanceDb.toFixed(
+				1
+			)} dB
 		</p>{/if}
 	{#if match}<p class="reviewers">
 			{reviewerSummary(match.perSourceRange, match.sourceCount)}
 		</p>{/if}
-	<p class="description">{describeBands(bands)}</p>
+	{#if !match}<p class="reviewers">
+			{candidate.sources.length} contributing {candidate.sources.length === 1 ? 'source' : 'sources'} · reviewer
+			distance disagreement not returned for this model
+		</p>{/if}
+	{#if tradeoff}<div class="tradeoff table-scroll">
+			<table class="data-table">
+				<caption>Distance to each reference (dB)</caption><thead
+					><tr
+						>{#each referenceNames as name (name)}<th scope="col">{name}</th>{/each}</tr
+					></thead
+				><tbody
+					><tr
+						>{#each tradeoff.distances as value, i (i)}<td>{dbLabel(value)}</td>{/each}</tr
+					></tbody
+				>
+			</table>
+			<p>
+				{tradeoff.pareto
+					? 'Best trade-off · no candidate improves one distance without worsening another'
+					: 'Another candidate is at least as close to every reference and closer to one'}
+			</p>
+		</div>{/if}
+	{#if bands.length}<p class="description">{describeBands(bands)}</p>{/if}
 	{#each prices as price (price)}<p class="price">{price}</p>{/each}
 	<div class="actions">
 		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
@@ -94,6 +130,31 @@
 			>Product page</a
 		>
 	</div>
+	{#if onrate}<details class="rate-row">
+			<summary>Rate this product</summary>
+			<div class="rating-fields">
+				<PreferenceFields
+					item={draft}
+					name={`${candidate.product.brand} ${candidate.product.model}`}
+					onchange={(item: WorkspaceItem) => {
+						draft = item;
+					}}
+				/><button
+					class="button"
+					type="button"
+					disabled={draft.rating === 'unrated'}
+					onclick={() => {
+						onrate({
+							...draft,
+							productId: candidate.product.id,
+							...(candidate.kind === 'tuning' && candidate.measurementIds[0]
+								? { measurementId: candidate.measurementIds[0] }
+								: {})
+						});
+					}}>Save rating</button
+				>
+			</div>
+		</details>{/if}
 	<details bind:open>
 		<summary>Measured differences &amp; sources</summary>
 		{#if fit}<div class="fit">
@@ -118,28 +179,24 @@
 				Tilt {dbLabel(match.tilt, true)} dB/oct · Coverage {(match.coverage * 100).toFixed(0)}% · {match.points}
 				rank samples
 			</p>{/if}
-		<div class="table-scroll">
-			<table class="data-table">
-				<caption>Candidate minus {fit ? 'taste centre' : 'reference'}, after level alignment</caption><thead
-					><tr
-						><th scope="col">Band</th><th scope="col">Mean (dB)</th><th scope="col">RMS (dB)</th><th
-							scope="col">Coverage</th
-						><th scope="col">Contribution</th></tr
-					></thead
-				><tbody
-					>{#each bands as band (band.band)}<tr
-							><th scope="row">{bandLabels[band.band]}</th><td>{dbLabel(band.meanDb, true)}</td><td
-								>{dbLabel(band.rmsDb)}</td
-							><td>{(band.coverage * 100).toFixed(0)}%</td><td>{(band.contribution * 100).toFixed(0)}%</td
-							></tr
-						>{/each}</tbody
-				>
-			</table>
-		</div>
-		<p class="caveat">
-			Coupler measurements are not a prediction of what you will hear. Above 8 kHz, insertion and rig
-			differences reduce reliability.
-		</p>
+		{#if bands.length}<div class="table-scroll">
+				<table class="data-table">
+					<caption>Candidate minus {fit ? 'taste centre' : 'reference'}, after level alignment</caption><thead
+						><tr
+							><th scope="col">Band</th><th scope="col">Mean (dB)</th><th scope="col">RMS (dB)</th><th
+								scope="col">Coverage</th
+							><th scope="col">Contribution</th></tr
+						></thead
+					><tbody
+						>{#each bands as band (band.band)}<tr
+								><th scope="row">{bandLabels[band.band]}</th><td>{dbLabel(band.meanDb, true)}</td><td
+									>{dbLabel(band.rmsDb)}</td
+								><td>{(band.coverage * 100).toFixed(0)}%</td><td>{(band.contribution * 100).toFixed(0)}%</td
+								></tr
+							>{/each}</tbody
+					>
+				</table>
+			</div>{/if}
 		{#if error}<Notice kind="caution">{error}</Notice>{/if}
 		<ul class="sources">
 			{#each sources as source (source.url)}<li>
@@ -152,6 +209,22 @@
 </li>
 
 <style>
+	.rating-fields {
+		display: grid;
+		gap: 12px;
+		padding-block: 12px;
+	}
+	.rating-fields > button {
+		justify-self: start;
+	}
+	.tradeoff {
+		margin: 12px 0 0 34px;
+		font-size: var(--text-xs);
+	}
+	.tradeoff p {
+		color: var(--muted);
+		padding-top: 8px;
+	}
 	.result-row {
 		list-style: none;
 		border-top: var(--hairline) solid var(--line);
@@ -188,14 +261,12 @@
 	.reviewers,
 	.price,
 	.metrics,
-	.fit p,
-	.caveat {
+	.fit p {
 		font-size: var(--text-xs);
 		margin: 8px 0 0 34px;
 	}
 	.reviewers,
-	.price,
-	.caveat {
+	.price {
 		color: var(--muted);
 	}
 	.actions {
@@ -257,8 +328,7 @@
 		padding: 8px 6px;
 	}
 	.metrics,
-	.fit p,
-	.caveat {
+	.fit p {
 		margin-left: 0;
 	}
 	.sources {
