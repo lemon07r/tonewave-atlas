@@ -106,12 +106,16 @@ separate evidence of sensitivity, never extra independent reviewers or extra pop
    factor compensates variance loss. **Neither makes small-n MAD an unbiased SD estimator.**
    `spreadSupport` counts contributing products, and no overlap yields NaN rather than invented zero.
 2. For each source, compute its level-aligned residual against the leave-one-source-out product
-   consensus. Multiply by (m−1)/m for m source curves in that product, pool residual curves by median
+   consensus. At each frequency multiply by (mᵢ−1)/mᵢ, where mᵢ counts **finite contributing sources
+   at that frequency**, not all measurements in the product. With fewer than two finite sources,
+   or an absent observation for this source, leave the offset NaN. Pool residual curves by median
    across products, smooth 1/3 octave, then shrink each frequency by n/(n+k), k=10, using its finite
    product support. The conversion is exact for a two-source contrast against their centre; for a
    larger robust-median consensus it is a conservative normalisation, not an unbiased physical
    calibration. Without it, two unshrunk offsets would swap the two source responses rather than
-   harmonise them. Subtract the resulting offset curve when harmonisation is enabled. Shrinkage
+   harmonise them. LS alignment and smoothing still affect isolated-bin corrections; the factor's
+   exact centre interpretation is local before those operations, not a claim that every corrected
+   single-bin value equals the raw median. Subtract the resulting offset curve when harmonisation is enabled. Shrinkage
    requires about ten overlapping products for half-strength correction and limits sparse-overlap
    overfitting; k is configurable. Unobserved offsets remain NaN and are not applied.
 3. Give each product one consensus curve, align those product curves to a common anchor by LS offset,
@@ -266,15 +270,22 @@ smoothing**, exclude those locations from greedy seeds, and report the notch. Th
 smoothed shoulders of a notch creating a spurious boost target; it is not proof that any boost is safe.
 
 Greedy initialisation tests peak seeds at the largest residual (Q=.7,1.5,3) and low/high shelves.
+Independently, an averaged residual above 10 kHz of at least 0.15 dB seeds a high shelf centred at
+10 kHz. This remains available when lower frequencies match or missing transition-band data prevents
+smoothing from producing a lower-band seed; no individual >10 kHz peak is fitted.
 Projected Levenberg–Marquardt with finite-difference Jacobians refines log₂ frequency, gain and log₂ Q
 (18 iterations by default, up to 100; seed trials use up to 8). It minimises squared shape residuals,
 refitting the free level at every evaluation. It is deterministic and bounded, **not guaranteed a global
-optimum**. Stop when the best feature is <0.15 dB or loss improves by <0.005 summed dB².
+optimum**. Stop when both the lower-band feature and high-band mean are <0.15 dB, or loss improves
+by <0.005 summed dB². Every seed trial is accepted only if its full, low-band-plus-high-average loss
+decreases after applying the treble safety cap. If further refinement followed by capping is worse
+than that bounded seed trial, retain the trial instead.
 
 Limits: default 5 filters, maximum 10; centre 20 Hz–10 kHz; peak Q .5–6, shelf Q .4–1; gain −12…+8 dB,
-with centres >6 kHz and all high shelves limited to +4 dB. A final safety projection reduces positive
+with centres >6 kHz and all high shelves limited to +4 dB. Safety projection reduces positive
 gains if their **summed** response exceeds +4 dB from 6 kHz to Nyquist (513-point log sweep). This
-conservative projection may increase residual distance; the returned residual reflects that change.
+conservative projection is applied before trial acceptance and again after final filter cleanup.
+The returned residual reflects the bounded result, not an uncapped intermediate fit.
 
 Output includes filters, summed response, level-aligned corrected−target residual, D over 20 Hz–10 kHz,
 notches, bands with residual RMS>3 dB, and >10 kHz uncertainty. Preamp is −max(0,summed boost)−0.2 dB,

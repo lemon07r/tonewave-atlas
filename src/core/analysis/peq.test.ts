@@ -10,6 +10,21 @@ import {
 import { fitPeq, exportEqualizerApo, exportPeqJson, exportWavelet, smoothEqError } from './peq.ts';
 import { buildTarget } from './targets.ts';
 
+/** Independent objective: demean low-band errors; only the high-band mean has total weight .1. */
+function fittingLoss(filters: readonly Filter[], target: Float64Array): number {
+	const response = equalizerResponse(filters),
+		desired = smoothEqError(target);
+	const low = Array.from(GRID, (f, i) =>
+		f <= 10000 && Number.isFinite(desired[i]) ? (response[i] ?? 0) - (desired[i] ?? 0) : NaN
+	).filter(Number.isFinite);
+	const offset = low.reduce((s, e) => s + e, 0) / low.length;
+	const high = Array.from(GRID, (f, i) =>
+		f > 10000 && Number.isFinite(desired[i]) ? (response[i] ?? 0) - (desired[i] ?? 0) - offset : NaN
+	).filter(Number.isFinite);
+	const mean = high.length ? high.reduce((s, e) => s + e, 0) / high.length : 0;
+	return low.reduce((s, e) => s + (e - offset) ** 2, 0) + 0.1 * mean ** 2;
+}
+
 describe('RBJ filters', () => {
 	it('agrees with independent complex evaluation of H(exp(jw)) for every type', () => {
 		for (const type of ['peak', 'low-shelf', 'high-shelf'] as const)
@@ -121,6 +136,27 @@ describe('constrained PEQ', () => {
 		const result = fitPeq(new Float64Array(240), target, { maxFilters: 3 });
 		if (!result) throw new Error('fixture');
 		const high = Float64Array.from({ length: 200 }, (_, i) => 6000 * 4 ** (i / 199));
+		expect(Math.max(...equalizerResponse(result.filters, high))).toBeLessThanOrEqual(4.001);
+	});
+	it('fits a bounded shelf when the target differs only above 10 kHz', () => {
+		const target = Float64Array.from(GRID, (f) => (f > 10000 ? 4 : 0));
+		const result = fitPeq(new Float64Array(240), target, { maxFilters: 1 });
+		if (!result) throw new Error('missing fit');
+		expect(result.filters).toHaveLength(1);
+		expect(result.filters[0]?.type).toBe('high-shelf');
+		expect(result.filters[0]?.gain).toBeLessThanOrEqual(4);
+		expect(fittingLoss(result.filters, target)).toBeLessThan(fittingLoss([], target));
+	});
+	it('seeds the high-band average even when missing transition samples prevent a lower-band seed', () => {
+		const target = Float64Array.from(GRID, (f) => (f > 10000 ? 4 : f > 6000 ? NaN : 0));
+		const result = fitPeq(new Float64Array(240), target, { maxFilters: 1 });
+		if (!result) throw new Error('missing fit');
+		expect(result.filters).toHaveLength(1);
+		expect(result.filters[0]?.type).toBe('high-shelf');
+		expect(result.filters[0]?.gain).toBeGreaterThan(0);
+		expect(result.filters[0]?.gain).toBeLessThanOrEqual(4);
+		expect(fittingLoss(result.filters, target)).toBeLessThan(fittingLoss([], target));
+		const high = Float64Array.from({ length: 257 }, (_, i) => 6000 * 4 ** (i / 256));
 		expect(Math.max(...equalizerResponse(result.filters, high))).toBeLessThanOrEqual(4.001);
 	});
 });

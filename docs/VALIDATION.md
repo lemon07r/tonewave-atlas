@@ -10,9 +10,11 @@ uncertainty and support. Cross-source tests exercise robust pooling, level remov
 held-out-fold leakage prevention, stable hash assignment, unequal-fold aggregation and median
 pair improvements. Randomised packed taste rankings match exhaustive full explanations across all
 dislike reasons, multiple tastes, corrected centres, missing data, zero weights and input-order ties.
-PEQ tests include notch avoidance and summed treble caps.
+Regression tests also cover custom-frequency packed winner statistics, frequency-local source counts
+(with independently derived LS/smoothing expectations), and high-band-only shelf fitting with and
+without missing transition samples. PEQ tests include notch avoidance and summed treble caps.
 
-`pnpm test` currently passes 47 tests in five files, including the existing smoothing tests. This
+`pnpm test` currently passes 52 tests in five files, including the existing smoothing tests. This
 establishes numerical behaviour for the exercised cases, not perceptual equivalence or real-data
 recommendation quality. No real-source held-out result has been measured in this lane.
 
@@ -30,12 +32,17 @@ Measured 2026-11-02, Linux, AMD Ryzen 7 9800X3D, Node v26.12.1:
 
 | Workload                                                   |       ms |     ops/s |
 | ---------------------------------------------------------- | -------: | --------: |
-| Single-reference rank, 30,000 candidates                   |    12.48 | 2,402,986 |
-| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes |    64.07 |   468,253 |
-| PEQ fit, 1 curve                                           |    34.28 |        29 |
-| PEQ fit, 50 curves                                         | 1,517.14 |        33 |
+| Single-reference rank, 30,000 candidates                   |    12.40 | 2,418,818 |
+| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes |    63.87 |   469,692 |
+| PEQ fit, 1 curve                                           |    51.04 |        20 |
+| PEQ fit, 50 curves                                         | 2,168.05 |        23 |
 
-Checksum: 6.091697 (unchanged from the exhaustive scorer). Both packed ranking scans construct full
+Checksum: 6.111729. Both packed ranking scans construct full
 explanations only for the K winners. Packed taste ranking replaces the prior 798.24 ms exhaustive
-explanation workload with a 64.07 ms scalar scan plus winner explanations (~12.5× faster here, below
+explanation workload with a 63.87 ms scalar scan plus winner explanations (~12.5× faster here, below
 the 100 ms target). Warm-up now runs a full packed taste scan, not 100 exhaustive candidates.
+
+The high-band-average shelf seed and pre-acceptance cap checks increased PEQ from the previous
+34.28 ms/curve and 1,517.14 ms/50 curves. The changed PEQ search also changes the checksum from
+6.091697; ranking semantics are unchanged. Timings remain single-pass observations, not a controlled
+performance study.

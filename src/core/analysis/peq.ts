@@ -247,19 +247,33 @@ export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = 
 				index = i;
 				largest = Math.abs(r[i] ?? 0);
 			}
-		if (index < 0 || largest < 0.15) break;
-		const gain = -(r[index] ?? 0),
-			frequency = GRID[index] ?? 1000;
-		const seeds: Filter[] = [0.7, 1.5, 3].map((q) => project({ type: 'peak', frequency, gain, q }));
-		seeds.push(
-			project({ type: 'low-shelf', frequency: 100, gain: -regionMean(r, GRID, 20, 100), q: 0.707 }),
-			project({ type: 'high-shelf', frequency: 6000, gain: -regionMean(r, GRID, 6000, 10000), q: 0.707 })
-		);
+		let highSum = 0,
+			highCount = 0;
+		for (let i = 0; i < r.length; i++)
+			if ((GRID[i] ?? 0) > 10000 && Number.isFinite(desired[i])) {
+				highSum += r[i] ?? 0;
+				highCount++;
+			}
+		// Undo residuals' distributed high-band weight to recover the mean error in dB.
+		const highMean = highCount ? (highSum / highCount) * Math.sqrt(highCount / 0.1) : 0;
+		if ((index < 0 || largest < 0.15) && Math.abs(highMean) < 0.15) break;
+		const seeds: Filter[] = [];
+		if (index >= 0 && largest >= 0.15) {
+			const gain = -(r[index] ?? 0),
+				frequency = GRID[index] ?? 1000;
+			seeds.push(
+				...[0.7, 1.5, 3].map((q) => project({ type: 'peak', frequency, gain, q })),
+				project({ type: 'low-shelf', frequency: 100, gain: -regionMean(r, GRID, 20, 100), q: 0.707 }),
+				project({ type: 'high-shelf', frequency: 6000, gain: -regionMean(r, GRID, 6000, 10000), q: 0.707 })
+			);
+		}
+		if (Math.abs(highMean) >= 0.15)
+			seeds.push(project({ type: 'high-shelf', frequency: 10000, gain: -highMean, q: 0.707 }));
 		let best: Filter[] | null = null,
 			bestCost = cost;
 		for (const seed of seeds) {
 			if (!Number.isFinite(seed.gain)) continue;
-			const trial = refine([...filters, seed], desired, Math.min(8, iterations)),
+			const trial = capTrebleBoost(refine([...filters, seed], desired, Math.min(8, iterations))),
 				trialCost = loss(residuals(trial, desired));
 			if (trialCost < bestCost) {
 				bestCost = trialCost;
@@ -267,8 +281,11 @@ export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = 
 			}
 		}
 		if (!best || cost - bestCost < 0.005) break;
-		filters = refine(best, desired, iterations);
-		cost = loss(residuals(filters, desired));
+		const refined = capTrebleBoost(refine(best, desired, iterations)),
+			refinedCost = loss(residuals(refined, desired));
+		// Refined projection may trade off fit: retain the improving, already bounded seed trial.
+		filters = refinedCost < bestCost ? refined : best;
+		cost = Math.min(refinedCost, bestCost);
 	}
 	filters = capTrebleBoost(filters.filter((f) => Math.abs(f.gain) >= 0.05));
 	const response = equalizerResponse(filters),

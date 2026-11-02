@@ -56,6 +56,87 @@ describe('cross-source statistics', () => {
 		const single = validateSourceOffsets(products(1), RANK_GRID);
 		expect(single.meanAfter).toBe(single.meanBefore);
 	});
+	it('uses local finite support so a partly observed three-source product converges to its shared centre', () => {
+		// Symmetric plateaus keep all LS offsets exactly zero. Each centre is farther than the
+		// smoothing radius from a boundary: smoothing cannot alter the independent 0/6 -> 3 answer.
+		const a = new Float64Array(120),
+			b = new Float64Array(120),
+			c = new Float64Array(120);
+		b.fill(6, 20, 40);
+		b.fill(-6, 70, 90);
+		c.fill(NaN, 20, 40);
+		c.fill(NaN, 70, 90);
+		const stats = estimatePartitionStatistics(
+			[
+				{
+					id: 'partial',
+					measurements: [
+						{ source: 'a', curve: a },
+						{ source: 'b', curve: b },
+						{ source: 'c', curve: c }
+					]
+				}
+			],
+			RANK_GRID,
+			0
+		);
+		const offsetA = stats.sourceOffsets.find((s) => s.source === 'a'),
+			offsetB = stats.sourceOffsets.find((s) => s.source === 'b'),
+			offsetC = stats.sourceOffsets.find((s) => s.source === 'c');
+		for (const [i, centre] of [
+			[30, 3],
+			[80, -3]
+		] as const) {
+			expect((a[i] ?? NaN) - (offsetA?.curve[i] ?? NaN)).toBeCloseTo(centre, 12);
+			expect((b[i] ?? NaN) - (offsetB?.curve[i] ?? NaN)).toBeCloseTo(centre, 12);
+			expect(Number.isNaN(offsetC?.curve[i])).toBe(true);
+			expect(offsetC?.support[i]).toBe(0);
+		}
+	});
+	it('handles the literal one-missing-bin case with LS alignment and Gaussian smoothing', () => {
+		const n = 120,
+			index = 60,
+			a = new Float64Array(n),
+			b = new Float64Array(n),
+			c = new Float64Array(n);
+		b[index] = 6;
+		c[index] = NaN;
+		const stats = estimatePartitionStatistics(
+			[
+				{
+					id: 'one-bin',
+					measurements: [
+						{ source: 'a', curve: a },
+						{ source: 'b', curve: b },
+						{ source: 'c', curve: c }
+					]
+				}
+			],
+			RANK_GRID,
+			0
+		);
+		// B's aligned baseline is -6/n; A's leave-one-out consensus has the following mean.
+		const bMean = 6 / n,
+			looMean = (3 * (n - 1)) / (n * n);
+		const aBaseline = ((bMean / 2 + looMean) * 2) / 3,
+			aCentre = (-(6 - bMean) + looMean) / 2;
+		const bBaseline = (-bMean * 2) / 3,
+			bCentre = (6 - bMean) / 2;
+		// Independent Gaussian normalisation: 1/3 oct at 12 bins/oct has equivalent width 4 bins.
+		const sigma = 4 / Math.sqrt(2 * Math.PI),
+			radius = Math.ceil(3 * sigma);
+		let kernelSum = 0;
+		for (let j = -radius; j <= radius; j++) kernelSum += Math.exp((-j * j) / (2 * sigma * sigma));
+		expect(stats.sourceOffsets.find((s) => s.source === 'a')?.curve[index]).toBeCloseTo(
+			aBaseline + (aCentre - aBaseline) / kernelSum,
+			12
+		);
+		expect(stats.sourceOffsets.find((s) => s.source === 'b')?.curve[index]).toBeCloseTo(
+			bBaseline + (bCentre - bBaseline) / kernelSum,
+			12
+		);
+		expect(Number.isNaN(stats.sourceOffsets.find((s) => s.source === 'c')?.curve[index])).toBe(true);
+	});
 	it('excludes the entire hashed fold, not only the individual held-out product', () => {
 		// Known FNV-1a vectors: a=3826002220 and c=3859557458 -> fold 0 for K=2; b -> fold 1.
 		// No training fold has the held-out fold's sources, so no correction can be learned.

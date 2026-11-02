@@ -62,6 +62,9 @@ export function estimatePartitionStatistics(
 		const centre = consensus(curves, n);
 		population.push(centre);
 		if (curves.length >= 2) {
+			const finiteSources = Uint32Array.from({ length: n }, (_, i) =>
+				curves.reduce((count, curve) => count + Number(Number.isFinite(curve[i])), 0)
+			);
 			// Align to product consensus before measuring residual spread.
 			const aligned = curves.map((c) => {
 				const d = responseDistance(c, centre, { frequencies });
@@ -90,10 +93,10 @@ export function estimatePartitionStatistics(
 				// Convert own-vs-peer to own-vs-all: with two sources the raw contrast is twice the
 				// deviation from their centre. Without this factor, unshrunk correction swaps them.
 				list.push(
-					Float64Array.from(
-						own,
-						(v, i) => ((v - (loo[i] ?? NaN) - d.offset) * (curves.length - 1)) / curves.length
-					)
+					Float64Array.from(own, (v, i) => {
+						const m = finiteSources[i] ?? 0;
+						return m >= 2 && Number.isFinite(v) ? ((v - (loo[i] ?? NaN) - d.offset) * (m - 1)) / m : NaN;
+					})
 				);
 				offsets.set(source, list);
 			}
