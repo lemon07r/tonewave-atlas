@@ -13,7 +13,7 @@
 	import type { ProductDetail, ProductListItem } from '#core/atlas/types.ts';
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let headphones = $derived(form === 'headphone');
-	let productId = $derived(browser ? page.url.searchParams.get('product') ?? '' : '');
+	let productId = $derived(browser ? (page.url.searchParams.get('product') ?? '') : '');
 	let products = $state.raw<ProductListItem[]>([]);
 	let metadata = $state.raw<Catalog | null>(null);
 	let detail = $state.raw<ProductDetail | null>(null);

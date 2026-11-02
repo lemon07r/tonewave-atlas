@@ -5,6 +5,7 @@
 	import FrChart from '#lib/components/FrChart.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import type { SearchItem } from '#lib/search.ts';
+	import { chartLegendNames } from '#lib/compare/chart-legend.ts';
 	import { analysis } from '#lib/atlas.ts';
 	import type { PeqResponse, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
@@ -125,7 +126,7 @@
 	}
 </script>
 
-<section class="eq stack" aria-labelledby="eq-heading">
+<section class="eq stack" aria-labelledby="eq-heading" {@attach chartLegendNames}>
 	<div>
 		<p class="eyebrow">A measured approximation</p>
 		<h2 id="eq-heading">EQ this toward…</h2>

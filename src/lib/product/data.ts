@@ -3,6 +3,7 @@ import type { Catalog, Form, Measurement, Source } from '#core/dataset/types.ts'
 import type { ProductDetail, ProductSpread } from '#core/atlas/types.ts';
 import { consensus } from '#core/atlas/index.ts';
 import { GRID } from '#core/grid.ts';
+import { decompressGzip } from '#core/dataset/codec.ts';
 import { analysis } from '#lib/atlas.ts';
 import type { Channel } from '#lib/compare/url.ts';
 
@@ -15,9 +16,10 @@ export function catalog(form: Form): Promise<Catalog> {
 			const summary = await service.summary();
 			const response = await fetch(`${resolve('/')}data/${summary.version}/catalog-${form}.json.gz`);
 			if (!response.ok || !response.body) throw new Error(`Could not load catalog (${response.status}).`);
-			return new Response(
-				response.body.pipeThrough(new DecompressionStream('gzip'))
-			).json() as Promise<Catalog>;
+			const bytes = new Uint8Array(await response.arrayBuffer());
+			// Fetch may already decode Content-Encoding: gzip. Check bytes, not the filename.
+			const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? await decompressGzip(bytes) : bytes;
+			return JSON.parse(new TextDecoder().decode(decoded)) as Catalog;
 		});
 		catalogs.set(form, pending);
 		void pending.catch(() => catalogs.delete(form));
