@@ -1,0 +1,64 @@
+{
+	"name": "tonewave-atlas",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"packageManager": "pnpm@12.16.1",
+	"engines": {
+		"node": ">=24"
+	},
+	"imports": {
+		"#lib": "./src/lib/index.ts",
+		"#lib/*": "./src/lib/*",
+		"#core/*": "./src/core/*"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+		"lint": "eslint .",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"knip": "knip",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:e2e": "playwright test",
+		"verify": "pnpm format:check && pnpm lint && pnpm check && pnpm knip && pnpm test",
+		"data:crawl": "node tools/ingest/crawl.ts",
+		"data:build": "node tools/ingest/build.ts",
+		"data:pull": "node tools/ingest/pull.ts",
+		"bench": "node benchmarks/run.ts"
+	},
+	"devDependencies": {
+		"@axe-core/playwright": "^4.14.0",
+		"@eslint/js": "^10.0.1",
+		"@playwright/test": "^1.64.1",
+		"@sveltejs/adapter-static": "^4.0.1",
+		"@sveltejs/kit": "^3.1.1",
+		"@sveltejs/load-config": "^0.2.3",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"@types/node": "^26.6.6",
+		"@vitest/browser-playwright": "^5.0.5",
+		"eslint": "^10.14.0",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-svelte": "^3.23.1",
+		"fast-check": "^4.10.2",
+		"globals": "^17.14.0",
+		"knip": "^6.44.1",
+		"prettier": "^3.9.10",
+		"prettier-plugin-svelte": "^4.1.1",
+		"svelte": "^5.57.3",
+		"svelte-check": "^4.7.8",
+		"typescript": "~6.0.3",
+		"typescript-eslint": "^8.72.1",
+		"vite": "^8.3.5",
+		"vitest": "^5.0.5",
+		"vitest-browser-svelte": "^3.1.0"
+	},
+	"dependencies": {
+		"comlink": "^4.4.2",
+		"uplot": "^1.6.32"
+	}
+}

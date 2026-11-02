@@ -1,0 +1,10 @@
+pnpm-lock.yaml
+build/
+.svelte-kit/
+static/data/
+coverage/
+test-results/
+playwright-report/
+.cache/
+PROJECT_BRIEF.md
+.agents/
