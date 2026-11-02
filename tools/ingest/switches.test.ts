@@ -50,6 +50,26 @@ const product = (id = 'parent', model = 'Volume S'): Product => ({
 
 describe('final partition-aware default coverage', () => {
 	const products = () => new Map([['parent', product()]]);
+	it('rejects multiple published defaults in a product/source/partition', () => {
+		expect(() => {
+			assertDefaultCoverage(products(), [row('source', 'first'), row('source', 'second')], []);
+		}).toThrow('multiple defaults');
+	});
+	it('uses original source file order when no selected switch state is available', () => {
+		const rows = [
+			{ ...row('source', 'z-first', false), sourceOrder: 0 },
+			{ ...row('source', 'a-second'), sourceOrder: 1 },
+			{ ...row('source', 'b-third'), sourceOrder: 2 }
+		];
+		const result = finaliseDefaults(products(), rows, []);
+		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['default', 'tuning', 'tuning']);
+		expect(result.after.productSourcePartitions.multipleDefaults).toBe(0);
+	});
+	it('uses lowest stable id when original file order is unavailable', () => {
+		const rows = [row('source', 'z-last'), row('source', 'a-first')];
+		finaliseDefaults(products(), rows, []);
+		expect(rows.map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
+	});
 	it('rejects an empty label on a published non-default measurement', () => {
 		const rows = [row('source', 'Stock'), row('source', 'Model Harman', false)];
 		if (!rows[1]) throw new Error('Missing fixture');
@@ -130,7 +150,7 @@ describe('final partition-aware default coverage', () => {
 		finaliseDefaults(products(), rows, [{ productId: 'parent', preferred: 'switch:du:dd' }]);
 		expect(rows[1]?.measurement.variant.isDefault).toBe(true);
 	});
-	it('resolves multiple defaults with a selected labelled state, otherwise preserves and reports them', () => {
+	it('resolves multiple defaults with a selected labelled state, otherwise uses source order or stable id', () => {
 		const rows = [
 			row('resolved', 'Volume S UU'),
 			row('resolved', 'Volume S DD'),
@@ -139,8 +159,9 @@ describe('final partition-aware default coverage', () => {
 		];
 		const result = finaliseDefaults(products(), rows, [{ productId: 'parent', preferred: 'switch:du:dd' }]);
 		expect(rows.slice(0, 2).map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
-		expect(rows.slice(2).map((r) => r.measurement.variant.isDefault)).toEqual([true, true]);
-		expect(result.unresolvedMultipleDefaults.map((g) => g.source)).toEqual(['unresolved']);
+		expect(rows.slice(2).map((r) => r.measurement.variant.isDefault)).toEqual([true, false]);
+		expect(result.unresolvedMultipleDefaults).toEqual([]);
+		expect(result.unresolvedStates.map((g) => g.source)).toEqual(['unresolved']);
 	});
 	it('preserves multiple defaults through reconciliation when the selected encoding is absent', () => {
 		const rows = [
@@ -153,7 +174,8 @@ describe('final partition-aware default coverage', () => {
 		expect(decisions[0]?.preferred).toBe('switch:du:dd');
 		expect(rows.slice(2).map((r) => r.measurement.variant.isDefault)).toEqual([true, true]);
 		const final = finaliseDefaults(products(), rows, decisions);
-		expect(final.unresolvedMultipleDefaults.map((g) => g.source)).toEqual(['mixed']);
+		expect(final.unresolvedMultipleDefaults).toEqual([]);
+		expect(final.unresolvedStates.map((g) => g.source)).toEqual(['mixed']);
 	});
 });
 

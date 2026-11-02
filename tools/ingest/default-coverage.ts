@@ -5,6 +5,8 @@ import { labelledState } from './switches.ts';
 
 interface Row {
 	measurement: Measurement;
+	/** Original phone-book/file order within this source, before partitioning or folding. */
+	sourceOrder?: number;
 }
 interface Decision {
 	productId: string;
@@ -99,6 +101,10 @@ export function assertDefaultCoverage(
 		if (!g.partitionRows.some((m) => m.variant.kind === 'default'))
 			throw new Error(`Default coverage: no default for ${g.product.id} / ${g.partition}`);
 		for (const [source, ms] of g.sources) {
+			if (ms.filter((m) => m.variant.kind === 'default').length > 1)
+				throw new Error(
+					`Default coverage: multiple defaults for ${g.product.id} / ${source} / ${g.partition}`
+				);
 			if (ms.some((m) => m.variant.kind === 'default')) continue;
 			if (
 				!singletonFallback(ms) &&
@@ -121,6 +127,14 @@ export function finaliseDefaults(
 	decisions: readonly Decision[]
 ) {
 	const before = defaultCoverage(rows);
+	const order = new Map(rows.map((r) => [r.measurement.id, r.sourceOrder]));
+	const unresolvedStates: {
+		productId: string;
+		source: string;
+		partition: string;
+		selected: string;
+		defaults: string[];
+	}[] = [];
 	const changes: {
 		productId: string;
 		source: string;
@@ -131,12 +145,32 @@ export function finaliseDefaults(
 	}[] = [];
 	const exceptions: { productId: string; source: string; partition: string; preferred: string }[] = [];
 	for (const g of groups(products, rows, decisions)) {
-		// Resolve multiple defaults only when the already selected labelled state exists here.
+		// Prefer the selected labelled state; otherwise preserve this source's original file order.
 		for (const [source, ms] of g.sources) {
 			const defaults = ms.filter((m) => m.variant.kind === 'default');
 			const matches = g.preferred ? ms.filter((m) => g.state(m) === g.preferred) : [];
-			if (defaults.length < 2 || !matches.length) continue;
-			const selected = matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches);
+			if (defaults.length < 2) continue;
+			const selected = matches.length
+				? (matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches))
+				: [...ms].sort(
+						(a, b) =>
+							(order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) || a.id.localeCompare(b.id, 'en')
+					)[0];
+			if (!selected) throw new Error('Missing source default candidate');
+			const reason = matches.length
+				? 'selected labelled switch state'
+				: 'source file order; stable id if unavailable';
+			if (!matches.length)
+				unresolvedStates.push({
+					productId: g.product.id,
+					source,
+					partition: g.partition,
+					selected: selected.id,
+					defaults: defaults.map((m) => m.id)
+				});
+			selected.provenance.processing.push(
+				`default coverage: ${reason}; previous kind ${selected.variant.kind}; original label retained`
+			);
 			selected.variant.isDefault = true;
 			selected.variant.kind = 'default';
 			const demoted = defaults.filter((m) => m !== selected);
@@ -150,7 +184,7 @@ export function finaliseDefaults(
 				partition: g.partition,
 				selected: selected.id,
 				demoted: demoted.map((m) => m.id),
-				reason: 'selected labelled switch state'
+				reason
 			});
 		}
 		for (const [source, ms] of g.sources) {
@@ -213,5 +247,12 @@ export function finaliseDefaults(
 				]
 			: [];
 	});
-	return { before, after: defaultCoverage(rows), changes, exceptions, unresolvedMultipleDefaults };
+	return {
+		before,
+		after: defaultCoverage(rows),
+		changes,
+		exceptions,
+		unresolvedMultipleDefaults,
+		unresolvedStates
+	};
 }

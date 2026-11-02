@@ -70,6 +70,7 @@ import { finaliseDefaults } from './default-coverage.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
+	sourceOrder?: number;
 	channels: PackedCurve[];
 	rank: PackedCurve;
 }
@@ -616,6 +617,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const group = partitions.get(measurement.partition) ?? [];
 				const row = {
 					measurement,
+					sourceOrder: counts.variants,
 					channels: curves,
 					rank: { measurementId: id, channel: 'avg', values: rank }
 				};
