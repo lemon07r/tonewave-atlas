@@ -1,15 +1,8 @@
 import type { Curve } from '../analysis/common.ts';
-import { rankPacked, responseDistance, type DistanceOptions } from '../analysis/distance.ts';
+import { rankPacked, responseDistance, distanceSummary } from '../analysis/distance.ts';
 import { compareReferences } from '../analysis/multi-reference.ts';
 import { fitPeq, exportEqualizerApo, exportWavelet, exportPeqJson } from '../analysis/peq.ts';
-import {
-	buildTasteModel,
-	correctTaste,
-	rankTastePacked,
-	renderPreference,
-	type RatedItem
-} from '../analysis/taste.ts';
-import { makeWeights } from '../analysis/weights.ts';
+import type { RatedItem } from '../analysis/taste.ts';
 import { decodePack, decompressGzip, type CurvePack, type PackedCurve } from '../dataset/codec.ts';
 import type {
 	Catalog,
@@ -29,10 +22,21 @@ import {
 	buildPartitionIndex,
 	consensus,
 	priceRange,
-	type AtlasCandidate,
 	type IndexedCurve,
 	type PartitionIndex
 } from './index.ts';
+import {
+	alignedCurve,
+	distanceOptions,
+	rankingCaveats,
+	scoredCurve,
+	selectedSources,
+	selection,
+	sourceMode,
+	topK,
+	treblePenalty
+} from './ranking.ts';
+import { tasteRanking } from './taste-ranking.ts';
 import type {
 	AtlasOptions,
 	AtlasError,
@@ -79,30 +83,8 @@ interface Upload {
 function failure(error: AtlasError['error'], message: string): AtlasError {
 	return { ok: false, error, message };
 }
-function topK(value = 20): number {
-	if (!Number.isInteger(value) || value < 0) throw new RangeError('topK must be a nonnegative integer');
-	return value;
-}
-function treblePenalty(value = 1): number {
-	if (!Number.isFinite(value) || value < 1)
-		throw new RangeError('treblePenalty must be finite and at least 1');
-	return value;
-}
-function scoredCurve(values: Curve): Float64Array {
-	return Float64Array.from(values, (value) => {
-		const rounded = Math.fround(value);
-		return Number.isFinite(rounded) ? rounded : NaN;
-	});
-}
-function alignedCurve(values: Curve, offset: number): Float64Array {
-	return Float64Array.from(values, (value) => (Number.isFinite(value) ? value - offset : NaN));
-}
 function partitionProducts(catalog: Catalog, id: string): number {
 	return new Set(catalog.measurements.filter((m) => m.partition === id).map((m) => m.productId)).size;
-}
-/** JSON null bins remain missing when crossing from dataset metadata into numerical APIs. */
-function statisticCurve(values: readonly (number | null)[]): Float64Array {
-	return Float64Array.from(values, (value) => value ?? NaN);
 }
 function meanCurves(curves: readonly PackedCurve[]): Float64Array | null {
 	if (!curves.length) return null;
@@ -239,7 +221,8 @@ export class AtlasService {
 	private async rankingIndex(
 		catalog: Catalog,
 		partition: Partition,
-		requested?: boolean
+		requested?: boolean,
+		filters?: RankFilters
 	): Promise<PartitionIndex | AtlasError> {
 		const pack = await this.rank(partition);
 		const statistics = pack.statistics ?? partition.statistics;
@@ -258,14 +241,20 @@ export class AtlasService {
 			!!validation?.folds.length &&
 			validation.folds.length === validation.foldCount &&
 			validation.folds.every((fold) => positive(fold.meanImprovement));
-		return this.index(catalog, partition, requested ?? validated);
+		return this.index(catalog, partition, requested ?? validated, filters);
 	}
-	private async index(catalog: Catalog, partition: Partition, harmonise = false): Promise<PartitionIndex> {
-		const key = `${partition.id}:${harmonise}`;
+	private async index(
+		catalog: Catalog,
+		partition: Partition,
+		harmonise = false,
+		filters?: RankFilters
+	): Promise<PartitionIndex> {
+		const sources = selectedSources(filters);
+		const key = JSON.stringify([partition.id, harmonise, sources ?? null]);
 		let pending = this.indexes.get(key);
 		if (!pending) {
 			pending = this.rank(partition)
-				.then((pack) => buildPartitionIndex(catalog, partition, pack, harmonise))
+				.then((pack) => buildPartitionIndex(catalog, partition, pack, harmonise, sources))
 				.catch((error: unknown) => {
 					this.indexes.delete(key);
 					throw error;
@@ -309,7 +298,8 @@ export class AtlasService {
 		catalog: Catalog,
 		measurements: readonly Measurement[],
 		requested?: string,
-		defaultProductId?: string
+		defaultProductId?: string,
+		filters?: RankFilters
 	): Promise<Partition | undefined> {
 		if (requested) return catalog.partitions.find((p) => p.id === requested);
 		const counts = new Map<string, number>();
@@ -323,7 +313,7 @@ export class AtlasService {
 				.map(async (partition) => ({
 					partition,
 					count: defaultProductId
-						? Number((await this.index(catalog, partition)).products.has(defaultProductId))
+						? Number((await this.index(catalog, partition, false, filters)).products.has(defaultProductId))
 						: (counts.get(partition.id) ?? 0)
 				}))
 		);
@@ -337,7 +327,18 @@ export class AtlasService {
 			)[0]?.partition;
 	}
 	private async reference(
-		input: Pick<SimilarRequest, 'productId' | 'measurementId' | 'uploadId' | 'partition' | 'harmonise'>
+		input: Pick<
+			SimilarRequest,
+			| 'productId'
+			| 'measurementId'
+			| 'uploadId'
+			| 'partition'
+			| 'harmonise'
+			| 'focus'
+			| 'customBands'
+			| 'treblePenalty'
+			| 'filters'
+		>
 	): Promise<ResolvedReference | AtlasError> {
 		if (input.uploadId) {
 			if (input.productId || input.measurementId) throw new RangeError('Choose one reference identity');
@@ -351,7 +352,7 @@ export class AtlasService {
 			const found = await this.locatePartition(input.partition);
 			if (!found) return failure('not-measured-on-rig', 'Unknown partition.');
 			// Uploads have no catalog source identity, so both sides must remain on the raw basis.
-			const index = await this.rankingIndex(found.catalog, found.partition, false);
+			const index = await this.rankingIndex(found.catalog, found.partition, false, input.filters);
 			if ('ok' in index) return index;
 			return {
 				ok: true,
@@ -382,16 +383,17 @@ export class AtlasService {
 			found.catalog,
 			measurements,
 			input.partition,
-			selected ? undefined : found.product.id
+			selected ? undefined : found.product.id,
+			input.filters
 		);
 		if (!partition || !measurements.some((m) => m.partition === partition.id))
 			return failure('not-measured-on-rig', 'Reference is not measured on this rig.');
-		const index = await this.rankingIndex(found.catalog, partition, input.harmonise);
+		const index = await this.rankingIndex(found.catalog, partition, input.harmonise, input.filters);
 		if ('ok' in index) return index;
 		const candidate = index.products.get(found.product.id);
 		const row = selected ? index.measurements.get(selected.id) : undefined;
 		const values = selected ? row?.values : candidate?.values;
-		if (!values || !responseDistance(values, values, { frequencies: RANK_GRID }))
+		if (!values || !distanceSummary(values, values, distanceOptions(index, input)))
 			return failure(
 				'not-measured-on-rig',
 				'No usable default reference on this rig; select an explicit measurement for a non-default variant.'
@@ -408,80 +410,6 @@ export class AtlasService {
 			info: { productId: found.product.id, uploadId: null, measurementIds, sources }
 		};
 	}
-	private caveats(index: PartitionIndex): string[] {
-		const notes = [
-			'Measured response shape is not a prediction of sound quality, fit or preference.',
-			'Never compare across rig partitions. Insertion and rig uncertainty increase above 8 kHz.'
-		];
-		if (!index.statistics)
-			notes.push(
-				'Cross-source statistics are absent; reliability uses the conservative default spread, not measured uncertainty.'
-			);
-		if (index.harmonised)
-			notes.push('Available estimated source offsets were subtracted; this is not physical rig calibration.');
-		return notes;
-	}
-	private distanceOptions(
-		index: PartitionIndex,
-		settings: Pick<SimilarRequest, 'focus' | 'customBands' | 'treblePenalty'> = {}
-	): DistanceOptions & { weights: Float64Array; treblePenalty: number } {
-		return {
-			frequencies: RANK_GRID,
-			treblePenalty: treblePenalty(settings.treblePenalty),
-			weights: makeWeights(RANK_GRID, {
-				...(index.statistics ? { spread: statisticCurve(index.statistics.spread) } : {}),
-				...(settings.focus ? { focus: settings.focus } : {}),
-				...(settings.customBands ? { bandMultipliers: settings.customBands } : {})
-			})
-		};
-	}
-	private selection(
-		index: PartitionIndex,
-		filters: RankFilters = {},
-		excluded = new Set<string>(),
-		ownTunings = false,
-		excludedMeasurementId?: string
-	): { candidates: AtlasCandidate[]; matrix: Float32Array } {
-		for (const price of [filters.minPriceUsd, filters.maxPriceUsd])
-			if (price !== undefined && (!Number.isFinite(price) || price < 0))
-				throw new RangeError('Price bounds must be finite and nonnegative');
-		if (
-			filters.minPriceUsd !== undefined &&
-			filters.maxPriceUsd !== undefined &&
-			filters.minPriceUsd > filters.maxPriceUsd
-		)
-			throw new RangeError('Price bounds are reversed');
-		const candidates: AtlasCandidate[] = [],
-			indices: number[] = [];
-		index.candidates.forEach((c, i) => {
-			if (excludedMeasurementId && c.info.measurementIds.includes(excludedMeasurementId)) return;
-			if (c.info.kind === 'tuning' && !filters.includeTunings) return;
-			if (
-				excluded.has(c.info.product.id) &&
-				!(ownTunings && c.info.kind === 'tuning' && filters.includeTunings)
-			)
-				return;
-			if (filters.sources?.length && !c.info.sources.some((s) => filters.sources?.includes(s.id))) return;
-			if (
-				(filters.minPriceUsd !== undefined || filters.maxPriceUsd !== undefined) &&
-				!c.info.prices.some(
-					(p) =>
-						p.usd !== null &&
-						p.usd >= (filters.minPriceUsd ?? 0) &&
-						p.usd <= (filters.maxPriceUsd ?? Infinity)
-				)
-			)
-				return;
-			candidates.push(c);
-			indices.push(i);
-		});
-		const matrix = new Float32Array(candidates.length * RANK_SIZE);
-		indices.forEach((row, i) => {
-			matrix.set(index.matrix.subarray(row * RANK_SIZE, (row + 1) * RANK_SIZE), i * RANK_SIZE);
-		});
-		return { candidates, matrix };
-	}
-
 	async summary(): Promise<AtlasSummary> {
 		const [manifest, ...catalogs] = await Promise.all([
 			this.manifest(),
@@ -579,8 +507,8 @@ export class AtlasService {
 		const reference = await this.reference(request);
 		if (!reference.ok) return reference;
 		const { index } = reference;
-		const options = this.distanceOptions(index, request);
-		const selected = this.selection(
+		const options = distanceOptions(index, request);
+		const selected = selection(
 			index,
 			request.filters,
 			new Set(reference.info.productId ? [reference.info.productId] : []),
@@ -592,6 +520,7 @@ export class AtlasService {
 			ok: true,
 			partition: index.partition.id,
 			harmonised: index.harmonised,
+			sourceMode: sourceMode(request.filters),
 			rankFrequencies: RANK_GRID.slice(),
 			rankWeights: options.weights.slice(),
 			treblePenalty: options.treblePenalty,
@@ -621,13 +550,18 @@ export class AtlasService {
 					}
 				];
 			}),
-			caveats: this.caveats(index)
+			caveats: rankingCaveats(
+				index,
+				reference.info.productId ? [reference.info.productId] : [],
+				selected.candidates.map((c) => c.info.product.id)
+			)
 		};
 	}
 
 	private async bestPartition(
 		items: readonly { productId: string; measurementId?: string }[],
-		requested?: string
+		requested?: string,
+		settings: Pick<SimilarRequest, 'focus' | 'customBands' | 'treblePenalty' | 'filters'> = {}
 	): Promise<string | undefined> {
 		if (requested) return requested;
 		const counts = new Map<string, number>();
@@ -647,11 +581,11 @@ export class AtlasService {
 			for (const id of partitions) {
 				const partition = found.catalog.partitions.find((p) => p.id === id);
 				if (!partition) continue;
-				const index = await this.index(found.catalog, partition);
+				const index = await this.index(found.catalog, partition, false, settings.filters);
 				const row = item.measurementId ? index.measurements.get(item.measurementId) : undefined;
 				const usable = item.measurementId
 					? row?.measurement.productId === item.productId &&
-						!!responseDistance(row.values, row.values, { frequencies: RANK_GRID })
+						!!distanceSummary(row.values, row.values, distanceOptions(index, settings))
 					: index.products.has(item.productId);
 				if (usable) counts.set(id, (counts.get(id) ?? 0) + 1);
 				productCounts.set(id, partitionProducts(found.catalog, id));
@@ -665,11 +599,12 @@ export class AtlasService {
 		)[0]?.[0];
 	}
 	async taste(request: TasteRequest): Promise<TasteResult | AtlasError> {
-		const k = topK(request.topK);
+		topK(request.topK);
 		const eligible = request.items.filter((i) => i.soundRelated && i.strength > 0 && i.rating !== 'neutral');
 		const partitionId = await this.bestPartition(
 			eligible.length ? eligible : request.items,
-			request.partition
+			request.partition,
+			{ ...(request.filters ? { filters: request.filters } : {}) }
 		);
 		if (!partitionId)
 			return failure(
@@ -678,7 +613,7 @@ export class AtlasService {
 			);
 		const found = await this.locatePartition(partitionId);
 		if (!found) return failure('not-measured-on-rig', 'Unknown partition.');
-		const index = await this.rankingIndex(found.catalog, found.partition, request.harmonise);
+		const index = await this.rankingIndex(found.catalog, found.partition, request.harmonise, request.filters);
 		if ('ok' in index) return index;
 		const items: RatedItem[] = [],
 			unusedItems: UnusedTasteItem[] = [];
@@ -699,7 +634,8 @@ export class AtlasService {
 				productId: item.productId,
 				...(item.measurementId ? { measurementId: item.measurementId } : {}),
 				partition: partitionId,
-				harmonise: index.harmonised
+				harmonise: index.harmonised,
+				...(request.filters ? { filters: request.filters } : {})
 			});
 			if (!reference.ok) {
 				reason = reference.error;
@@ -709,78 +645,7 @@ export class AtlasService {
 			const { productId, measurementId, ...rating } = item;
 			items.push({ ...rating, id: measurementId ?? productId, curve: reference.values });
 		}
-		if (!items.length)
-			return {
-				ok: true,
-				partition: partitionId,
-				harmonised: index.harmonised,
-				rankFrequencies: RANK_GRID.slice(),
-				rankWeights: this.distanceOptions(index).weights,
-				model: {
-					tastes: [],
-					confidence: { level: 'limited', reasons: ['No usable sound-related ratings on this rig.'] },
-					conflicts: []
-				},
-				unusedItems,
-				results: [],
-				caveats: this.caveats(index)
-			};
-		let model = buildTasteModel(items, {
-			frequencies: RANK_GRID,
-			...(index.statistics
-				? {
-						spread: statisticCurve(index.statistics.spread),
-						populationMedian: statisticCurve(index.statistics.populationMedian)
-					}
-				: {})
-		});
-		for (const correction of request.corrections ?? [])
-			model = correctTaste(model, correction.tasteId, correction.bands);
-		const selected = this.selection(index, request.filters, new Set(request.items.map((i) => i.productId)));
-		const matches = rankTastePacked(selected.matrix, model, k);
-		return {
-			ok: true,
-			partition: partitionId,
-			harmonised: index.harmonised,
-			rankFrequencies: RANK_GRID.slice(),
-			rankWeights: model.weights.slice(),
-			model: {
-				tastes: model.tastes.map((t) => ({
-					id: t.id,
-					members: t.members.map((m) => m.id),
-					centre: t.centre.slice(),
-					fitWeights: t.weights.slice(),
-					summary: t.summary,
-					statements: t.summary.map((s) =>
-						renderPreference(s, found.catalog.form === 'iem' ? 'IEM' : 'headphone')
-					)
-				})),
-				confidence: model.confidence,
-				conflicts: model.conflicts
-			},
-			unusedItems,
-			results: matches.flatMap((m) => {
-				const candidate = selected.candidates[m.index];
-				const taste = model.tastes.find((t) => t.id === m.fit.taste);
-				if (!candidate || !taste) return [];
-				const values = selected.matrix.subarray(m.index * RANK_SIZE, (m.index + 1) * RANK_SIZE);
-				const distance = responseDistance(values, taste.centre, {
-					frequencies: RANK_GRID,
-					weights: model.weights
-				});
-				if (!distance) return [];
-				return [
-					{
-						candidate: candidate.info,
-						fit: m.fit,
-						tasteId: taste.id,
-						rankCurve: alignedCurve(values, distance.offset),
-						offsetDb: distance.offset
-					}
-				];
-			}),
-			caveats: this.caveats(index)
-		};
+		return tasteRanking(index, items, unusedItems, request, found.catalog.form);
 	}
 	async compare(request: CompareRequest): Promise<CompareResult | AtlasError> {
 		const inputs: { productId: string; measurementId?: string }[] =
@@ -791,7 +656,7 @@ export class AtlasService {
 		if (request.sort !== undefined && !['mean', 'minimax'].includes(request.sort))
 			throw new RangeError('Sort must be mean or minimax');
 		// Establish identity and shared-rig support without ever replacing an explicit variant.
-		const support = new Map<string, number>();
+		const locatedReferences: LocatedProduct[] = [];
 		for (const input of inputs) {
 			const located = await this.locateProduct(input.productId);
 			if (!located) return failure('unknown-product', `Unknown reference product: ${input.productId}`);
@@ -805,33 +670,50 @@ export class AtlasService {
 					'unknown-measurement',
 					`Measurement does not belong to reference ${input.productId}: ${input.measurementId}`
 				);
-			for (const partition of located.catalog.partitions) {
-				const index = await this.index(located.catalog, partition);
-				const row = input.measurementId
-					? index.measurements.get(input.measurementId)
-					: index.products.get(input.productId);
-				if (row && responseDistance(row.values, row.values, { frequencies: RANK_GRID }))
-					support.set(partition.id, (support.get(partition.id) ?? 0) + 1);
-			}
+			locatedReferences.push(located);
 		}
-		const partitions = [...support]
-			.filter(([, count]) => count === inputs.length)
-			.map(([id]) => id)
-			.sort();
-		const partitionId = await this.bestPartition(inputs, request.partition);
+		// Alternative rigs are expensive and relevant only to a missing-rig response. Metadata first
+		// rules out unrelated packs before checking actual query-weight adequacy.
+		const alternatives = async (): Promise<string[]> => {
+			const allowed = selectedSources(request.filters);
+			const possible = locatedReferences.map((found, i) => {
+				const input = inputs[i];
+				return new Set(
+					found.catalog.measurements
+						.filter(
+							(m) =>
+								m.productId === input?.productId &&
+								(input.measurementId ? m.id === input.measurementId : m.variant.kind === 'default') &&
+								(!allowed || allowed.includes(m.sourceId))
+						)
+						.map((m) => m.partition)
+				);
+			});
+			const common = [...(possible[0] ?? [])].filter((id) => possible.every((p) => p.has(id))).sort();
+			const usable: string[] = [];
+			for (const id of common) {
+				const checks = await Promise.all(
+					inputs.map((input) => this.reference({ ...input, ...request, partition: id }))
+				);
+				if (checks.every((r) => r.ok)) usable.push(id);
+			}
+			return usable;
+		};
+		const partitionId = await this.bestPartition(inputs, request.partition, request);
 		if (!partitionId)
 			return {
 				...failure(
 					'not-measured-on-rig',
 					`No usable measurements for references: ${inputs.map((r) => r.measurementId ?? r.productId).join(', ')}`
 				),
-				partitions
+				partitions: await alternatives()
 			};
 		const references: ResolvedReference[] = [];
 		const missing: string[] = [];
 		for (const input of inputs) {
 			const reference = await this.reference({
 				...input,
+				...request,
 				partition: partitionId,
 				...(request.harmonise !== undefined ? { harmonise: request.harmonise } : {})
 			});
@@ -846,15 +728,15 @@ export class AtlasService {
 					'not-measured-on-rig',
 					`No usable measurement on ${partitionId} for references: ${missing.join(', ')}`
 				),
-				partitions
+				partitions: await alternatives()
 			};
 		const index = references[0]?.index;
 		if (!index) return failure('insufficient-data', 'No references.');
-		const selected = this.selection(index, request.filters, new Set(inputs.map((r) => r.productId)));
+		const selected = selection(index, request.filters, new Set(inputs.map((r) => r.productId)));
 		const curves = selected.candidates.map((_, i) =>
 			selected.matrix.subarray(i * RANK_SIZE, (i + 1) * RANK_SIZE)
 		);
-		const options = this.distanceOptions(index, request);
+		const options = distanceOptions(index, request);
 		const comparisons = compareReferences(
 			curves,
 			references.map((r) => r.values),
@@ -870,6 +752,7 @@ export class AtlasService {
 			ok: true,
 			partition: partitionId,
 			harmonised: index.harmonised,
+			sourceMode: sourceMode(request.filters),
 			rankFrequencies: RANK_GRID.slice(),
 			rankWeights: options.weights.slice(),
 			treblePenalty: options.treblePenalty,
@@ -879,11 +762,15 @@ export class AtlasService {
 					curve = curves[i],
 					reference = references[0];
 				if (!candidate || !curve || !reference) return [];
-				const offsetDb = responseDistance(curve, reference.values, options)?.offset ?? 0;
+				const offsetDb = distanceSummary(curve, reference.values, options)?.offset ?? 0;
 				return [{ candidate: candidate.info, tradeoff, rankCurve: alignedCurve(curve, offsetDb), offsetDb }];
 			}),
 			counts: { candidates: comparisons.length, pareto: comparisons.filter((r) => r.pareto).length },
-			caveats: this.caveats(index)
+			caveats: rankingCaveats(
+				index,
+				inputs.map((r) => r.productId),
+				selected.candidates.map((c) => c.info.product.id)
+			)
 		};
 	}
 	async productDetail(productId: string): Promise<ProductDetail | AtlasError> {

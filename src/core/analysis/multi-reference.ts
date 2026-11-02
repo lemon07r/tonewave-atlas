@@ -1,5 +1,5 @@
 import { type Curve } from './common.ts';
-import { responseDistance, type DistanceOptions } from './distance.ts';
+import { distanceSummary, type DistanceOptions } from './distance.ts';
 
 export interface MultiReferenceResult {
 	distances: (number | null)[];
@@ -106,7 +106,7 @@ export function compareReferences(
 	if (references.length < 2 || references.length > 4) throw new RangeError('Use 2–4 references');
 	const results = candidates.map((candidate) => {
 		const distances = references.map((r) => {
-			const distance = responseDistance(candidate, r, options)?.distance;
+			const distance = distanceSummary(candidate, r, options)?.distance;
 			return distance !== undefined && Number.isFinite(distance) ? distance : null;
 		});
 		const complete = distances.every((d): d is number => d !== null);

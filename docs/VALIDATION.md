@@ -17,8 +17,8 @@ Additional edge tests cover sparse alignment anchors, unobservable singleton fit
 invalid options and filter types, NaN-frequency eligibility, missing target pivots, grouped notches,
 and negative-shelf overshoot requiring the treble cap's verified feasible fallback.
 
-`pnpm verify` passes **517 tests in 52 files**, plus format, lint, types and unused-code checks
-(2026-11-02, rebased onto `91221fd`), including numerical, service, worker and component tests.
+Phase-1 `pnpm verify` passed **517 tests in 52 files**, plus format, lint, types and unused-code checks
+(2026-11-02; accepted history now ends at `71fd16b`), including numerical, service, worker and component tests.
 This establishes numerical behaviour for the exercised cases, not perceptual equivalence or real-data
 recommendation quality. Published real-source held-out validation is described below; no listener
 validation is claimed.
@@ -53,26 +53,129 @@ of timings. Ops/s means candidates ranked or curves fitted, not entire 30,000-it
 
 Measured 2026-11-02, Linux, AMD Ryzen 7 9800X3D, Node v26.12.1:
 
-| Workload                                                     | Before ms | After ms | After ops/s |
-| ------------------------------------------------------------ | --------: | -------: | ----------: |
-| Single-reference rank, 30,000 candidates                     |     13.10 |    13.13 |   2,284,778 |
-| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes   |     63.93 |    64.00 |     468,776 |
-| Multi-reference, 3,000 candidates, 2 refs, all non-dominated |    156.84 |    26.55 |     113,009 |
-| Multi-reference, 3,000 candidates, 3 refs, all non-dominated |    161.03 |    33.38 |      89,869 |
-| Multi-reference, 8,000 candidates, 2 refs                    |     71.55 |    60.55 |     132,133 |
-| Multi-reference, 8,000 candidates, 3 refs                    |    133.85 |    87.63 |      91,297 |
-| Multi-reference, 8,000 candidates, 4 refs                    |    176.52 |   130.41 |      61,346 |
-| PEQ fit, 1 curve                                             |     52.68 |    53.90 |          19 |
-| PEQ fit, 50 curves                                           |  2,203.37 | 2,148.69 |          23 |
+| Workload                                                     | Phase 1 ms | Phase 2 ms | Phase 2 ops/s |
+| ------------------------------------------------------------ | ---------: | ---------: | ------------: |
+| Single-reference rank, 30,000 candidates                     |      13.13 |      17.17 |     1,746,900 |
+| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes   |      64.00 |      68.09 |       440,582 |
+| Multi-reference, 3,000 candidates, 2 refs, all non-dominated |      26.55 |       9.23 |       324,950 |
+| Multi-reference, 3,000 candidates, 3 refs, all non-dominated |      33.38 |       8.58 |       349,700 |
+| Multi-reference, 8,000 candidates, 2 refs                    |      60.55 |      18.05 |       443,196 |
+| Multi-reference, 8,000 candidates, 3 refs                    |      87.63 |      26.76 |       298,959 |
+| Multi-reference, 8,000 candidates, 4 refs                    |     130.41 |      49.71 |       160,926 |
+| PEQ fit, 1 curve                                             |      53.90 |      54.62 |            18 |
+| PEQ fit, 50 curves                                           |   2,148.69 |   2,127.32 |            24 |
 
-Before uses the original exhaustive dominance scan with exactly the same expanded workloads; after
-uses the prefix-min sweeps. Checksums match: **7479.111729**, including both all-nondominated fronts
-and all catalog-like front counts. The 3,000-point cases improve by about 5.9×/4.8×; distance and
-explanation construction still dominate the catalog-like cases. Both packed single-reference/taste
-scans construct full explanations only for top-K winners; multi-reference still constructs all
-objectives before sorting/top-K. No 30,000-candidate multi-reference latency bound is claimed.
-PEQ fitting is unchanged (the dense preamp sweep was extracted for serialized APO headroom checks).
+Both phases use prefix-min Pareto sweeps and the same expanded workloads. Phase 2 replaces per-pair
+full band-explanation construction with scalar distance/alignment (`distanceSummary`); Pareto
+membership is unchanged. Checksums match: **7479.111729**, including both all-nondominated fronts and
+all catalog-like front counts. Packed single-reference/taste scans construct full explanations only
+for top-K winners; multi-reference computes all scalar objectives before sorting/top-K, and the
+service constructs only returned overlays. No 30,000-candidate multi-reference latency bound is claimed.
+PEQ fitting is unchanged. The single/taste differences in these one-pass observations are not a
+controlled regression measurement; both remain below their synthetic interactive budgets.
 These are single-pass local observations, not a controlled performance study or a timing distribution.
+
+## Phase-2 audits (2026-11-02)
+
+`pnpm verify` passes **532 tests in 54 files**, plus format, lint, types and knip. The initial knip
+run flagged the new standalone real-catalog harness as an unused file; it is now folded into the
+existing `benchmarks/atlas.ts` entry, preserving its reference/winner guards rather than bypassing
+unused-code checks. `pnpm bench` passes with checksum **7479.111729**.
+
+### Deterministic consensus and reviewer regressions
+
+`consensus.test.ts` retains the old first-anchor algorithm as a regression oracle: the same full-range
+outlier, two clean curves and a partial clean curve produce **10 dB versus 0 dB** at the first bin
+under different orders. The overlap-medoid consensus is within **1e-9 dB** of the clean median.
+One hundred seeded permutations are bit-identical, including contributor order; a separate bridge
+case preserves incomplete-range gaps and excludes a sparse, inadequately overlapping source.
+Detail spread expectations now use the deterministic, better-covered anchor's arbitrary level,
+rather than assuming the first measurement is the anchor.
+
+All three phase-1 reviewer findings were reproduced with failing tests before fixes:
+`reviewer: accepts sparse explicit references under actual nonzero query weights in %s` (similar and
+compare), `reviewer: a broken unrelated rig never fails a compare on an explicitly chosen rig`, and
+`reviewer: reproduces nearest-liked distance independently from returned member rank curve`.
+The fixes use query-weight adequacy, lazy metadata-prefiltered alternatives, and exact member curves
+with relative offsets. The source-mode service test covers implicit/explicit coverage equivalence,
+source-only re-pooling of references/candidates/tastes/compare, excluded-source caveats and refusal
+to substitute an unselected explicit variant.
+
+Dataset **`ef7ead8fc680aae919189e39`**, all rank packs and both form catalogs, default measurements,
+**no source correction** (isolating anchor selection): **11,384 usable product/partition consensuses**,
+**10,012 distinct products**, **2,540** consensuses with multiple measurements. Comparing phase-1
+pack-order pooling against phase-2 medoid pooling, **0 products change by >0.5 dB level-aligned RMS**.
+The largest common-finite-bin shape RMS is **0.132422719 dB** (Venture Electronics SIE, iem-711).
+No finite-bin support or availability changes occurred. Without removing arbitrary level, **1,409
+product/partition consensuses exceed 0.5 dB raw RMS**; this is not a 1,409-product shape change.
+Uniform LS alignment removes the mean old-minus-new difference before calculating shape RMS.
+The local reproducible script and full partition/largest-change output are retained at
+`$HOME/.local/tmp/tw/engine-lane/consensus-audit.mjs` and `consensus-audit.log`; run the script from the
+engine worktree with Node. This audit checks rank consensuses, not every detail shard or dataset
+classification, and does not change the published statistics-estimation algorithm.
+
+### Taste correlates, bounds and scale
+
+`taste-audit.test.ts` independently specifies 20–60/80–250 Hz balance direction, the exact clipped
+9 kHz spike RMS on a uniform custom log grid, and a 31-candidate ranking where the spike remains in
+the top five with/without the narrow dislike. Broad 5–9 kHz excess still contributes distance and
+penalty; twenty repeated narrow constraints cannot exceed the **0.5 total score-unit budget**.
+Other cases cover measured wording for every stored id, nonnegative monotone safe-side plateaus,
+uncapped strength scaling, a demonstrated scale-induced rank reversal, arbitrary level invariance,
+missing bands as unknown, limited one/two-positive support and separated conflicting tastes.
+This supports the stated local properties, not a universal spike-ranking or monotonic preference claim.
+
+Real-curve sanity uses fixed named profiles, strength 1, unharmonised float32 default rank curves,
+published reliability, no tunings, and excludes both rated products. There are **8,067** usable
+iem-711 defaults and **8,065** candidates per profile. A separate hand-accumulated weighted LS
+distance to the liked curve is the simple baseline; positive-only taste ranking isolates tolerance
+weighting from the added dislike. Regional means are independently computed from measured bins.
+“Violating” here means beyond the disliked trait by the **0.5 dB** margin in its adverse direction.
+Ranks are one-based; a larger average rank means the group moved down, not that every member did.
+
+| Like / dislike / reason                                  | Liked / disliked trait dB | Violating candidates | Mean violating rank: plain / positive-only / reason | Individually demoted vs positive-only |
+| -------------------------------------------------------- | ------------------------: | -------------------: | --------------------------------------------------: | ------------------------------------: |
+| 7Hz Legato / QKZ HBB Hades / higher 20–250 Hz            |            9.327 / 12.270 |                   48 |                         4951.35 / 4874.90 / 6145.52 |                                    46 |
+| Moondrop Chu / Etymotic ER2SE / lower 20–250 Hz          |            2.087 / −3.068 |                  196 |                         7690.28 / 7683.52 / 7752.87 |                                   137 |
+| 7Hz Legato / QKZ HBB Hades / lower 20–60 minus 80–250 Hz |             5.939 / 1.825 |                 1720 |                         6420.13 / 6400.95 / 6704.31 |                                  1049 |
+
+All three violating groups move down against both baselines. Top-20 mean traits (plain → reason) are
+**8.876 → 9.089**, **2.309 → 2.221**, and **5.822 → 5.951 dB**, respectively. Each top 20 contains
+zero violating candidates under every ranking; adding the reason does **not** change positive-only
+top-20 membership in these profiles. Thus these are directional tail-ranking checks, not evidence
+of improved top recommendations. The script asserts real candidates reach each penalty path and
+lose group rank; it does not tune to product/form classification defects. Fixed product ids and full
+output are in `$HOME/.local/tmp/tw/engine-lane/taste-sanity.mjs` and `taste-sanity.log` (run from this
+worktree). These profiles are invented. **No user-labelled preference dataset or listener study is
+available; no recommendation accuracy claim is made.**
+
+### Real-catalog cold/warm performance
+
+Run `node benchmarks/atlas.ts` from the checkout with `static/data` present. Same dataset,
+Linux/Ryzen 7 9800X3D/Node v26.12.1 as above; **8,348 IEM-catalog products**. Each job gets a fresh
+service for one cold call, then five resident calls (median/max below), explicit iem-711, default
+harmonisation, top K=20. Taste uses three likes; compare uses 2/3/4 fixed default references selected
+before timing. Every call must succeed and return winners. Cold includes manifest/catalog decode,
+rank decode and index building; disk fetch is included, but reference selection can warm OS cache.
+Browser network, worker startup and message/structured-clone costs are excluded.
+
+| Request         | Before cold ms | Before warm median / max ms | After cold ms | After warm median / max ms | Hypothetical 4× warm median ms |
+| --------------- | -------------: | --------------------------: | ------------: | -------------------------: | -----------------------------: |
+| Similar         |        1377.47 |                 8.76 / 9.75 |       1377.71 |               9.81 / 10.48 |                          39.23 |
+| Taste, 3 likes  |        1430.85 |               12.92 / 18.05 |       1452.98 |              12.72 / 17.99 |                          50.86 |
+| Compare, 2 refs |        2514.55 |              82.22 / 108.25 |       1417.22 |              33.34 / 35.38 |                         133.35 |
+| Compare, 3 refs |        2503.80 |             112.18 / 135.66 |       1362.77 |              44.08 / 51.88 |                         176.32 |
+| Compare, 4 refs |        2546.20 |             185.61 / 188.55 |       2203.41 |              78.38 / 93.95 |                         313.51 |
+
+The initial four-reference warm call exceeded the ~150 ms desktop target. Scalar-only compare
+distances avoid allocating discarded band explanations; lazy alternative-rig discovery avoids
+unrelated pack/index work on successful explicit-rig compares. Every observed after warm maximum is
+below 150 ms. Four-reference cold time still exceeds two seconds in this run; resident indexes do
+not solve first-load latency. The **4× column is only a scaled planning budget**, not a measured
+phone or a defensible universal device ratio. Three/four-reference estimates exceed 150 ms, so no
+mobile latency guarantee follows. Logs are retained under `$HOME/.local/tmp/tw/engine-lane/` as
+`catalog-before.log`, `catalog-after.log` and `bench-phase2.log`; these short local runs are not a
+controlled performance study.
 
 ## Atlas service validation (2026-11-02)
 

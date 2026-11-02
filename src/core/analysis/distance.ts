@@ -80,12 +80,22 @@ function scalar(
 	return { distance: Math.sqrt(sse / sw), offset, coverage, points };
 }
 
-export function responseDistance(a: Curve, b: Curve, options: DistanceOptions = {}): DistanceResult | null {
+/** Scalar distance/alignment only, without allocating band explanations (index building and bulk compare). */
+export function distanceSummary(
+	a: Curve,
+	b: Curve,
+	options: DistanceOptions = {}
+): Pick<DistanceResult, 'distance' | 'offset' | 'coverage' | 'points'> | null {
 	sameLength(a, b);
 	if (options.weights) sameLength(a, options.weights);
 	const f = frequenciesFor(a, options.frequencies);
-	const result = scalar(a, 0, b, f, options);
+	return scalar(a, 0, b, f, options);
+}
+
+export function responseDistance(a: Curve, b: Curve, options: DistanceOptions = {}): DistanceResult | null {
+	const result = distanceSummary(a, b, options);
 	if (!result) return null;
+	const f = frequenciesFor(a, options.frequencies);
 	const sums = BANDS.map(() => ({ w: 0, mean: 0, square: 0, energy: 0, n: 0, total: 0 }));
 	let sw = 0,
 		sx = 0,

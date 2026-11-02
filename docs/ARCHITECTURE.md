@@ -79,7 +79,11 @@ requests reject. `curves` preserves request order and returns missing-channel/id
 Taste results include unused ratings and their reasons, qualitative confidence, conflicts and
 winner explanations. Price filters require at least one observed USD price inside both bounds;
 unknown prices do not pass a price bound. Source filters select candidates with an attributed source
-in the set, without silently changing the consensus curve. Tuning candidates are opt-in through
+in the set under the default `filters.sourceMode: 'coverage'`, without changing the consensus curve.
+`'only'` instead filters individual rank measurements before pooling references and candidates;
+it requires selected sources, echoes the effective mode, and caveats lost measurements. Partition-wide
+reliability/population/reviewer-offset statistics remain unchanged. Derived indexes are cached by
+partition, harmonisation and canonical source set; raw packs are shared. Tuning candidates are opt-in through
 `filters.includeTunings`; similarity excludes the reference product's default but may include its
 explicit tunings when enabled. Taste always excludes every rated product, including its tunings.
 An explicit tuning measurement is never its own similarity candidate, even with tunings enabled.
@@ -89,6 +93,15 @@ the unavailable items and list rigs supporting all requested identities. Default
 uses the greatest coverage of usable requested/rated items; ties prefer more measured products, then
 partition id. Explicit measurement references keep their own rig, including non-default variants. A product with no
 usable default on that rig requires an explicit measurement id rather than substituting a fit variant.
+Explicit reference and alternative-rig adequacy uses query weights, not a full-grid uniform guard.
+Successful explicit-rig compare requests never load unrelated rigs; alternatives are computed only
+for missing-rig errors, after intersecting metadata support.
+
+`index.ts` builds deterministic overlap-medoid product consensuses (also used by detail spread).
+`ranking.ts` owns pure query validation, weighting, candidate selection and caveats;
+`taste-ranking.ts` owns pure model/correction/packed-rank/result orchestration. `service.ts` retains
+loading, reference/partition resolution and caches. The extraction preserves the `Analysis` contract
+and keeps numerical helpers testable without worker, fetch or UI dependencies.
 
 `targets(form)` lazily caches published GRID reference curves with attribution and artifact provenance.
 PEQ accepts product, raw curve or `{ kind: 'reference', targetId }` targets. Reference targets must
@@ -97,6 +110,9 @@ Similar, taste and compare expose rank frequencies, exact scored/aligned curves 
 taste also exposes per-centre fit weights, similar/compare their effective treble penalty. These fields
 support rank-basis charts and independent score reproduction without loading detail shards. Compare
 uses the same validated harmonisation policy as similar/taste; detail and PEQ remain uncorrected.
+Taste winners additionally expose the exact nearest-liked member curve/relative offset, and constraint
+statements use measured-correlate wording. `DISLIKE_REASON_LABELS` in the taste engine provides labels
+for legacy stored reason ids; the narrow 5–9 kHz reason has a bounded total influence.
 
 ## Dataset files (`static/data/`)
 
