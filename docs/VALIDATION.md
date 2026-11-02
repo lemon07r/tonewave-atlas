@@ -17,10 +17,25 @@ Additional edge tests cover sparse alignment anchors, unobservable singleton fit
 invalid options and filter types, NaN-frequency eligibility, missing target pivots, grouped notches,
 and negative-shelf overshoot requiring the treble cap's verified feasible fallback.
 
-`pnpm verify` passes 405 tests in 38 files, including numerical, service, worker and component tests. This
-establishes numerical behaviour for the exercised cases, not perceptual equivalence or real-data
+`pnpm verify` passes **517 tests in 52 files**, plus format, lint, types and unused-code checks
+(2026-11-02, rebased onto `91221fd`), including numerical, service, worker and component tests.
+This establishes numerical behaviour for the exercised cases, not perceptual equivalence or real-data
 recommendation quality. Published real-source held-out validation is described below; no listener
 validation is claimed.
+
+Phase-1 regression tests independently accumulate weighted LS moments from returned similar/taste/
+compare curves, effective weights and treble penalties, with and without source harmonisation,
+nonuniform spread, missing bins, corrections and explicit tuning references. They verify the scored
+float32 basis, offsets, array-copy isolation, usable-item/product-count/id rig selection, missing-rig
+alternatives, legacy compare callers, reference-product exclusion, filters, sorting and pre-limit counts.
+`peq-export.test.ts` parses every APO line and evaluates separately computed RBJ cookbook coefficients
+through complex H(z), including Q shelves, serialized headroom, huge boost requests, NaN regions and
+flat targets. Wavelet tests compare all 127 frequencies with a literal fixture of the pinned AutoEq
+grid and parse back gains including preamp exactly once. This checks documented APO syntax and
+numerical semantics, not an execution on Windows or a Wavelet listening test.
+`multi-reference.test.ts` compares sweep membership against the original exhaustive dominance
+definition on seeded 2/3/4-objective sets, ties, duplicates, NaN/null/infinite objectives and 3,000
+all-nondominated adversarial points for every supported objective count.
 
 ## Benchmarks
 
@@ -28,34 +43,36 @@ Run `pnpm bench` (plain Node TypeScript stripping, no build). Deterministic synt
 warm-up for each path, one measured pass, top K=20. Ranking uses 30,000×120 float32 samples; taste
 ranking uses the same candidates, three likes and two dislikes. PEQ uses the default five-filter
 budget on a known shelf/peak/shelf target; the 50-curve workload adds deterministic broad variations.
-All 50 target arrays are prepared before timing. The multi-reference workload uses 3,000 candidates
-on a trade-off between two references, with every candidate non-dominated: a deliberate worst case
-for the current quadratic dominance scan. Its timing includes distance/explanation construction.
+All 50 target arrays are prepared before timing. Multi-reference workloads use 8,000 catalog-like
+synthetic candidates with 2/3/4 references, plus 3,000 candidates trading between two endpoints with
+every candidate non-dominated (2 references, then a third at the midpoint). Each workload receives
+a full warm-up. Timings include all distance/explanation construction and Pareto membership.
 Times include ranking result/explanation construction, but exclude initial synthetic dataset/model
 construction. These are local wall-clock observations, not a performance guarantee or a distribution
 of timings. Ops/s means candidates ranked or curves fitted, not entire 30,000-item requests.
 
 Measured 2026-11-02, Linux, AMD Ryzen 7 9800X3D, Node v26.12.1:
 
-| Workload                                                            |       ms |     ops/s |
-| ------------------------------------------------------------------- | -------: | --------: |
-| Single-reference rank, 30,000 candidates                            |    13.11 | 2,288,523 |
-| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes          |    64.13 |   467,775 |
-| Multi-reference Pareto, 3,000 candidates, 2 refs, all non-dominated |   154.56 |    19,410 |
-| PEQ fit, 1 curve                                                    |    46.67 |        21 |
-| PEQ fit, 50 curves                                                  | 2,024.29 |        25 |
+| Workload                                                     | Before ms | After ms | After ops/s |
+| ------------------------------------------------------------ | --------: | -------: | ----------: |
+| Single-reference rank, 30,000 candidates                     |     13.10 |    13.13 |   2,284,778 |
+| Packed taste rank, 30,000 candidates, 3 likes + 2 dislikes   |     63.93 |    64.00 |     468,776 |
+| Multi-reference, 3,000 candidates, 2 refs, all non-dominated |    156.84 |    26.55 |     113,009 |
+| Multi-reference, 3,000 candidates, 3 refs, all non-dominated |    161.03 |    33.38 |      89,869 |
+| Multi-reference, 8,000 candidates, 2 refs                    |     71.55 |    60.55 |     132,133 |
+| Multi-reference, 8,000 candidates, 3 refs                    |    133.85 |    87.63 |      91,297 |
+| Multi-reference, 8,000 candidates, 4 refs                    |    176.52 |   130.41 |      61,346 |
+| PEQ fit, 1 curve                                             |     52.68 |    53.90 |          19 |
+| PEQ fit, 50 curves                                           |  2,203.37 | 2,148.69 |          23 |
 
-Checksum: 3006.111729 (includes the 3,000 Pareto flags). Both packed ranking scans construct full
-explanations only for the K winners. Packed taste ranking replaces the prior 798.24 ms exhaustive
-explanation workload with a 64.13 ms scalar scan plus winner explanations (~12.4× faster here, below
-the 100 ms target). Warm-up now runs a full packed taste scan, not 100 exhaustive candidates.
-
-The high-band-average shelf seed and pre-acceptance cap checks increased PEQ from the previous
-34.28 ms/curve and 1,517.14 ms/50 curves. The changed PEQ search also changes the checksum from
-6.091697 before adding the new Pareto checksum component. NaN frequencies are now consistently
-ineligible in all distance passes; ordinary finite-grid ranking semantics are unchanged. The Pareto
-benchmark documents O(N²) behaviour; it does not establish acceptable latency at 30,000 candidates.
-Timings remain single-pass observations, not a controlled performance study.
+Before uses the original exhaustive dominance scan with exactly the same expanded workloads; after
+uses the prefix-min sweeps. Checksums match: **7479.111729**, including both all-nondominated fronts
+and all catalog-like front counts. The 3,000-point cases improve by about 5.9×/4.8×; distance and
+explanation construction still dominate the catalog-like cases. Both packed single-reference/taste
+scans construct full explanations only for top-K winners; multi-reference still constructs all
+objectives before sorting/top-K. No 30,000-candidate multi-reference latency bound is claimed.
+PEQ fitting is unchanged (the dense preamp sweep was extracted for serialized APO headroom checks).
+These are single-pass local observations, not a controlled performance study or a timing distribution.
 
 ## Atlas service validation (2026-11-02)
 

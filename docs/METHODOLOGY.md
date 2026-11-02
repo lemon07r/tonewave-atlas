@@ -38,6 +38,16 @@ The result records contributing measurement ids and source attribution. This med
 description of the available measurements, not a physical ground truth or an independent-sample
 estimate. A product with no usable default reference is not given a fabricated consensus.
 
+Ranking results expose their exact basis: `rankFrequencies` is RANK_GRID, every second bin of the
+smoothed GRID curves; `reference.rankCurve`/compare reference curves and candidate `rankCurve` contain the scored
+float32 values copied to float64 (harmonised iff reported), with the candidate's `offsetDb` subtracted.
+Charts can display this basis rather than a different detail curve. Taste `centre` is the derived,
+corrected rank-basis centre; candidates align to their `tasteId` with ordinary `rankWeights`. Returned
+`rankWeights`, per-taste `fitWeights` and effective `treblePenalty` (similar/compare) reproduce D by
+the LS formula below, refitting the offset for each weighting/reference. Compare overlays align to
+reference 0 (offset 0 if inadequate overlap); other objectives refit independently. NaNs remain gaps.
+Detail curves remain uncorrected and higher resolution, not the basis of ranking scores.
+
 Ranking indexes contain one default consensus per product and one separate, single-source candidate
 per `tuning` measurement, preserving the verbatim variant label. Tunings are opt-in at query time.
 Fit, setup, unit and unknown variants are not ranking candidates. Product detail retains all channels
@@ -146,7 +156,7 @@ Per-source/per-bin counts and actual fold pair counts remain essential; the part
 establish adequate support for every correction bin or source. Low-support estimates are exploratory,
 unsupported bins remain missing (JSON `null`), and this label never enables harmonisation by itself.
 
-Similar/taste requests omitting `harmonise` enable correction only when support is sufficient and
+Similar/taste/compare requests omitting `harmonise` enable correction only when support is sufficient and
 pooled mean improvement is finite and positive both overall and in every reported fold (with a
 complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
 explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
@@ -344,7 +354,7 @@ is not presented as response distance. “Matched” bands means below the edito
 not perceptual equivalence. Confidence and constraints retain the service's evidence; confidence reasons
 use plain language without changing support counts, measured ranges or uncertainty.
 
-Measured product displays use GRID detail curves/consensus. Discover removes arbitrary source levels
+Measured product detail displays use GRID detail curves/consensus. Detail-based Discover overlays remove arbitrary source levels
 by weighted LS alignment of display curves to the first curve on GRID, using the active similar-mode
 focus (balanced in profile mode) and default reliability weights. This display-only offset does not
 change ranking or explanations, which use RANK_GRID and the service's weights. Missing samples stay
@@ -363,9 +373,21 @@ For 2–4 references return each D, arithmetic mean D and minimax D. A candidate
 no other complete candidate is no worse for every reference and strictly better for at least one.
 Tied objective vectors remain non-dominated. Missing any reference makes aggregates null and Pareto
 false; comparisons never quietly drop a difficult reference.
-The current dominance scan is O(N²) in the worst case, separate from the O(N) distance calculations.
-It is not a catalogue-scale packed ranker; the benchmark includes an all-non-dominated 3,000-item
-case to expose that limitation. No 30,000-item latency bound is claimed for this path.
+The dominance pass sorts lexicographically, querying equal vectors together before inserting them.
+Two objectives use a running minimum; three use a compressed prefix-min Fenwick tree; four use
+nested compressed prefix-min trees. Time is O(N log N) for 2–3 and O(N log² N) for 4; auxiliary space
+is O(N) and O(N log N), respectively, including all-non-dominated inputs. Non-finite objectives are
+incomplete, never Pareto. Distance calculation remains O(N·references·120). Benchmarks include 8,000
+candidates with 2/3/4 references and all-non-dominated 3,000-candidate fronts; no latency guarantee is claimed.
+
+`compare` accepts `references: [{productId, measurementId?}, …]` (legacy `productIds` still works).
+Explicit measurements select exact variants, never substitutes. Reference products, including all
+their tunings, are excluded. Default rig selection maximises requested-item coverage with usable
+defaults (or the explicit measurement); ties prefer more measured products, then partition id. A
+missing reference returns `not-measured-on-rig`, names every missing reference, and lists `partitions`
+where all requested references are usable. Candidate filters precede Pareto membership; `sort` is
+`mean` (default) or `minimax`, missing aggregates sort last, then optional `paretoOnly` and `topK`
+(default 20) limit returned rows. `counts` retain candidate/front totals before these output limits.
 
 Targets are edits of a supplied base, not universal prescriptions. Bass shelf defaults to 100 Hz,
 Q=.707; warmth is a 200 Hz peak, Q=.7; treble shelf defaults to 6 kHz, Q=.707. Gains are caller inputs.
@@ -418,9 +440,25 @@ Output includes filters, summed response, level-aligned corrected−target resid
 notches, bands with residual RMS>3 dB, and >10 kHz uncertainty. Preamp is −max(0,summed boost)−0.2 dB,
 using a 4097-point log sweep from 20 Hz to Nyquist to catch inter-GRID maxima. This is digital nominal
 headroom at 48 kHz, not a guarantee against intersample peaks, driver limits or hearing damage.
-APO/AutoEq ParametricEQ text retains shelf Q; Wavelet exports 127 log-spaced 20 Hz–20 kHz GraphicEQ
-points **including preamp**; JSON includes sample rate, filters and preamp. Different EQ implementations
-or sample rates may produce different results; the Wavelet curve approximates the parametric response.
+Equalizer APO text uses `PK`, `LSC` and `HSC` with centre frequency and **Q**, not corner-frequency
+`LS/HS 6dB/12dB` or a shelf-slope parameter. Q shelves require APO ≥1.2.1; see its
+[configuration reference (Filter, Preamp, Channel)](https://sourceforge.net/p/equalizerapo/wiki/Configuration%20reference/).
+`Channel: all` applies the same averaged-curve EQ to all channels, regardless of an enclosing channel
+selection; this is not separate L/R correction. Export rounds filter parameters to 0.01 Hz/dB and
+0.0001 Q, recomputes nominal headroom for those serialized filters, and rounds preamp down to 0.01 dB
+so rounding cannot consume the 0.2 dB sweep margin. Other active filters/preamps still accumulate.
+
+Wavelet GraphicEQ uses the fixed 127-frequency AutoEq grid, **20–19871 Hz**, not a rounded grid ending
+at 20000 Hz. Source: AutoEq commit `7ae0f56d53074872b028649617a22bbb4232feb7`,
+[`DEFAULT_GRAPHIC_EQ_STEP=1.0563`](https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/autoeq/constants.py#L64)
+and [`eqapo_graphic_eq`](https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/autoeq/frequency_response.py#L121-L137):
+floor `20·1.0563^i` for i=0…126, then unique/sort. Gains are the parametric response at those exact
+integer frequencies **plus preamp once**, rounded to 0.01 dB; no separate preamp directive is emitted.
+AutoEq's default normalisation subtracts the sampled maximum plus 0.2 dB (optional extra preamp defaults
+to zero). We retain our conservative dense-sweep preamp instead: sampled gains stay ≤−0.2 dB but need
+not peak at exactly −0.2 dB. This approximates the parametric response, not its exact transfer function.
+JSON includes sample rate, filters and preamp. Different sample rates/implementations may differ;
+none of these exports guarantees protection from intersample peaks or acoustic harm.
 
 ## References and validation status
 
