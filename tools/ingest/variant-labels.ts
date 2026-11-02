@@ -83,8 +83,8 @@ export function cableSuffixes(model: string): { parent: string; label: string }[
 		.sort((a, b) => b.parent.length - a.parent.length);
 }
 
-/** Named tips only; never absorb product revisions, samples, mods or switch states into fit. */
-export function tipSuffixes(model: string): { parent: string; label: string }[] {
+/** Tip-only descriptors are fit; leftover settings are tuning, not guessed neutral metadata. */
+export function tipSuffixes(model: string): { parent: string; label: string; unknown?: string[] }[] {
 	return [...model.matchAll(/\s+/g)]
 		.flatMap((boundary) => {
 			const parent = model.slice(0, boundary.index).trim();
@@ -98,19 +98,28 @@ export function tipSuffixes(model: string): { parent: string; label: string }[] 
 			const text = (wrapper?.[1] ?? wrapper?.[2] ?? label).trim();
 			if (/[()[\]]/.test(text)) return [];
 			if (
-				/\b(?:sample|unit|s\d+|rev(?:ision)?\s*\d*|20\d{2}|v\d+|mk\d+|harman|balanced|bass|treble|high|low|steel|brass|titanium|copper|nozzle|filter|mod|modded|diy|reshell|cable|plug|dsp|switch)\b/i.test(
-					text
-				) ||
-				tuningDescriptor(text)
-			)
-				return [];
-			if (
-				!/^(?:(?:[\p{L}\d+.-]+\s+){0,6}(?:ear)?tips?|(?:[\p{L}\d+.-]+\s+){0,4}(?:foam|(?:wide|narrow|shorter|standard)[ -]bore)|cp\d{2,3}\+?|abp-t|(?:spinfit|sedna|azla|divinus|baroque)\b[^()[\]]*|jvc\s+spiral\s+dot(?:\+{1,2})?|moondrop\s+spring)$/iu.test(
+				!/\b(?:tips?|eartips?|foam|bore|cp\d{2,3}|spinfit|sedna|azla|divinus|baroque|abp-t)\b|\bjvc\s+spiral\s+dot\b|\bmoondrop\s+spring\b/i.test(
 					text
 				)
 			)
 				return [];
-			return [{ parent, label }];
+			const remainder = text
+				.replace(/\b(?:spinfit\s+w1|final\s+e|jvc\s+spiral\s+dot|cp\d{2,3}|abp-t)\b\+{0,2}/gi, ' ')
+				.replace(
+					/\b(?:stock|standard|original|silicone|foam|ear|tips?|eartips?|wide|narrow|shorter|bore|with|and|spinfit|omni|sedna|azla|shorts?|light|crystal|origin|divinus|velvet|baroque|moondrop|spring|final|sennheiser|tennmak|sofoam|kz)\b/gi,
+					' '
+				);
+			const unknown = remainder.match(/[\p{L}\p{N}]+(?:[+.-][\p{L}\p{N}]+)*/gu) ?? [];
+			// Recognized tip codes were removed first; T4/X2, generations and product editions are not tips.
+			if (
+				unknown.some((token) =>
+					/^(?:pro|max|ultra|plus|s|i{1,3}|iv|v|vi{1,3}|ix|x|[1-9]|(?:19|20)\d{2}|(?:mk|rev(?:ision)?)[ivx\d]+|[\p{L}]+-?\d[\p{L}\p{N}-]*|sample|unit|mod|modded|diy|reshell)$/iu.test(
+						token
+					)
+				)
+			)
+				return [];
+			return [{ parent, label, ...(unknown.length ? { unknown } : {}) }];
 		})
 		.sort((a, b) => b.parent.length - a.parent.length);
 }

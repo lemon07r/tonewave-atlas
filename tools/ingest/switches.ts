@@ -16,6 +16,10 @@ interface SwitchRow {
 	measurement: Measurement;
 }
 
+const ambiguousTipPrefix = 'ambiguous tip suffix kept as non-default tuning: ';
+const ambiguousTip = (m: Measurement) =>
+	m.provenance.processing.some((p) => p.startsWith(ambiguousTipPrefix));
+
 /** Neutral cable metadata cannot erase existing fit, unit, EQ or impedance-load meaning. */
 function cableKind(m: Measurement): Measurement['variant']['kind'] {
 	if (m.variant.kind === 'unit') return 'unit';
@@ -40,17 +44,16 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 		parent: string;
 		label: string;
 		measurements: number;
+		ambiguousTokens?: string[];
 	}[] = [];
 	const unresolved: { product: string; label: string; reason: string }[] = [];
 	for (const p of [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'))) {
 		const switchSuffix = stateSuffix(p.model);
 		const cableSuffix =
 			cableSuffixes(p.model).find((s) => parents.has(key(p, s.parent))) ?? cableSuffixes(p.model)[0];
-		const suffix =
-			switchSuffix ??
-			cableSuffix ??
-			tipSuffixes(p.model).find((s) => parents.has(key(p, s.parent))) ??
-			tipSuffixes(p.model)[0];
+		const tipSuffix =
+			tipSuffixes(p.model).find((s) => parents.has(key(p, s.parent))) ?? tipSuffixes(p.model)[0];
+		const suffix = switchSuffix ?? cableSuffix ?? tipSuffix;
 		if (!suffix) continue;
 		const kind = switchSuffix ? 'switch' : cableSuffix ? 'cable' : 'tip';
 		const parent = parents.get(key(p, suffix.parent));
@@ -74,8 +77,16 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 				if (/\bdsp\b/i.test(suffix.label) || tuningDescriptor(suffix.label)) m.variant.isDefault = false;
 				if (!m.variant.isDefault) m.variant.kind = cableKind(m);
 			}
-			if (kind === 'tip' && !m.variant.isDefault && m.variant.kind !== 'unit' && m.variant.kind !== 'tuning')
-				m.variant.kind = 'fit';
+			if (kind === 'tip') {
+				if (tipSuffix?.unknown?.length) {
+					m.provenance.processing.push(
+						`${ambiguousTipPrefix}${suffix.label}; unrecognized tokens: ${tipSuffix.unknown.join(', ')}`
+					);
+					m.variant.isDefault = false;
+					if (m.variant.kind !== 'unit') m.variant.kind = 'tuning';
+				} else if (!m.variant.isDefault && m.variant.kind !== 'unit' && m.variant.kind !== 'tuning')
+					m.variant.kind = 'fit';
+			}
 			parent.measurementIds.push(m.id);
 		}
 		products.delete(p.id);
@@ -87,7 +98,8 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			before: `${p.brand} ${p.model}`,
 			parent: `${parent.brand} ${parent.model}`,
 			label: suffix.label,
-			measurements: p.measurementIds.length
+			measurements: p.measurementIds.length,
+			...(kind === 'tip' && tipSuffix?.unknown?.length ? { ambiguousTokens: tipSuffix.unknown } : {})
 		});
 	}
 	const cableDefaultChanges: { source: string; productId: string; selected: string; demoted: string[] }[] =
@@ -144,6 +156,15 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 		moves,
 		cableDefaultChanges,
 		tipDefaultChanges,
+		tipAmbiguities: rows
+			.filter((r) => ambiguousTip(r.measurement))
+			.map(({ measurement: m }) => ({
+				measurementId: m.id,
+				productId: m.productId,
+				source: m.sourceId,
+				file: m.variant.file,
+				label: m.variant.label
+			})),
 		unresolved,
 		groupsBefore: before.length,
 		groupsAfter: collisionGroups([...products.values()]).length,
@@ -260,6 +281,7 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 					(m) =>
 						state(m) === preferred &&
 						m.variant.kind !== 'unit' &&
+						!ambiguousTip(m) &&
 						classifyEq(`${m.variant.file} ${m.variant.label}`) !== 'ambiguous'
 				);
 				const selected = eligible.find((m) => m.variant.isDefault) ?? eligible[0];
@@ -273,6 +295,7 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 							m === selected
 								? 'default'
 								: state(m) === preferred &&
+									  !ambiguousTip(m) &&
 									  classifyEq(`${m.variant.file} ${m.variant.label}`) !== 'ambiguous' &&
 									  tipDescriptor(descriptor(m))
 									? 'fit'

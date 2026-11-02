@@ -214,21 +214,70 @@ describe('switch-state identity and source-balanced defaults', () => {
 	});
 	it('requires an exact accepted tip parent and does not absorb sample/revision/state prefixes', () => {
 		const products = new Map(
-			[product(), product('missing', 'Other Stock Tip'), product('sample', 'Volume S S2 Foam')].map((p) => [
-				p.id,
-				p
-			])
+			[
+				product(),
+				product('missing', 'Other Stock Tip'),
+				product('sample', 'Volume S S2 Foam'),
+				product('designator', 'Volume S Pro Stock Tip')
+			].map((p) => [p.id, p])
 		);
 		expect(mergeSwitchIdentities(products, []).moves).toHaveLength(0);
 		for (const text of [
 			'Volume S S2 Foam',
 			'Volume S Rev2 Stock Tip',
 			'Volume S 2025 Stock Tip',
-			'Volume S Harman Stock Tip',
-			'Volume S High Impedance tips'
+			'Volume S Pro Stock Tip',
+			'Volume S Max Foam',
+			'Volume S II Foam',
+			'Volume S 2 Foam',
+			'Volume S S Foam',
+			'Volume S Ultra tips',
+			'Volume S Plus tips',
+			'Volume S X2 Foam'
 		])
 			expect(tipSuffixes(text).some((s) => s.parent === 'Volume S')).toBe(false);
 		expect(tipSuffixes('Volume S (Spring Tips)')).toEqual([{ parent: 'Volume S', label: '(Spring Tips)' }]);
+	});
+	it.each(['02 Foam', '12 Foam', 'mystery tips', 'Harman Stock Tip', 'High Impedance tips'])(
+		'folds mixed tip/settings suffixes as non-default tuning: %s',
+		(suffix) => {
+			const products = new Map(
+				[product('parent', 'T4'), product('tip', `T4 ${suffix}`)].map((p) => [p.id, p])
+			);
+			const rows = [row('source', `T4 ${suffix}`, true, 'tip')];
+			const result = mergeSwitchIdentities(products, rows);
+			expect(rows[0]?.measurement).toMatchObject({
+				productId: 'parent',
+				variant: { kind: 'tuning', isDefault: false }
+			});
+			expect(result.moves[0]?.ambiguousTokens?.length).toBeGreaterThan(0);
+			expect(result.tipAmbiguities).toHaveLength(1);
+		}
+	);
+	it('keeps Studio 4 Stock Tip fit when the source already has its default', () => {
+		const products = new Map(
+			[product('parent', 'Studio 4'), product('tip', 'Studio 4 Stock Tip')].map((p) => [p.id, p])
+		);
+		const rows = [row('source', 'Studio 4'), row('source', 'Studio 4 Stock Tip', false, 'tip', 'fit')];
+		mergeSwitchIdentities(products, rows);
+		expect(rows[1]?.measurement).toMatchObject({
+			productId: 'parent',
+			variant: { kind: 'fit', isDefault: false }
+		});
+	});
+	it('does not let a switch plurality promote an ambiguous mixed tip suffix', () => {
+		const products = new Map(
+			[product(), product('tip', 'Volume S switches DD mystery Foam')].map((p) => [p.id, p])
+		);
+		const rows = [
+			row('a', 'Volume S DD'),
+			row('b', 'Volume S DD'),
+			row('other', 'Volume S UU'),
+			row('mixed', 'Volume S switches DD mystery Foam', true, 'tip')
+		];
+		mergeSwitchIdentities(products, rows);
+		reconcileSwitchDefaults(products, rows);
+		expect(rows[3]?.measurement.variant).toMatchObject({ kind: 'tuning', isDefault: false });
 	});
 	it('promotes a sole accepted neutral tip measurement without promoting loads or units', () => {
 		const products = new Map([product(), product('tip', 'Volume S CP100')].map((p) => [p.id, p]));
