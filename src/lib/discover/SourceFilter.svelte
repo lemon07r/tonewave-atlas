@@ -20,6 +20,7 @@
 		onmodechange: (mode: SourceMode) => void;
 	} = $props();
 	let query = $state('');
+	let hiddenSelected = $derived(selected.filter((id) => !sources.some((source) => source.id === id)));
 	let visible = $derived(
 		sources.filter((source) => source.name.toLowerCase().includes(query.trim().toLowerCase()))
 	);
@@ -48,6 +49,10 @@
 			? 'reference and candidate curves use only selected reviewers. References without those measurements cannot be used.'
 			: 'products must be measured by a selected reviewer; reference and candidate curves use all eligible sources.'}
 	</p>
+	{#if hiddenSelected.length}<p>
+			{hiddenSelected.length} selected reviewers are outside this rig’s list. They still scope matching; reset reviewers
+			to clear them.
+		</p>{/if}
 	<div class="source-tools">
 		<label class="field-label"
 			>Search reviewers<input class="text-input" type="search" bind:value={query} /></label

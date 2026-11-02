@@ -10,6 +10,52 @@ vi.mock('#lib/atlas.ts', () => {
 	return { analysis: () => worker };
 });
 
+test('rating an existing row retains preferences, and duplicate reference labels render independently', async () => {
+	const candidate: CandidateInfo = {
+		id: 'c',
+		product: { id: 'p', brand: 'Fixture', model: 'One', form: 'iem' },
+		kind: 'default',
+		variantLabel: null,
+		measurementIds: [],
+		sources: [],
+		prices: [],
+		priceUsd: null
+	};
+	const existing = {
+		productId: 'p',
+		rating: 'like' as const,
+		strength: 0.6,
+		soundRelated: false,
+		likedAspects: ['bass' as const],
+		dislikeReasons: ['other' as const],
+		measurementId: 'explicit'
+	};
+	const onrate = vi.fn();
+	const bands = [{ band: 'bass' as const, meanDb: 1, rmsDb: 1, contribution: 1, coverage: 1 }];
+	const screen = await render(ResultRow, {
+		candidate,
+		existing,
+		rank: 1,
+		distance: NaN,
+		bands: [],
+		tradeoff: { distances: [null, 1], offsets: [null, 0], mean: null, minimax: null, pareto: false },
+		referenceNames: ['Same name', 'Same name'],
+		referenceEvidence: [
+			{ label: 'Same name', bands },
+			{ label: 'Same name', bands }
+		],
+		onshow: vi.fn(),
+		onrate
+	});
+	await expect
+		.element(screen.getByText(/No trade-off ranking: at least one reference has insufficient overlap/))
+		.toBeVisible();
+	expect(screen.container.querySelectorAll('thead th[scope="col"]')).toHaveLength(12);
+	await screen.getByText('Rate this product', { exact: true }).click();
+	await screen.getByRole('button', { name: 'Save rating', exact: true }).click();
+	expect(onrate).toHaveBeenCalledExactlyOnceWith(existing);
+});
+
 test('keeps small reference and band headers readable with normal tracking and explicit kerning', async () => {
 	const screen = await render(ResultRow, {
 		candidate: {

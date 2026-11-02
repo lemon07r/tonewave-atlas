@@ -14,6 +14,7 @@
 	import { compareQuery } from './actions.ts';
 	let {
 		candidate,
+		existing,
 		rank,
 		distance,
 		bands,
@@ -32,6 +33,7 @@
 		nameFor = (id) => id
 	}: {
 		candidate: CandidateInfo;
+		existing?: WorkspaceItem | undefined;
 		rank: number;
 		distance: number;
 		bands: BandDistance[];
@@ -50,7 +52,11 @@
 		nameFor?: (id: string) => string;
 	} = $props();
 	let open = $state<boolean>(false);
-	let draft = $state<WorkspaceItem>({ productId: '', rating: 'unrated', strength: 0, soundRelated: true });
+	let draft = $derived<WorkspaceItem>(
+		existing
+			? { ...existing }
+			: { productId: candidate.product.id, rating: 'unrated', strength: 0, soundRelated: true }
+	);
 	let sources = $state.raw<CurveSource[]>([]);
 	let error = $state('');
 	$effect(() => {
@@ -111,7 +117,7 @@
 			<table class="data-table">
 				<caption>Distance to each reference (dB)</caption><thead
 					><tr
-						>{#each referenceNames as name, i (name)}<th scope="col"
+						>{#each referenceNames as name, i (i)}<th scope="col"
 								>{name}<span class="extreme">{extremes[i]}</span></th
 							>{/each}</tr
 					></thead
@@ -122,9 +128,11 @@
 				>
 			</table>
 			<p>
-				{tradeoff.pareto
-					? 'Best trade-off · no candidate improves one distance without worsening another'
-					: 'Another candidate is at least as close to every reference and closer to one'}
+				{tradeoff.distances.includes(null)
+					? 'No trade-off ranking: at least one reference has insufficient overlap'
+					: tradeoff.pareto
+						? 'Best trade-off · no candidate improves one distance without worsening another'
+						: 'Another candidate is at least as close to every reference and closer to one'}
 			</p>
 		</div>{/if}
 	{#if bands.length}<p class="description">
@@ -193,7 +201,7 @@
 				Tilt {dbLabel(match.tilt, true)} dB/oct · Coverage {(match.coverage * 100).toFixed(0)}% · {match.points}
 				rank samples
 			</p>{/if}
-		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence (evidence.label)}<div
+		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence, index (index)}<div
 				class="table-scroll"
 			>
 				<table class="data-table">

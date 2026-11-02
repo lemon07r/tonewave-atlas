@@ -75,3 +75,30 @@ test('calculates per-reference band evidence from rank values with independent l
 	expect(first?.meanDb).toBeCloseTo(2 * (1 - 40 / 120), 6);
 	expect(second?.meanDb).toBeCloseTo(first?.meanDb ?? NaN, 6);
 });
+
+test('reference availability obeys source-only pooling for defaults and explicit measurements', () => {
+	const filter = { mode: 'only' as const, selected: ['other'] };
+	expect(
+		referenceDiagnostic(
+			item,
+			product,
+			[{ ...measurement, variantKind: 'default', partition: 'rig-a' }],
+			'rig-a',
+			filter
+		).status
+	).toBe('unavailable');
+	expect(
+		referenceDiagnostic({ ...item, measurementId: measurement.id }, product, [measurement], 'rig-b', filter)
+			.status
+	).toBe('unavailable');
+	expect(
+		referenceDiagnostic(
+			item,
+			product,
+			[{ ...measurement, variantKind: 'default', partition: 'rig-a' }],
+			'rig-a',
+			{ ...filter, selected: ['s'] }
+		).status
+	).toBe('available');
+	expect(referenceDiagnostic(item, { ...product, defaultPartitions: [] }, [], '').status).toBe('unavailable');
+});

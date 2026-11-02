@@ -1,5 +1,11 @@
 import { responseDistance, type BandDistance } from '#core/analysis/distance.ts';
-import type { CompareResult, MeasurementInfo, ProductListItem, TasteResult } from '#core/atlas/types.ts';
+import type {
+	CompareResult,
+	MeasurementInfo,
+	ProductListItem,
+	SourceMode,
+	TasteResult
+} from '#core/atlas/types.ts';
 import type { WorkspaceItem } from '#lib/profile/profile.ts';
 
 /** Nearest-member distance uses its returned curve and row-specific offset, not a detail consensus. */
@@ -37,23 +43,40 @@ export function compareEvidence(
 export interface ReferenceDiagnostic {
 	partitions: string[];
 	variant: string | null;
-	status: 'available' | 'missing-rig' | 'unknown-measurement' | 'unknown-product';
+	status: 'available' | 'missing-rig' | 'unknown-measurement' | 'unknown-product' | 'unavailable';
 }
 /** Explicit measurements are checked against their own product and rig; never substitute defaults. */
 export function referenceDiagnostic(
 	item: WorkspaceItem,
 	product: ProductListItem | undefined,
 	measurements: readonly MeasurementInfo[],
-	partition: string
+	partition: string,
+	filter?: { selected: readonly string[]; mode: SourceMode }
 ): ReferenceDiagnostic {
 	const measurement = item.measurementId
 		? measurements.find((m) => m.id === item.measurementId && m.productId === item.productId)
 		: undefined;
+	const only = filter?.mode === 'only' && filter.selected.length > 0;
 	const partitions = item.measurementId
 		? measurement
-			? [measurement.partition]
+			? only && !filter.selected.includes(measurement.sourceId)
+				? []
+				: [measurement.partition]
 			: []
-		: (product?.defaultPartitions ?? []);
+		: only
+			? [
+					...new Set(
+						measurements
+							.filter(
+								(m) =>
+									m.productId === item.productId &&
+									m.variantKind === 'default' &&
+									filter.selected.includes(m.sourceId)
+							)
+							.map((m) => m.partition)
+					)
+				]
+			: (product?.defaultPartitions ?? []);
 	return {
 		partitions,
 		variant: measurement?.variantLabel || (item.measurementId ? item.measurementId : null),
@@ -61,8 +84,10 @@ export function referenceDiagnostic(
 			? 'unknown-product'
 			: item.measurementId && !measurement
 				? 'unknown-measurement'
-				: partition && !partitions.includes(partition)
-					? 'missing-rig'
-					: 'available'
+				: !partitions.length
+					? 'unavailable'
+					: partition && !partitions.includes(partition)
+						? 'missing-rig'
+						: 'available'
 	};
 }

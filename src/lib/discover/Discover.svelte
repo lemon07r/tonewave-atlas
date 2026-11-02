@@ -757,6 +757,8 @@
 							{products}
 							partition={activePartition}
 							sources={summary?.sources ?? []}
+							selected={settings.sources}
+							mode={settings.sourceMode}
 						/>{#if queryError.partitions?.length}<div class="compatible-rigs">
 								<span>All references, including selected variants, are measured on:</span>
 								{#each queryError.partitions as partition (partition)}<button
@@ -808,6 +810,7 @@
 				{#if result}<ol class="result-list">
 						{#if result.kind === 'similar'}{#each result.data.results as match, index (match.candidate.id)}<ResultRow
 									candidate={match.candidate}
+									existing={items.find((item) => item.productId === match.candidate.product.id)}
 									rank={index + 1}
 									distance={match.distance}
 									bands={match.bands}
@@ -822,6 +825,7 @@
 								/>{/each}
 						{:else if result.kind === 'taste'}{#each result.data.results as row, index (row.candidate.id)}<ResultRow
 									candidate={row.candidate}
+									existing={items.find((item) => item.productId === row.candidate.product.id)}
 									rank={index + 1}
 									distance={row.fit.plainDistanceDb}
 									bands={row.fit.bands}
@@ -841,6 +845,7 @@
 						{:else}{#each result.data.results as row, index (row.candidate.id)}{@const evidence =
 									compareEvidence(result.data, row.rankCurve, referenceNames)}<ResultRow
 									candidate={row.candidate}
+									existing={items.find((item) => item.productId === row.candidate.product.id)}
 									rank={index + 1}
 									distance={(resultSort === 'minimax' ? row.tradeoff.minimax : row.tradeoff.mean) ?? NaN}
 									bands={evidence[0]?.bands ?? []}
