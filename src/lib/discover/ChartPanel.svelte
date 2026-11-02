@@ -7,23 +7,32 @@
 	import type { DiscoveryResult } from './query.ts';
 	import { rankedGroups } from './rank-series.ts';
 	import { candidateCurve, displayCurve } from './display.ts';
-	import { alignDisplaySeries } from './align-display.ts';
+	import { detailGroups } from './detail-groups.ts';
 	let {
 		result,
 		overlays,
-		nameFor
-	}: { result: DiscoveryResult; overlays: string[]; nameFor: (id: string) => string } = $props();
+		nameFor,
+		localReference
+	}: {
+		result: DiscoveryResult;
+		overlays: string[];
+		nameFor: (id: string) => string;
+		localReference?: FrSeries | undefined;
+	} = $props();
 	let view = $state<'rank' | 'detail'>('rank');
 	let detailSeries = $state.raw<FrSeries[]>([]);
 	let error = $state('');
 	let loading = $state(false);
 	let groups = $derived(rankedGroups(result, overlays, nameFor));
+	let details = $derived(detailGroups(detailSeries));
 	let unaligned = $derived(
 		result.kind === 'compare'
 			? result.data.results.filter((row) => overlays.includes(row.candidate.id) && row.alignedTo === null)
 			: []
 	);
 	$effect(() => {
+		loading = false;
+		error = '';
 		if (view !== 'detail') return;
 		const current = result;
 		const selected = overlays;
@@ -51,9 +60,11 @@
 								})
 							).series
 						);
+					else if (localReference && ref.uploadId === localReference.id)
+						curves.push({ ...localReference, reference: true });
 				for (const row of current.data.results.filter((row) => selected.includes(row.candidate.id)))
 					curves.push((await candidateCurve(row.candidate, current.data.partition)).series);
-				if (!abort.signal.aborted) detailSeries = alignDisplaySeries(curves, 'balanced');
+				if (!abort.signal.aborted) detailSeries = curves;
 			} catch (cause) {
 				if (!abort.signal.aborted)
 					error = cause instanceof Error ? cause.message : 'Detail measurements could not be loaded.';
@@ -103,9 +114,16 @@
 				baselineId={group.baselineId}
 			/>
 		{/each}
-	{:else}<FrChart series={detailSeries} frequencies={GRID} baselineId={detailSeries[0]?.id ?? ''} />{/if}
-	{#if loading}<p role="status" class="chart-note">Loading detail measurements…</p>{/if}
-	{#if error}<Notice kind="caution">{error}</Notice>{/if}
+	{:else}
+		{#each details as group (group.id)}<FrChart
+				title={group.label}
+				series={group.series}
+				frequencies={GRID}
+				baselineId={group.baselineId}
+			/>{/each}
+		{#if loading}<p role="status" class="chart-note">Loading detail measurements…</p>{/if}
+		{#if error}<Notice kind="caution">{error}</Notice>{/if}
+	{/if}
 </section>
 
 <style>

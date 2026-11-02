@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { CompareResult, SimilarResult, TasteResult } from '#core/atlas/types.ts';
-import { rankedSeries } from './rank-series.ts';
+import { rankedSeries, rankedGroups } from './rank-series.ts';
 import { nearestLikedEvidence } from './evidence.ts';
 import { RANK_GRID } from '#core/grid.ts';
 import type { Source } from '#core/dataset/types.ts';
@@ -163,6 +163,27 @@ test('taste overlay uses the centre named by the result tasteId, not the first t
 	expect(series[0]?.id).toBe('taste-1');
 	expect(series[0]?.values).toBe(scored);
 	expect(series[1]?.values).toBe(scored);
+	const groups = rankedGroups(
+		{
+			kind: 'taste',
+			data: {
+				...result,
+				results: [
+					selected,
+					{ ...selected, candidate: { ...candidate, id: 'other' }, tasteId: 0, rankCurve: first }
+				]
+			}
+		},
+		['match', 'other'],
+		(id) => id
+	);
+	expect(groups.map((group) => group.baselineId)).toEqual(['taste-0', 'taste-1']);
+	expect(groups.map((group) => group.series.map((s) => s.id))).toEqual([
+		['taste-0', 'other'],
+		['taste-1', 'match']
+	]);
+	expect(groups[0]?.series[1]?.values).toBe(first);
+	expect(groups[1]?.series[1]?.values).toBe(scored);
 	const near = { id: 'liked-variant', rankCurve: new Float64Array(RANK_GRID.length).fill(10), offsetDb: 3 };
 	const row = {
 		...selected,

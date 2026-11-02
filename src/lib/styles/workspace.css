@@ -321,7 +321,4 @@ body .result-row details {
 	body .fr-chart .legend-row button {
 		font-size: 11px;
 	}
-	body .fr-chart .legend-row button svg {
-		width: 32px;
-	}
 }

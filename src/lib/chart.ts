@@ -21,7 +21,8 @@ export const CURVE_DASHES: number[][] = [
 	[1, 4],
 	[12, 4, 2, 4],
 	[12, 3, 2, 3, 2, 3],
-	[14, 4, 6, 4]
+	[14, 4, 6, 4],
+	[6, 3, 1, 3]
 ];
 /** Shared by uPlot, the SVG legend and PNG legend, in CSS pixels. */
 export function curveDash(index: number): number[] {

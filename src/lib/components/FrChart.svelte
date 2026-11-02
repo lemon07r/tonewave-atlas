@@ -56,11 +56,14 @@
 	let levelLabel = $derived(mode === 'difference' ? 'Difference (dB)' : 'Level (dB)');
 	let baseline = $derived(series.find((item) => item.id === baselineId) ?? series[0]);
 	let partialEnvelope = $derived(series.some((item) => Boolean(item.lo) !== Boolean(item.hi)));
-	let valid = $derived(
+	let validFrequencies = $derived(
 		size > 1 &&
 			Array.from(frequencies).every(
 				(hz, i) => Number.isFinite(hz) && hz > 0 && (i === 0 || hz > (frequencies[i - 1] ?? 0))
-			) &&
+			)
+	);
+	let valid = $derived(
+		validFrequencies &&
 			!partialEnvelope &&
 			series.every(
 				(item) =>
@@ -495,9 +498,7 @@
 								stroke-dasharray={dash(curve.styleIndex).join(' ')}
 							/></svg
 						><span class="legend-number">{curve.index + 1}</span><span
-							>{curve.label}{#if curve.reference}<span class="reference-label" aria-hidden="true"
-									>Reference</span
-								>{/if}</span
+							>{curve.label}{#if curve.reference}<span class="reference-label">Reference</span>{/if}</span
 						></button
 					><span class="legend-value"
 						>{mode === 'difference' ? 'Δ ' : ''}{dbLabel(curve.data[inspected], mode === 'difference')}
@@ -529,9 +530,11 @@
 			</div></Disclosure
 		>{/if}
 	{#if !valid}<Notice kind="caution"
-			>Chart unavailable: {partialEnvelope
-				? 'lower and upper uncertainty bounds must be supplied together.'
-				: `every curve and uncertainty bound must use the ${size}-point frequency grid.`}</Notice
+			>Chart unavailable: {!validFrequencies
+				? 'the frequency grid must be finite, positive and strictly increasing with at least two points.'
+				: partialEnvelope
+					? 'lower and upper uncertainty bounds must be supplied together.'
+					: `every curve and uncertainty bound must use the ${size}-point frequency grid.`}</Notice
 		>{/if}
 	{#if exportError}<p class="small" role="alert">{exportError}</p>{/if}
 	<figcaption><a href={resolve('/method')}>Sources and limitations</a></figcaption>

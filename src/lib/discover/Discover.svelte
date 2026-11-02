@@ -74,7 +74,7 @@
 	let networkError = $state('');
 	let loading = $state(false);
 	let topK = $derived(settings.depth);
-	let upload = $state.raw<{ id: string; name: string; rig: string }>();
+	let upload = $state.raw<{ id: string; name: string; rig: string; values: Float64Array }>();
 	let uploadRig = $state('');
 	let uploadError = $state('');
 	let uploadLoading = $state(false);
@@ -301,7 +301,7 @@
 			if (file.size > 5_000_000) throw new Error('Measurement file is too large (maximum 5 MB).');
 			const parsed = await (await analysis()).parseUpload(await file.text(), file.name);
 			if (!parsed.ok) throw new Error(parsed.error);
-			upload = { id: parsed.uploadId, name: file.name, rig };
+			upload = { id: parsed.uploadId, name: file.name, rig, values: parsed.values };
 			change({ chart: undefined, sources: undefined });
 		} catch (cause) {
 			uploadError = errorText(cause);
@@ -703,6 +703,14 @@
 						{result}
 						{overlays}
 						{nameFor}
+						localReference={upload
+							? {
+									id: upload.id,
+									label: 'Your local measurement',
+									values: upload.values,
+									attribution: `${upload.rig} · local measurement · uncorrected, unsmoothed`
+								}
+							: undefined}
 					/>{:else}<div class="empty-state">
 						<h2>
 							{#if queryError?.error === 'not-measured-on-rig'}

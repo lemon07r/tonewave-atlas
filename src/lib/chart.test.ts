@@ -11,9 +11,10 @@ import {
 } from './chart.ts';
 
 describe('chart display data', () => {
-	test('uses seven distinct slot patterns with the primary series solid and a complete repeat in a 48 px legend', () => {
+	test('uses eight distinct slot patterns with the primary series solid and a complete repeat in a 48 px legend', () => {
 		const patterns = CURVE_DASHES;
-		expect(new Set(patterns.map((pattern) => pattern.join(' '))).size).toBe(7);
+		expect(new Set(patterns.map((pattern) => pattern.join(' '))).size).toBe(8);
+		expect(curveDash(7)).not.toEqual(curveDash(0));
 		expect(patterns.every((pattern) => pattern.reduce((sum, value) => sum + value, 0) <= 48)).toBe(true);
 		expect(curveDash(1)).toEqual([14, 5]);
 		expect(curveDash(0)).toEqual([]);

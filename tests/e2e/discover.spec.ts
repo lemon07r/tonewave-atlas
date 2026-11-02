@@ -135,7 +135,7 @@ test('explicit Love and reasoned Dislike persist, explain measured constraints a
 	await expect(page.locator('.model')).not.toContainText(
 		/population-relative|conservative default profile|positive examples/
 	);
-	const tasteCurve = page.getByRole('button', { name: '1 Taste 1 centre (derived)', exact: true });
+	const tasteCurve = page.getByRole('button', { name: '1 Taste 1 centre (derived) Reference', exact: true });
 	await expect(tasteCurve).toHaveAttribute('aria-pressed', 'true');
 	const first = page.locator('.result-row').first();
 	await expect(first.locator('.distance')).toHaveText(/Taste ranking score:\s\d+\.\d\sscore/);

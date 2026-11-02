@@ -33,7 +33,7 @@ test('renders all series and an accessible octave-resolution table', async () =>
 	await expect.element(screen.getByRole('figure', { name: 'Frequency response' })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: /^1\s*Curve A$/ })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: /^2\s*Curve B$/ })).toBeVisible();
-	await expect.element(screen.getByRole('button', { name: /^3\s*Reference$/ })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: /^3\s*Reference\s*Reference$/ })).toBeVisible();
 	expect(
 		[...screen.container.querySelectorAll('.legend-row line')].map((line) =>
 			line.getAttribute('stroke-dasharray')
@@ -159,3 +159,34 @@ test('multiple references use distinct dash and colour slots in the legend', asy
 		'var(--curve-3)'
 	]);
 });
+
+test('styles remain distinct when seven colours wrap and the reference marker is announced', async () => {
+	const curves = Array.from({ length: 9 }, (_, i) => ({
+		id: String(i),
+		label: `Curve ${i}`,
+		values: new Float64Array(GRID_SIZE),
+		reference: i === 0
+	}));
+	const screen = await render(FrChart, { series: curves });
+	await expect.element(screen.getByRole('button', { name: /^1\s*Curve 0\s*Reference$/ })).toBeVisible();
+	const lines = [...screen.container.querySelectorAll('.legend-row line')];
+	const styles = lines.map(
+		(line) => `${line.getAttribute('stroke')}:${line.getAttribute('stroke-dasharray')}`
+	);
+	expect(new Set(styles).size).toBe(9);
+});
+
+test.each([[], [20], [20, NaN], [20, 20], [40, 20], [0, 20]])(
+	'identifies an invalid frequency grid %j separately from invalid curves',
+	async (...points) => {
+		const frequencies = new Float64Array(points);
+		const screen = await render(FrChart, { frequencies, series: [] });
+		await expect
+			.element(
+				screen.getByText(
+					/frequency grid must be finite, positive and strictly increasing with at least two points/
+				)
+			)
+			.toBeVisible();
+	}
+);

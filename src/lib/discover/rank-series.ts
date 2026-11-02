@@ -71,6 +71,21 @@ export function rankedGroups(
 	nameFor: (id: string) => string
 ) {
 	const series = rankedSeries(result, overlays, nameFor).map((item, styleIndex) => ({ ...item, styleIndex }));
+	if (result.kind === 'taste')
+		return result.data.model.tastes
+			.filter((taste) => series.some((item) => item.id === `taste-${taste.id}`))
+			.map((taste) => {
+				const id = `taste-${taste.id}`;
+				const ids = result.data.results
+					.filter((row) => row.tasteId === taste.id && overlays.includes(row.candidate.id))
+					.map((row) => row.candidate.id);
+				return {
+					id,
+					label: `Aligned to Taste ${taste.id + 1}`,
+					baselineId: id,
+					series: series.filter((item) => item.id === id || ids.includes(item.id))
+				};
+			});
 	if (result.kind !== 'compare')
 		return [{ id: 'rank', label: 'Frequency response', baselineId: series[0]?.id ?? '', series }];
 	return result.data.references.map((reference, index) => {
