@@ -44,6 +44,18 @@ body .page.discover .page-heading {
 body .page.discover:not(.starting) .page-heading h1 {
 	font-size: 44px;
 }
+body .page.discover:not(.starting) .page-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 32px;
+	margin-bottom: 28px;
+}
+body .page.discover:not(.starting) .page-heading p {
+	margin: 0;
+	font-size: 14px;
+	max-width: 42ch;
+}
 body .page.discover .search {
 	margin: 22px 0 20px;
 }
@@ -181,7 +193,7 @@ body .page.discover .start-guide a {
 	min-height: 36px;
 	font-size: 14px;
 }
-body .fr-chart {
+body .page .fr-chart {
 	border-radius: 0;
 }
 body .fr-chart .chart-heading h2 {
@@ -251,6 +263,12 @@ body .result-row details {
 	margin-top: 6px;
 }
 @media (max-width: 900px) {
+	body .page.discover:not(.starting) .page-heading {
+		display: block;
+	}
+	body .page.discover:not(.starting) .page-heading p {
+		margin-top: 12px;
+	}
 	body .page.discover .discover-grid {
 		grid-template-columns: 1fr;
 		gap: 28px;
@@ -283,6 +301,15 @@ body .result-row details {
 		font-size: 35px;
 	}
 	body .page.discover .start-guide ol {
+		display: none;
+	}
+	body .page.discover .start-guide {
+		border: 0;
+		padding: 0;
+		margin: 0;
+	}
+	body .page.discover .start-guide h2,
+	body .page.discover .start-guide p {
 		display: none;
 	}
 	body .page.discover .refine > summary span {
