@@ -24,3 +24,14 @@ test('offers explicit coverage and source-only scoring without changing reviewer
 	expect(onmodechange).toHaveBeenCalledExactlyOnceWith('only');
 	expect(onchange).not.toHaveBeenCalled();
 });
+
+test('source-only scoring is disabled until a reviewer is selected', async () => {
+	const screen = await render(SourceFilter, {
+		sources: [],
+		selected: [],
+		mode: 'coverage',
+		onchange: vi.fn(),
+		onmodechange: vi.fn()
+	});
+	expect(screen.container.querySelector<HTMLOptionElement>('option[value="only"]')?.disabled).toBe(true);
+});

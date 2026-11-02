@@ -80,7 +80,8 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 		...(params.has('max') && Number.isFinite(max) && max >= 0 ? { max } : {}),
 		tunings: params.get('tunings') === '1',
 		sources: ids(params.get('sources')),
-		sourceMode: params.get('sourceMode') === 'only' ? 'only' : 'coverage',
+		sourceMode:
+			params.get('sourceMode') === 'only' && ids(params.get('sources')).length ? 'only' : 'coverage',
 		overlays: ids(params.get('chart')).slice(0, 5),
 		sort: params.get('sort') === 'minimax' ? 'minimax' : 'mean',
 		pareto: params.get('pareto') === '1',
@@ -92,6 +93,24 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 		corrections,
 		issue
 	};
+}
+
+/** Apply one atomic URL update, keeping source-only pooling and taste corrections model-scoped. */
+export function withDiscoveryChanges(
+	params: Pick<URLSearchParams, 'toString'>,
+	changes: Record<string, string | undefined>
+): URLSearchParams {
+	const next = new URLSearchParams(params.toString());
+	const modelChanged = ['rig', 'sources', 'sourceMode'].some(
+		(key) => key in changes && (next.get(key) ?? '') !== (changes[key] ?? '')
+	);
+	for (const [key, value] of Object.entries(changes)) {
+		if (value) next.set(key, value);
+		else next.delete(key);
+	}
+	if (!ids(next.get('sources')).length) next.delete('sourceMode');
+	if (modelChanged) next.delete('edits');
+	return next;
 }
 
 export function discoveryRoute(

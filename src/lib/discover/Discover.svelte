@@ -14,13 +14,14 @@
 	import { productSearch } from '#lib/product-search.ts';
 	import {
 		emptyProfile,
+		soundItems,
 		parseProfile,
 		PROFILE_LIMIT,
 		type Profile,
 		type WorkspaceItem
 	} from '#lib/profile/profile.ts';
 	import { profileStore } from '#lib/profile/store.ts';
-	import { parseDiscovery, withItems, discoveryRoute } from './state.ts';
+	import { parseDiscovery, withItems, withDiscoveryChanges, discoveryRoute } from './state.ts';
 	import { latestQuery, queryDiscovery, type DiscoveryResult, type QuerySpec } from './query.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { bandLabels } from './describe.ts';
@@ -54,6 +55,8 @@
 	let undoMessage = $state('');
 	let importInput: HTMLInputElement;
 	let result = $state.raw<DiscoveryResult>();
+	let resultItems = $state.raw<WorkspaceItem[]>([]);
+	let resultSort = $state<'mean' | 'minimax'>('mean');
 	let similarReferenceId = $derived(
 		result?.kind === 'similar' ? (result.data.reference.productId ?? '') : ''
 	);
@@ -61,13 +64,14 @@
 	let networkError = $state('');
 	let loading = $state(false);
 	let topK = $state(20);
-	let upload = $state.raw<{ id: string; name: string }>();
+	let upload = $state.raw<{ id: string; name: string; rig: string }>();
 	let uploadRig = $state('');
 	let uploadError = $state('');
 	let uploadLoading = $state(false);
 	let items = $derived(settings.items ?? profile.profiles[form]);
 	let starting = $derived(!items.length && !upload);
 	let route = $derived(upload ? 'similar' : discoveryRoute(items, settings.view));
+	let displayRoute = $derived(result?.kind ?? route);
 	let search = $derived(productSearch(products));
 	let choices = $derived(
 		search(query)
@@ -97,17 +101,17 @@
 			)
 			.slice(0, 3)
 	);
-	let activePartition = $derived(settings.rig || result?.data.partition || '');
+	let activePartition = $derived(upload?.rig || settings.rig || result?.data.partition || '');
 	let overlays = $derived(
 		settings.overlays.filter((id) => result?.data.results.some((row) => row.candidate.id === id))
 	);
 	let referenceNames = $derived(
-		items
-			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
-			.map((i) => nameFor(i.productId))
+		result?.kind === 'compare'
+			? result.data.references.map((reference) => nameFor(reference.productId ?? ''))
+			: []
 	);
 	let compareReferences = $derived(
-		items
+		resultItems
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
 			.map(({ productId, measurementId }) => ({ productId, ...(measurementId ? { measurementId } : {}) }))
 	);
@@ -127,7 +131,7 @@
 			state: { ...settings, overlays: [], corrections },
 			items,
 			topK,
-			...(upload ? { uploadId: upload.id } : {})
+			...(upload ? { upload: { id: upload.id, rig: upload.rig } } : {})
 		} satisfies QuerySpec)
 	);
 	const controller = latestQuery<Awaited<ReturnType<typeof queryDiscovery>>>();
@@ -135,19 +139,17 @@
 		cause instanceof Error ? cause.message : 'Analysis unavailable. Please try again.';
 	function nameFor(id: string): string {
 		const product = products.find(
-			(p) => p.id === id || p.id === items.find((item) => item.measurementId === id)?.productId
+			(p) =>
+				p.id === id ||
+				p.id === [...resultItems, ...items].find((item) => item.measurementId === id)?.productId
 		);
-		return product ? `${product.brand} ${product.model}` : id;
+		return product ? `${product.brand} ${product.model}` : 'Unavailable product';
 	}
 	function navigate(params: URLSearchParams, replace = true) {
 		void goto(resolve(`/?${params}` as PathnameWithSearchOrHash), { reset: false, replace });
 	}
 	function change(changes: Record<string, string | undefined>) {
-		const params = new SvelteURLSearchParams(page.url.searchParams.toString());
-		for (const [key, value] of Object.entries(changes))
-			if (value) params.set(key, value);
-			else params.delete(key);
-		navigate(params);
+		navigate(withDiscoveryChanges(page.url.searchParams, changes));
 	}
 	function updateItems(next: WorkspaceItem[], message = 'Workspace updated.') {
 		if (!store) return;
@@ -236,7 +238,7 @@
 			if (file.size > 5_000_000) throw new Error('Measurement file is too large (maximum 5 MB).');
 			const parsed = await (await analysis()).parseUpload(await file.text(), file.name);
 			if (!parsed.ok) throw new Error(parsed.error);
-			upload = { id: parsed.uploadId, name: file.name };
+			upload = { id: parsed.uploadId, name: file.name, rig };
 			change({ rig, chart: undefined, sources: undefined });
 		} catch (cause) {
 			uploadError = errorText(cause);
@@ -283,18 +285,15 @@
 		queryError = undefined;
 		networkError = '';
 		if (
-			!spec.uploadId &&
-			spec.items.some(
-				(item) =>
-					item.rating !== 'unrated' && item.soundRelated && !products.some((p) => p.id === item.productId)
-			)
+			!spec.upload &&
+			soundItems(spec.items).some((item) => !products.some((p) => p.id === item.productId))
 		) {
 			result = undefined;
 			loading = false;
 			networkError = 'A rated reference is not in this form-factor catalog. Remove it or switch form factor.';
 			return;
 		}
-		if (!spec.uploadId && discoveryRoute(spec.items, spec.state.view) === 'empty') {
+		if (!spec.upload && discoveryRoute(spec.items, spec.state.view) === 'empty') {
 			result = undefined;
 			loading = false;
 			return;
@@ -307,7 +306,11 @@
 					if (next && 'ok' in next) {
 						queryError = next;
 						result = undefined;
-					} else result = next ?? undefined;
+					} else {
+						result = next ?? undefined;
+						resultItems = spec.items;
+						resultSort = spec.state.sort;
+					}
 					loading = false;
 				},
 				(cause) => {
@@ -401,7 +404,8 @@
 				<div class="controls">
 					<label class="field-label"
 						>Measurement rig<select
-							value={settings.rig}
+							value={upload?.rig ?? settings.rig}
+							disabled={Boolean(upload)}
 							onchange={(event) => {
 								topK = 20;
 								change({
@@ -418,6 +422,10 @@
 								>{/each}</select
 						></label
 					>
+					{#if upload}<p class="small muted">
+							Rig is locked to your upload: {rigLabel(upload.rig, summary?.sources)}. Remove the local
+							reference to change rigs.
+						</p>{/if}
 					{#if route !== 'taste'}<SegmentedControl
 							label="Matching focus"
 							options={[
@@ -599,16 +607,16 @@
 			<section class="results" id="discover-results" aria-label="Measured matches" aria-busy={loading}>
 				<div class="section-heading">
 					<h2>
-						{route === 'compare'
+						{displayRoute === 'compare'
 							? 'Reference trade-offs'
-							: route === 'taste'
+							: displayRoute === 'taste'
 								? 'Taste matches'
 								: 'Measured matches'}
 					</h2>
 					<a class="chart-jump" href="#discover-chart">View chart</a>
 				</div>
 				<p class="distance-note">
-					{result ? `${rigLabel(result.data.partition, summary?.sources)} · ` : ''}{route === 'taste'
+					{result ? `${rigLabel(result.data.partition, summary?.sources)} · ` : ''}{displayRoute === 'taste'
 						? 'Taste ranking score · lower is closer; includes dislike penalties, not a dB distance. Each row also shows ordinary response distance in dB.'
 						: 'Response distance in dB · lower is closer, not better.'}
 				</p>
@@ -693,7 +701,7 @@
 									fit={row.fit}
 									nearestLiked={nearestLikedEvidence(result.data, row)}
 									{nameFor}
-									referenceProductId={items.find(
+									referenceProductId={resultItems.find(
 										(i) => (i.measurementId ?? i.productId) === row.nearestLiked?.id
 									)?.productId ?? ''}
 									selected={overlays.includes(row.candidate.id)}
@@ -707,14 +715,15 @@
 									compareEvidence(result.data, row.rankCurve, referenceNames)}<ResultRow
 									candidate={row.candidate}
 									rank={index + 1}
-									distance={(settings.sort === 'minimax' ? row.tradeoff.minimax : row.tradeoff.mean) ?? NaN}
+									distance={(resultSort === 'minimax' ? row.tradeoff.minimax : row.tradeoff.mean) ?? NaN}
 									bands={evidence[0]?.bands ?? []}
 									referenceEvidence={evidence}
 									{compareReferences}
 									tradeoff={row.tradeoff}
 									{referenceNames}
-									referenceProductId={items.find((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
-										?.productId ?? ''}
+									referenceProductId={resultItems.find(
+										(i) => i.soundRelated && ['like', 'love'].includes(i.rating)
+									)?.productId ?? ''}
 									selected={overlays.includes(row.candidate.id)}
 									limitReached={overlays.length >= 5}
 									onshow={() => {

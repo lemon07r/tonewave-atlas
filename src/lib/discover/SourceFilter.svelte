@@ -31,7 +31,7 @@
 			}}
 		>
 			<option value="coverage">Reviewer coverage · score all sources</option>
-			<option value="only">Selected measurements only</option>
+			<option value="only" disabled={!selected.length}>Selected measurements only</option>
 		</select></label
 	>
 	<p>

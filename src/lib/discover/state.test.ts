@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { discoveryRoute, parseDiscovery, withItems } from './state.ts';
+import { discoveryRoute, parseDiscovery, withItems, withDiscoveryChanges } from './state.ts';
 import { emptyProfile, parseProfile, soundItems, type WorkspaceItem } from '#lib/profile/profile.ts';
 import { profileStore } from '#lib/profile/store.ts';
 import { latestQuery } from './query.ts';
@@ -22,8 +22,28 @@ test('migrates an explicit old reference and all advanced share settings without
 	});
 	expect(parseDiscovery(new URLSearchParams()).items).toBeUndefined();
 	expect(state.sourceMode).toBe('coverage');
-	expect(parseDiscovery(new URLSearchParams('sourceMode=only')).sourceMode).toBe('only');
+	expect(parseDiscovery(new URLSearchParams('sourceMode=only')).sourceMode).toBe('coverage');
+	expect(parseDiscovery(new URLSearchParams('sources=a&sourceMode=only')).sourceMode).toBe('only');
 	expect(parseDiscovery(new URLSearchParams('sourceMode=invalid')).sourceMode).toBe('coverage');
+});
+
+test('clears empty source-only mode and old-model edits atomically on every model setting update', () => {
+	const params = new URLSearchParams(
+		'rig=iem-711&sources=a&sourceMode=only&edits=[{"tasteId":0,"bands":{"bass":2}}]'
+	);
+	for (const changes of [
+		{ sources: '' },
+		{ sources: undefined },
+		{ rig: 'iem-5128', sources: undefined },
+		{ rig: 'iem-711', sources: undefined, chart: undefined }
+	]) {
+		const next = withDiscoveryChanges(params, changes);
+		expect(next.has('sourceMode')).toBe(false);
+		expect(next.has('edits')).toBe(false);
+	}
+	for (const changes of [{ sources: 'b' }, { sourceMode: undefined }, { rig: 'iem-5128' }])
+		expect(withDiscoveryChanges(params, changes).has('edits')).toBe(false);
+	expect(withDiscoveryChanges(params, { chart: 'match' }).get('edits')).toBe(params.get('edits'));
 });
 test('restores legacy taste URLs, ratings and corrections; explicit empty URL ratings beat storage', () => {
 	const params = new URLSearchParams({

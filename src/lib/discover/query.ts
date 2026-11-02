@@ -11,19 +11,19 @@ export interface QuerySpec {
 	state: DiscoveryState;
 	items: WorkspaceItem[];
 	topK: number;
-	uploadId?: string;
+	upload?: { id: string; rig: string };
 }
 
 export async function queryDiscovery(
 	service: Pick<Analysis, 'similar' | 'compare' | 'taste'>,
 	spec: QuerySpec
 ): Promise<DiscoveryResult | AtlasError | null> {
-	const { state, items, topK, uploadId } = spec;
-	const route = uploadId ? 'similar' : discoveryRoute(items, state.view);
+	const { state, items, topK, upload } = spec;
+	const route = upload ? 'similar' : discoveryRoute(items, state.view);
 	const active = soundItems(items);
 	const likes = active.filter((item) => item.rating === 'love' || item.rating === 'like');
 	const settings = {
-		...(state.rig ? { partition: state.rig } : {}),
+		...(upload ? { partition: upload.rig } : state.rig ? { partition: state.rig } : {}),
 		focus: state.focus,
 		...(state.alpha === undefined ? {} : { treblePenalty: state.alpha }),
 		topK,
@@ -36,11 +36,11 @@ export async function queryDiscovery(
 	};
 	if (route === 'similar') {
 		const reference = likes[0];
-		if (!uploadId && !reference) return null;
+		if (!upload && !reference) return null;
 		const data = await service.similar({
 			...settings,
-			...(uploadId
-				? { uploadId }
+			...(upload
+				? { uploadId: upload.id }
 				: {
 						productId: reference?.productId ?? '',
 						...(reference?.measurementId ? { measurementId: reference.measurementId } : {})
