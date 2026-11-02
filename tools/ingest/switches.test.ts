@@ -51,17 +51,33 @@ const product = (id = 'parent', model = 'Volume S'): Product => ({
 describe('final partition-aware default coverage', () => {
 	const products = () => new Map([['parent', product()]]);
 	it.each(['unit', 'fit', 'unknown', 'tuning'] as const)(
-		'promotes a sole %s without erasing its meaning',
+		'promotes a sole %s to the engine default kind without erasing its label',
 		(kind) => {
 			const rows = [row('only', 'Volume S Sample 2', false, 'parent', kind)];
 			expect(() => {
 				assertDefaultCoverage(products(), rows, []);
 			}).toThrow('no default');
 			const result = finaliseDefaults(products(), rows, []);
-			expect(rows[0]?.measurement.variant).toMatchObject({ kind, isDefault: true });
+			expect(rows[0]?.measurement.variant).toMatchObject({
+				kind: 'default',
+				isDefault: true,
+				label: 'Volume S Sample 2'
+			});
+			expect(rows[0]?.measurement.provenance.processing).toContain(
+				`default coverage: deterministic coverage fallback; previous kind ${kind}; original label retained`
+			);
 			expect(result.after.productPartitions.withoutDefault).toBe(0);
 		}
 	);
+	it.each([
+		['unit', true],
+		['default', false]
+	] as const)('rejects an inconsistent published %s / %s default flag', (kind, isDefault) => {
+		const rows = [row('invalid', 'Sample 2', isDefault, 'parent', kind)];
+		expect(() => {
+			assertDefaultCoverage(products(), rows, []);
+		}).toThrow('Default invariant');
+	});
 	it('chooses the lowest sample number, stock fit, and existing tuning tie-break', () => {
 		const rows = [
 			row('units', 'Volume S sample 3', false, 'parent', 'unit'),

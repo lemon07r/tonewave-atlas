@@ -645,19 +645,25 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 	}
 	const switchDefaults = reconcileSwitchDefaults(products, allCurves);
-	const unknownVariants = allCurves
-		.filter((c) => c.measurement.variant.kind === 'unknown')
-		.map(({ measurement: m }) => ({
-			source: m.sourceId,
-			productId: m.productId,
-			file: m.variant.file,
-			label: m.variant.label
-		}));
+	// Rig evidence must see the same default-kind contract as the engine. These provisional
+	// selections are restored so final choices use final partitions, not provisional isolation.
+	const beforeRigDefaults = allCurves.map(({ measurement: m }) => ({
+		measurement: m,
+		kind: m.variant.kind,
+		isDefault: m.variant.isDefault,
+		processingLength: m.provenance.processing.length
+	}));
+	const rigDefaultCoverage = finaliseDefaults(products, allCurves, switchDefaults.decisions);
 	const iemCurves = allCurves.filter((c) => products.get(c.measurement.productId)?.form === 'iem');
 	const rigReport = rigEvidence(
 		sources.filter((s) => iemCurves.some((c) => c.measurement.sourceId === s.id)),
 		iemCurves.map((c) => ({ measurement: c.measurement, values: c.rank.values }))
 	);
+	for (const { measurement: m, kind, isDefault, processingLength } of beforeRigDefaults) {
+		m.variant.kind = kind;
+		m.variant.isDefault = isDefault;
+		m.provenance.processing.length = processingLength;
+	}
 	const hasControls =
 		rigReport.sources.some((s) => s.control === '5128') && rigReport.sources.some((s) => s.control === '711');
 	if (hasControls && (!rigReport.separated || rigReport.minimumProducts === null)) {
@@ -698,6 +704,14 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		partitions.set(row.measurement.partition, group);
 	}
 	const defaultCoverage = finaliseDefaults(products, allCurves, switchDefaults.decisions);
+	const unknownVariants = allCurves
+		.filter((c) => c.measurement.variant.kind === 'unknown')
+		.map(({ measurement: m }) => ({
+			source: m.sourceId,
+			productId: m.productId,
+			file: m.variant.file,
+			label: m.variant.label
+		}));
 	for (const source of sources) {
 		const rows = allCurves.filter((c) => c.measurement.sourceId === source.id);
 		source.forms = [
@@ -912,6 +926,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				switchIdentity,
 				switchDefaults,
 				defaultCoverage,
+				rigDefaultCoverage,
 				variantReview: reviewVariantStates(products, allCurves),
 				unknownVariants,
 				rigEvidence: rigReport,

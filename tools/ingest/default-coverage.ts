@@ -17,8 +17,8 @@ function defaultCoverage(rows: readonly Row[]) {
 		const groups = [...Map.groupBy(measurements, key).values()];
 		return {
 			groups: groups.length,
-			withoutDefault: groups.filter((g) => !g.some((m) => m.variant.isDefault)).length,
-			multipleDefaults: groups.filter((g) => g.filter((m) => m.variant.isDefault).length > 1).length
+			withoutDefault: groups.filter((g) => !g.some((m) => m.variant.kind === 'default')).length,
+			multipleDefaults: groups.filter((g) => g.filter((m) => m.variant.kind === 'default').length > 1).length
 		};
 	};
 	return {
@@ -28,7 +28,7 @@ function defaultCoverage(rows: readonly Row[]) {
 	};
 }
 
-/** Keep source order as the final tie-break; metadata kind survives fallback selection. */
+/** Keep source order as the final tie-break; labels survive fallback selection. */
 function fallback(product: Product, ms: readonly Measurement[]): Measurement {
 	const phone: Phone = {
 		brand: product.brand,
@@ -89,16 +89,20 @@ export function assertDefaultCoverage(
 	rows: readonly Row[],
 	decisions: readonly Decision[]
 ): void {
+	for (const { measurement: m } of rows) {
+		if (m.variant.isDefault !== (m.variant.kind === 'default'))
+			throw new Error(`Default invariant: isDefault disagrees with kind for ${m.id}`);
+	}
 	for (const g of groups(products, rows, decisions)) {
-		if (!g.partitionRows.some((m) => m.variant.isDefault))
+		if (!g.partitionRows.some((m) => m.variant.kind === 'default'))
 			throw new Error(`Default coverage: no default for ${g.product.id} / ${g.partition}`);
 		for (const [source, ms] of g.sources) {
-			if (ms.some((m) => m.variant.isDefault)) continue;
+			if (ms.some((m) => m.variant.kind === 'default')) continue;
 			if (
 				!singletonFallback(ms) &&
 				g.preferred &&
 				!ms.some((m) => g.state(m) === g.preferred) &&
-				g.partitionRows.some((m) => m.sourceId !== source && m.variant.isDefault)
+				g.partitionRows.some((m) => m.sourceId !== source && m.variant.kind === 'default')
 			)
 				continue;
 			throw new Error(
@@ -127,11 +131,12 @@ export function finaliseDefaults(
 	for (const g of groups(products, rows, decisions)) {
 		// Resolve multiple defaults only when the already selected labelled state exists here.
 		for (const [source, ms] of g.sources) {
-			const defaults = ms.filter((m) => m.variant.isDefault);
+			const defaults = ms.filter((m) => m.variant.kind === 'default');
 			const matches = g.preferred ? ms.filter((m) => g.state(m) === g.preferred) : [];
 			if (defaults.length < 2 || !matches.length) continue;
-			const selected = matches.find((m) => m.variant.isDefault) ?? fallback(g.product, matches);
+			const selected = matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches);
 			selected.variant.isDefault = true;
+			selected.variant.kind = 'default';
 			const demoted = defaults.filter((m) => m !== selected);
 			for (const m of demoted) {
 				m.variant.isDefault = false;
@@ -147,23 +152,24 @@ export function finaliseDefaults(
 			});
 		}
 		for (const [source, ms] of g.sources) {
-			if (ms.some((m) => m.variant.isDefault)) continue;
+			if (ms.some((m) => m.variant.kind === 'default')) continue;
 			const matches = g.preferred ? ms.filter((m) => g.state(m) === g.preferred) : [];
 			if (
 				!singletonFallback(ms) &&
 				g.preferred &&
 				!matches.length &&
-				g.partitionRows.some((m) => m.sourceId !== source && m.variant.isDefault)
+				g.partitionRows.some((m) => m.sourceId !== source && m.variant.kind === 'default')
 			) {
 				exceptions.push({ productId: g.product.id, source, partition: g.partition, preferred: g.preferred });
 				continue;
 			}
 			const selected = fallback(g.product, matches.length ? matches : ms);
-			selected.variant.isDefault = true;
 			const reason = matches.length ? 'selected labelled switch state' : 'deterministic coverage fallback';
 			selected.provenance.processing.push(
-				`default coverage: ${reason}; original kind ${selected.variant.kind} retained`
+				`default coverage: ${reason}; previous kind ${selected.variant.kind}; original label retained`
 			);
+			selected.variant.kind = 'default';
+			selected.variant.isDefault = true;
 			changes.push({
 				productId: g.product.id,
 				source,
@@ -181,7 +187,7 @@ export function finaliseDefaults(
 			(m) => `${m.productId}|${m.sourceId}|${m.partition}`
 		).values()
 	].flatMap((ms) => {
-		const defaults = ms.filter((m) => m.variant.isDefault);
+		const defaults = ms.filter((m) => m.variant.kind === 'default');
 		const first = defaults[0];
 		return defaults.length > 1 && first
 			? [

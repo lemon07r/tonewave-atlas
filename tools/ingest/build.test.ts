@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import type { Catalog, Manifest, ReferenceTarget } from '#core/dataset/types.ts';
 import { decodePack } from '#core/dataset/codec.ts';
+import { buildPartitionIndex } from '#core/atlas/index.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
@@ -91,6 +92,7 @@ async function result(paths: { cache: string; output: string }) {
 			after: { productPartitions: { withoutDefault: number } };
 			changes: { selected: string }[];
 		};
+		rigDefaultCoverage: { after: { productPartitions: { withoutDefault: number } } };
 		groupwiseMerges: {
 			merged: number;
 			groups: { productId: string; originalKeys: string[]; merged: number }[];
@@ -125,25 +127,38 @@ describe('cached dataset build safety', () => {
 		]);
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch')));
 		await build(paths);
-		const { catalog, report } = await result(paths);
+		const { catalog, report, manifest } = await result(paths);
 		expect(catalog.measurements).toHaveLength(5);
 		for (const ms of Map.groupBy(catalog.measurements, (m) => `${m.productId}|${m.partition}`).values())
-			expect(ms.filter((m) => m.variant.isDefault)).toHaveLength(1);
+			expect(ms.filter((m) => m.variant.kind === 'default')).toHaveLength(1);
+		for (const m of catalog.measurements) expect(m.variant.isDefault).toBe(m.variant.kind === 'default');
+		for (const partition of catalog.partitions) {
+			const pack = decodePack(
+				gunzipSync(await readFile(resolve(paths.output, manifest.version, partition.rankFile)))
+			);
+			const index = buildPartitionIndex(catalog, partition, pack);
+			const measured = new Set(
+				catalog.measurements.filter((m) => m.partition === partition.id).map((m) => m.productId)
+			);
+			expect([...index.products.keys()].sort()).toEqual([...measured].sort());
+		}
 		expect(catalog.measurements.find((m) => m.variant.file.includes('(by'))?.variant).toMatchObject({
 			kind: 'default',
 			label: '',
 			isDefault: true
 		});
 		expect(catalog.measurements.find((m) => m.variant.file.includes('Sample 2'))?.variant).toMatchObject({
-			kind: 'unit',
+			kind: 'default',
+			label: 'Sample 2',
 			isDefault: true
 		});
 		// This source explicitly uses Sample 2 elsewhere: its shorthand is justified.
 		expect(catalog.measurements.find((m) => m.variant.file.includes('S2'))?.variant).toMatchObject({
-			kind: 'unit',
+			kind: 'default',
 			isDefault: true
 		});
 		expect(report.defaultCoverage.after.productPartitions.withoutDefault).toBe(0);
+		expect(report.rigDefaultCoverage.after.productPartitions.withoutDefault).toBe(0);
 	});
 	it('reconciles labelled switch defaults and split cable/state identities before statistics, without fetching', async () => {
 		const names = ['reviewer', 'second', 'third', 'store', 'joyce', 'tipper'];
@@ -286,7 +301,7 @@ describe('cached dataset build safety', () => {
 				.sort()
 		).toEqual(['CMF Buds Pro', 'Mode only EQ1', 'Moondrop May Standard', 'Pi7S2 ANCOff', 'Qudelix QX Over']);
 		expect(catalog.measurements.find((m) => m.variant.file === 'Mode only EQ1')?.variant).toMatchObject({
-			kind: 'tuning',
+			kind: 'default',
 			isDefault: true
 		});
 		expect(report.defaultCoverage.before.productPartitions.withoutDefault).toBe(1);
