@@ -143,57 +143,112 @@ export function estimatePartitionStatistics(
 	};
 }
 
-export interface HarmonisationValidation {
+export interface HarmonisationSummary {
 	pairs: number;
 	meanBefore: number | null;
 	meanAfter: number | null;
+	/** Positive means correction reduced same-product response distance, in dB. */
+	meanImprovement: number | null;
+	medianImprovement: number | null;
 	improved: boolean | null;
 }
+export interface HarmonisationFold extends HarmonisationSummary {
+	fold: number;
+	trainingProducts: number;
+	heldOutProducts: number;
+}
+export interface HarmonisationValidation extends HarmonisationSummary {
+	foldCount: number;
+	folds: HarmonisationFold[];
+}
 
-/** Every held-out product is excluded from BOTH offset estimation and its smoothing/shrinkage support. */
-export function validateSourceOffsets(
-	products: readonly ProductMeasurements[],
-	frequencies?: Curve,
-	shrinkage = 10
-): HarmonisationValidation {
-	const first = products.flatMap((p) => p.measurements)[0]?.curve;
-	if (!first) return { pairs: 0, meanBefore: null, meanAfter: null, improved: null };
-	const f = frequenciesFor(first, frequencies);
-	let before = 0,
-		after = 0,
-		pairs = 0;
-	for (const product of products) {
-		const training = estimatePartitionStatistics(
-			products.filter((p) => p.id !== product.id),
-			f,
-			shrinkage
-		);
-		const corrected = product.measurements.map((m) => {
-			const offset = training.sourceOffsets.find((s) => s.source === m.source)?.curve;
-			return Float64Array.from(
-				m.curve,
-				(v, i) => v - (Number.isFinite(offset?.[i]) ? (offset?.[i] ?? 0) : 0)
-			);
-		});
-		for (let i = 0; i < corrected.length; i++)
-			for (let j = i + 1; j < corrected.length; j++) {
-				const a = product.measurements[i]?.curve,
-					b = product.measurements[j]?.curve,
-					ca = corrected[i],
-					cb = corrected[j];
-				if (!a || !b || !ca || !cb) continue;
-				const raw = responseDistance(a, b, { frequencies: f }),
-					adjusted = responseDistance(ca, cb, { frequencies: f });
-				if (!raw || !adjusted) continue;
-				before += raw.distance;
-				after += adjusted.distance;
-				pairs++;
-			}
-	}
+/** FNV-1a over UTF-16 code units: stable across process, input order and runtime. */
+function productFold(id: string, foldCount: number): number {
+	let hash = 2166136261;
+	for (let i = 0; i < id.length; i++) hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
+	return (hash >>> 0) % foldCount;
+}
+
+function validationSummary(
+	before: number,
+	after: number,
+	improvements: readonly number[]
+): HarmonisationSummary {
+	const pairs = improvements.length;
 	return {
 		pairs,
 		meanBefore: pairs ? before / pairs : null,
 		meanAfter: pairs ? after / pairs : null,
+		meanImprovement: pairs ? improvements.reduce((sum, d) => sum + d, 0) / pairs : null,
+		medianImprovement: pairs ? median(improvements) : null,
 		improved: pairs ? after < before : null
 	};
+}
+
+/** Deterministic product K-fold CV; every held-out fold is excluded from all training statistics. */
+export function validateSourceOffsets(
+	products: readonly ProductMeasurements[],
+	frequencies?: Curve,
+	shrinkage = 10,
+	foldCount = 5
+): HarmonisationValidation {
+	if (!Number.isInteger(foldCount) || foldCount < 2) throw new RangeError('Use at least two folds');
+	if (!(shrinkage >= 0 && Number.isFinite(shrinkage))) throw new RangeError('Invalid shrinkage');
+	const ordered = [...products].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+	const first = ordered.find((p) => p.measurements.length)?.measurements[0]?.curve;
+	const f = first ? frequenciesFor(first, frequencies) : frequencies;
+	const assignments = ordered.map((p) => productFold(p.id, foldCount));
+	const folds: HarmonisationFold[] = [],
+		improvements: number[] = [];
+	let overallBefore = 0,
+		overallAfter = 0;
+	for (let fold = 0; fold < foldCount; fold++) {
+		const heldOut = ordered.filter((_, i) => assignments[i] === fold);
+		const trainingProducts = ordered.length - heldOut.length;
+		let before = 0,
+			after = 0;
+		const foldImprovements: number[] = [];
+		if (f && heldOut.length) {
+			const training = estimatePartitionStatistics(
+				ordered.filter((_, i) => assignments[i] !== fold),
+				f,
+				shrinkage
+			);
+			const offsets = new Map(training.sourceOffsets.map((s) => [s.source, s.curve]));
+			for (const product of heldOut) {
+				const corrected = product.measurements.map((m) => {
+					const offset = offsets.get(m.source);
+					return Float64Array.from(
+						m.curve,
+						(v, i) => v - (Number.isFinite(offset?.[i]) ? (offset?.[i] ?? 0) : 0)
+					);
+				});
+				for (let i = 0; i < corrected.length; i++)
+					for (let j = i + 1; j < corrected.length; j++) {
+						const a = product.measurements[i]?.curve,
+							b = product.measurements[j]?.curve,
+							ca = corrected[i],
+							cb = corrected[j];
+						if (!a || !b || !ca || !cb) continue;
+						const raw = responseDistance(a, b, { frequencies: f }),
+							adjusted = responseDistance(ca, cb, { frequencies: f });
+						if (!raw || !adjusted) continue;
+						before += raw.distance;
+						after += adjusted.distance;
+						foldImprovements.push(raw.distance - adjusted.distance);
+					}
+			}
+		}
+		// Do not average fold means/medians: folds can contain different numbers of valid pairs.
+		for (const d of foldImprovements) improvements.push(d);
+		overallBefore += before;
+		overallAfter += after;
+		folds.push({
+			fold,
+			trainingProducts,
+			heldOutProducts: heldOut.length,
+			...validationSummary(before, after, foldImprovements)
+		});
+	}
+	return { ...validationSummary(overallBefore, overallAfter, improvements), foldCount, folds };
 }
