@@ -163,6 +163,15 @@ also splits across final products. Near-name candidates are separated by form, w
 labelled in collision groups. The report retains every remaining group for manual review, never fuzzy
 auto-merging; adjacent-name heuristics are not exhaustive, particularly across unrelated brand keys.
 
+Catalog redirects preserve historical product and measurement links across identity/form moves.
+Measurements match only by source ID and their unordered original file-URL set. Removed products
+follow those moves; splits choose a unique plurality of former defaults, otherwise stay unmapped.
+Existing IDs never redirect. Previous redirects are retained, chains collapse to current IDs and dead
+targets are dropped; unavailable previous catalogs produce warnings, not a failed build. The build
+report's `redirects` records the baseline version, counts and split decisions. Engine ID-taking
+requests return canonical IDs plus `resolvedIds` when changed, allowing saved state to be migrated;
+an explicit historical measurement retains its exact canonical parent even across a product split.
+
 ### Variant kinds and initial defaults
 
 Variant classification strips only maker/model prefixes, never shared descriptor words such as ANC

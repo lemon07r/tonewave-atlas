@@ -2,12 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import type { Catalog, Manifest, ReferenceTarget } from '#core/dataset/types.ts';
 import { decodePack } from '#core/dataset/codec.ts';
 import { buildPartitionIndex } from '#core/atlas/index.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
+import { buildRedirects } from './redirects.ts';
 import { HttpCache } from './cache.ts';
 import { datasetVersion, DIRECTORY_URL, ROOT, sha256 } from './common.ts';
 
@@ -111,6 +112,93 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('uses strict plurality of former defaults for split products, leaving ties unmapped across forms', async () => {
+		const { paths } = await fixture();
+		await build(paths);
+		const { catalog } = await result(paths);
+		const p = catalog.products[0],
+			m = catalog.measurements[0];
+		if (!p || !m) throw new Error('Missing fixture');
+		const a = { ...p, id: 'a' },
+			b = { ...p, id: 'b', form: 'headphone' as const };
+		const ms = Array.from({ length: 5 }, (_, i) => ({
+			...m,
+			id: `new-${i}`,
+			productId: i < 2 ? 'a' : 'b',
+			provenance: { ...m.provenance, originalUrls: [`https://original/${i}`] }
+		}));
+		const old = (defaults: number[]): Catalog => ({
+			...catalog,
+			products: [{ ...p, id: 'old' }],
+			measurements: ms.map((row, i) => ({
+				...row,
+				id: `old-${i}`,
+				productId: 'old',
+				variant: {
+					...row.variant,
+					kind: defaults.includes(i) ? 'default' : 'tuning',
+					isDefault: defaults.includes(i)
+				}
+			}))
+		});
+		const current = (): Catalog[] => [
+			{ ...catalog, products: [a], measurements: ms.filter((row) => row.productId === 'a') },
+			{
+				...catalog,
+				form: 'headphone',
+				products: [b],
+				measurements: ms.filter((row) => row.productId === 'b')
+			}
+		];
+		const winner = current();
+		expect(buildRedirects([old([0, 1, 2])], winner).splits).toMatchObject([{ target: 'a' }]);
+		expect(winner[0]?.redirects?.products).toEqual({ old: 'a' });
+		expect(winner[1]?.redirects?.measurements['old-4']).toBe('new-4');
+		for (const defaults of [[0, 2], []]) {
+			const tied = current();
+			expect(buildRedirects([old(defaults)], tied).splits).toMatchObject([
+				{ target: null, reason: 'unmapped: tied or absent former defaults' }
+			]);
+			expect(tied.every((c) => !c.redirects?.products.old)).toBe(true);
+		}
+	});
+	it('redirects previous published identities by source and unordered original URL set, carrying chains', async () => {
+		const { paths } = await fixture();
+		await build(paths);
+		const before = await result(paths);
+		const product = before.catalog.products[0];
+		const measurement = before.catalog.measurements[0];
+		if (!product || !measurement) throw new Error('Missing fixture');
+		const previous = {
+			...before.catalog,
+			products: [{ ...product, id: 'old-product', measurementIds: ['old-measurement'] }],
+			measurements: [
+				{
+					...measurement,
+					id: 'old-measurement',
+					productId: 'old-product',
+					provenance: {
+						...measurement.provenance,
+						originalUrls: [...measurement.provenance.originalUrls].reverse()
+					}
+				}
+			],
+			redirects: {
+				products: { ancient: 'old-product', dead: 'gone', [product.id]: 'gone' },
+				measurements: { ancient: 'old-measurement' }
+			}
+		};
+		await writeFile(
+			resolve(paths.output, before.manifest.version, 'catalog-iem.json.gz'),
+			gzipSync(JSON.stringify(previous))
+		);
+		await build(paths);
+		const after = await result(paths);
+		expect(after.catalog).toHaveProperty('redirects', {
+			products: { ancient: product.id, 'old-product': product.id },
+			measurements: { ancient: measurement.id, 'old-measurement': measurement.id }
+		});
+	});
 	it('covers isolated sample/fit/tuning partitions and treats credits as neutral, offline', async () => {
 		const phones = [
 			{ name: 'Credit', file: ['Credit (by 왈왈)'], suffix: ['(by 왈왈)'] },

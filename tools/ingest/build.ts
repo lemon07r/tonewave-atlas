@@ -2,6 +2,7 @@ import { mkdir, mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { buildRedirects, previousCatalogs } from './redirects.ts';
 import { GRID_SIZE, RANK_SIZE, RANK_STEP } from '#core/grid.ts';
 import { smoothOctave } from '#core/smooth.ts';
 import { encodePack, type CurvePack, type PackedCurve } from '#core/dataset/codec.ts';
@@ -885,6 +886,8 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		merged: productsBefore - products.size
 	};
 	for (const p of sortedProducts) p.measurementIds.sort();
+	const previous = await previousCatalogs(paths.output);
+	const catalogs: Catalog[] = [];
 	for (const form of ['iem', 'headphone'] as const) {
 		const catalog: Catalog = {
 			formatVersion: 1,
@@ -897,8 +900,15 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			sources: sources.filter((s) => s.forms?.includes(form)),
 			partitions: partitionMetadata.filter((p) => p.form === form)
 		};
-		artifacts.set(`catalog-${form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));
+		catalogs.push(catalog);
 	}
+	const redirects = {
+		baselineVersion: previous.version,
+		warnings: previous.warnings,
+		...buildRedirects(previous.catalogs, catalogs)
+	};
+	for (const catalog of catalogs)
+		artifacts.set(`catalog-${catalog.form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));
 	const files = [...artifacts]
 		.sort(([a], [b]) => a.localeCompare(b, 'en'))
 		.map(([path, bytes]): DatasetFile => ({ path, bytes: bytes.length, sha256: sha256(bytes) }));
@@ -925,6 +935,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		JSON.stringify(
 			{
 				...report,
+				redirects,
 				switchIdentity,
 				switchDefaults,
 				defaultCoverage,

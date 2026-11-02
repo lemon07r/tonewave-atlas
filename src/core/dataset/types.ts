@@ -112,6 +112,8 @@ export interface Partition {
 
 export interface Catalog {
 	formatVersion: 1;
+	/** Historical IDs mapped directly to current IDs in this form, including cross-form moves. */
+	redirects?: { products: Record<string, string>; measurements: Record<string, string> };
 	form: Form;
 	products: Product[];
 	measurements: Measurement[];

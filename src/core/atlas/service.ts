@@ -39,6 +39,7 @@ import {
 import { tasteRanking } from './taste-ranking.ts';
 import type {
 	AtlasOptions,
+	IdResolution,
 	AtlasError,
 	AtlasSummary,
 	MeasurementInfo,
@@ -190,6 +191,12 @@ export class AtlasService {
 			const product = catalog.products.find((p) => p.id === id);
 			if (product) return { catalog, product };
 		}
+		for (const form of forms) {
+			const catalog = await this.catalog(form);
+			const target = catalog.redirects?.products[id];
+			const product = catalog.products.find((p) => p.id === target);
+			if (product) return { catalog, product };
+		}
 		return null;
 	}
 	private async locateMeasurement(id: string): Promise<LocatedMeasurement | null> {
@@ -199,7 +206,42 @@ export class AtlasService {
 			const measurement = catalog.measurements.find((m) => m.id === id);
 			if (measurement) return { catalog, measurement };
 		}
+		for (const form of forms) {
+			const catalog = await this.catalog(form);
+			const target = catalog.redirects?.measurements[id];
+			const measurement = catalog.measurements.find((m) => m.id === target);
+			if (measurement) return { catalog, measurement };
+		}
 		return null;
+	}
+	private async canonicalIds<T extends { productId?: string; measurementId?: string }>(
+		input: T
+	): Promise<{ input: T; resolvedIds: IdResolution[] }> {
+		const product = input.productId ? await this.locateProduct(input.productId) : null;
+		const measurement = input.measurementId ? await this.locateMeasurement(input.measurementId) : null;
+		let productId = product?.product.id ?? input.productId;
+		// An exact historical measurement disambiguates a split product; current mismatches still fail.
+		if (
+			measurement &&
+			measurement.measurement.id !== input.measurementId &&
+			(!product || product.product.id !== input.productId)
+		)
+			productId = measurement.measurement.productId;
+		const measurementId = measurement?.measurement.id ?? input.measurementId;
+		const changed = productId !== input.productId || measurementId !== input.measurementId;
+		return {
+			input: { ...input, ...(productId ? { productId } : {}), ...(measurementId ? { measurementId } : {}) },
+			resolvedIds: changed
+				? [
+						{
+							...(input.productId ? { productId: input.productId } : {}),
+							...(input.measurementId ? { measurementId: input.measurementId } : {}),
+							canonicalProductId: measurement?.measurement.productId ?? productId ?? '',
+							...(measurementId ? { canonicalMeasurementId: measurementId } : {})
+						}
+					]
+				: []
+		};
 	}
 	private async locatePartition(id: string): Promise<{ catalog: Catalog; partition: Partition } | null> {
 		for (const form of new Set<Form>([...this.catalogs.keys(), 'iem', 'headphone'])) {
@@ -516,7 +558,18 @@ export class AtlasService {
 			const product = catalog.products.find((p) => p.id === measurement.productId);
 			const source = catalog.sources.find((s) => s.id === measurement.sourceId);
 			output.push({
-				id,
+				id: measurement.id,
+				...(id !== measurement.id
+					? {
+							resolvedIds: [
+								{
+									measurementId: id,
+									canonicalMeasurementId: measurement.id,
+									canonicalProductId: measurement.productId
+								}
+							]
+						}
+					: {}),
 				productId: measurement.productId,
 				brand: product?.brand ?? '',
 				model: product?.model ?? '',
@@ -530,6 +583,13 @@ export class AtlasService {
 		return output;
 	}
 	async similar(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
+		topK(request.topK);
+		treblePenalty(request.treblePenalty);
+		const canonical = await this.canonicalIds(request);
+		const result = await this.similarCanonical(canonical.input);
+		return canonical.resolvedIds.length ? { ...result, resolvedIds: canonical.resolvedIds } : result;
+	}
+	private async similarCanonical(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
 		const k = topK(request.topK);
 		treblePenalty(request.treblePenalty);
 		const reference = await this.reference(request);
@@ -630,6 +690,13 @@ export class AtlasService {
 	}
 	async taste(request: TasteRequest): Promise<TasteResult | AtlasError> {
 		topK(request.topK);
+		const canonical = await Promise.all(request.items.map((item) => this.canonicalIds(item)));
+		const result = await this.tasteCanonical({ ...request, items: canonical.map((c) => c.input) });
+		const resolvedIds = canonical.flatMap((c) => c.resolvedIds);
+		return resolvedIds.length ? { ...result, resolvedIds } : result;
+	}
+	private async tasteCanonical(request: TasteRequest): Promise<TasteResult | AtlasError> {
+		topK(request.topK);
 		const eligible = request.items.filter((i) => i.soundRelated && i.strength > 0 && i.rating !== 'neutral');
 		const partitionId = await this.bestPartition(
 			eligible.length ? eligible : request.items,
@@ -678,6 +745,22 @@ export class AtlasService {
 		return tasteRanking(index, items, unusedItems, request, found.catalog.form);
 	}
 	async compare(request: CompareRequest): Promise<CompareResult | AtlasError> {
+		topK(request.topK);
+		treblePenalty(request.treblePenalty);
+		const { productIds, ...settings } = request;
+		const canonical = await Promise.all(
+			(request.references ?? (productIds ?? []).map((productId) => ({ productId }))).map((item) =>
+				this.canonicalIds(item)
+			)
+		);
+		const result = await this.compareCanonical({
+			...settings,
+			references: canonical.map((c) => c.input)
+		});
+		const resolvedIds = canonical.flatMap((c) => c.resolvedIds);
+		return resolvedIds.length ? { ...result, resolvedIds } : result;
+	}
+	private async compareCanonical(request: CompareRequest): Promise<CompareResult | AtlasError> {
 		const inputs: { productId: string; measurementId?: string }[] =
 			request.references ?? request.productIds.map((productId) => ({ productId }));
 		if (inputs.length < 2 || inputs.length > 4) throw new RangeError('Use 2–4 references');
@@ -815,7 +898,7 @@ export class AtlasService {
 	async productDetail(productId: string): Promise<ProductDetail | AtlasError> {
 		const found = await this.locateProduct(productId);
 		if (!found) return failure('unknown-product', 'Product is not in the catalog.');
-		const measurements = found.catalog.measurements.filter((m) => m.productId === productId);
+		const measurements = found.catalog.measurements.filter((m) => m.productId === found.product.id);
 		const rows = await Promise.all(
 			measurements.map(async (measurement) => {
 				const source = found.catalog.sources.find((s) => s.id === measurement.sourceId);
@@ -853,6 +936,9 @@ export class AtlasService {
 		return {
 			ok: true,
 			product: found.product,
+			...(productId !== found.product.id
+				? { resolvedIds: [{ productId, canonicalProductId: found.product.id }] }
+				: {}),
 			frequencies: GRID.slice(),
 			measurements: rows,
 			spread,
@@ -876,7 +962,18 @@ export class AtlasService {
 					};
 				const values = channelValues(await this.detailCurves(found.measurement), options.channel);
 				return {
-					measurementId,
+					measurementId: found.measurement.id,
+					...(measurementId !== found.measurement.id
+						? {
+								resolvedIds: [
+									{
+										measurementId,
+										canonicalMeasurementId: found.measurement.id,
+										canonicalProductId: found.measurement.productId
+									}
+								]
+							}
+						: {}),
 					partition: found.measurement.partition,
 					channel: options.channel,
 					values,
@@ -903,6 +1000,13 @@ export class AtlasService {
 			: failure('insufficient-data', 'No usable detail curve.');
 	}
 	async peq(request: PeqRequest): Promise<PeqResponse | AtlasError> {
+		const canonical = await this.canonicalIds(request);
+		const target = request.target.kind === 'product' ? await this.canonicalIds(request.target) : null;
+		const result = await this.peqCanonical({ ...canonical.input, target: target?.input ?? request.target });
+		const resolvedIds = [...canonical.resolvedIds, ...(target?.resolvedIds ?? [])];
+		return resolvedIds.length ? { ...result, resolvedIds } : result;
+	}
+	private async peqCanonical(request: PeqRequest): Promise<PeqResponse | AtlasError> {
 		let values: Float64Array,
 			partition: string | undefined = request.partition;
 		if (request.uploadId) {
