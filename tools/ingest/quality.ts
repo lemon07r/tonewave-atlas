@@ -160,6 +160,12 @@ export function modification(phone: Phone, index: number): Phone {
 	if (marker.test(phone.name)) return phone;
 	const suffix = phone.suffix[index] || '';
 	const file = phone.file[index] || '';
+	// A maker such as "DIY" or "Mod House" is identity, not a file configuration.
+	const makerEnd = [...file.matchAll(/[\p{L}\p{N}]+/gu)]
+		.map((match) => match.index + match[0].length)
+		.find((end) => normalise(file.slice(0, end)) === normalise(phone.brand));
+	const fileEvidence = makerEnd === undefined ? file : file.slice(makerEnd);
+	if (!marker.test(suffix) && !marker.test(fileEvidence)) return phone;
 	const descriptor = marker.test(suffix) ? suffix : `${file} ${suffix}`.trim();
 	return marker.test(descriptor) ? { ...phone, name: `${phone.name} [modified: ${descriptor}]` } : phone;
 }

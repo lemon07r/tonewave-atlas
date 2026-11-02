@@ -157,6 +157,15 @@ describe('deterministic catalog quality rules', () => {
 		expect(modification(p, 1).name).not.toBe('Model');
 	});
 	it.each([
+		['Modhouse', 'Tungsten', 'Mod House Tungsten DS', 'stock pads'],
+		['DIY', 'AE-X1D', 'DIY Dika W', 'HYX white module']
+	])('does not treat the %s maker prefix as a modification marker', (brand, model, file, suffix) => {
+		const p = phone(brand, model, [file, `${file} grill mod`]);
+		p.suffix = [suffix, suffix];
+		expect(modification(p, 0)).toBe(p);
+		expect(modification(p, 1).name).toContain('[modified:');
+	});
+	it.each([
 		['KZ', 'Unknown'],
 		['Maker', ''],
 		['Unknown', 'Test 2'],
