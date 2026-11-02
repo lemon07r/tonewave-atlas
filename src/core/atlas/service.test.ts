@@ -15,6 +15,7 @@ import { GRID, RANK_GRID, RANK_SIZE } from '../grid.ts';
 import { buildPartitionIndex, consensus } from './index.ts';
 import { AtlasService } from './service.ts';
 import type { SimilarRequest } from './types.ts';
+import { spreadFor } from './spread.ts';
 
 interface ExtraMeasurement {
 	id: string;
@@ -24,6 +25,44 @@ interface ExtraMeasurement {
 	offset?: number;
 	shape?: number;
 }
+
+it('reports default-eligible rigs separately from all inspectable variants', async () => {
+	const { service } = fixture(8, [{ id: 'e-tune', productId: 'e', kind: 'tuning', partition: 'iem-5128' }]);
+	const products = await service.products('iem');
+	expect(products.find((p) => p.id === 'e')).toMatchObject({
+		partitions: ['iem-711', 'iem-5128'],
+		defaultPartitions: []
+	});
+	expect(products.find((p) => p.id === 'a')).toMatchObject({ defaultPartitions: ['iem-711'] });
+});
+
+it('shared spread removes constant level offsets and preserves missing-bin support', () => {
+	const { catalog } = fixture();
+	const a = catalog.measurements.find((m) => m.id === 'a1');
+	const b = catalog.measurements.find((m) => m.id === 'a2');
+	if (!a || !b) throw new Error('fixture measurements');
+	const first = new Float64Array(GRID.length).fill(0),
+		second = new Float64Array(GRID.length).fill(10);
+	first[238] = NaN;
+	first[239] = second[239] = NaN;
+	const spread = spreadFor(
+		[
+			{ measurement: a, values: first },
+			{ measurement: b, values: second }
+		],
+		'iem-711'
+	);
+	expect(spread?.sourceCount).toBe(2);
+	expect(spread?.measurementIds).toEqual(['a1', 'a2']);
+	expect(spread?.support[0]).toBe(2);
+	expect(spread?.support[238]).toBe(1);
+	expect(spread?.support[239]).toBe(0);
+	expect(spread?.centre[0]).toBeCloseTo(0, 12);
+	expect(spread?.min[0]).toBeCloseTo(0, 12);
+	expect(spread?.max[0]).toBeCloseTo(0, 12);
+	expect(spread?.centre[239]).toBeNaN();
+	expect(spreadFor([], 'iem-711')).toBeNull();
+});
 
 function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 	const sources: Source[] = ['s1', 's2', 's3'].map((id) => ({
@@ -326,14 +365,31 @@ describe('atlas service', () => {
 			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
 			const expected = scenario === 'validated';
 			const similar = await service.similar({ productId: 'a', partition: 'iem-711' });
-			expect(similar.ok && similar.harmonised).toBe(expected);
+			expect(similar).toMatchObject({ ok: true, harmonised: expected });
 			const items = [{ productId: 'a', rating: 'like' as const, strength: 1, soundRelated: true }];
 			const taste = await service.taste({ items, partition: 'iem-711' });
-			expect(taste.ok && taste.harmonised).toBe(expected);
+			expect(taste).toMatchObject({ ok: true, harmonised: expected });
 			const raw = await service.similar({ productId: 'a', partition: 'iem-711', harmonise: false });
-			expect(raw.ok && raw.harmonised).toBe(false);
+			expect(raw).toMatchObject({ ok: true, harmonised: false });
 			const rawTaste = await service.taste({ items, partition: 'iem-711', harmonise: false });
-			expect(rawTaste.ok && rawTaste.harmonised).toBe(false);
+			expect(rawTaste).toMatchObject({ ok: true, harmonised: false });
+			if (scenario === 'validated') {
+				const upload = service.parseUpload(
+					Array.from(GRID, (hz, i) => `${hz} ${i < 120 ? 0 : 2}`).join('\n'),
+					'raw.txt'
+				);
+				if (!upload.ok) throw new Error('fixture upload failed');
+				for (const harmonise of [undefined, true, false]) {
+					const result = await service.similar({
+						uploadId: upload.uploadId,
+						partition: 'iem-711',
+						...(harmonise !== undefined ? { harmonise } : {})
+					});
+					expect(result).toMatchObject({ ok: true, harmonised: false });
+					if (!result.ok) throw new Error(result.message);
+					expect(result.reference.uploadId).toBe(upload.uploadId);
+				}
+			}
 			if (expected) {
 				// a1 is unchanged; a2 receives [+4, -4]. After LS alignment the median is [2, 0], not [0, 2].
 				expect(taste.ok && taste.model.tastes[0]?.centre[0]).toBeCloseTo(2, 8);

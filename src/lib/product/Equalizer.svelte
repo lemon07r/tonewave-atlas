@@ -38,7 +38,7 @@
 			.filter(
 				(p) =>
 					p.id !== detail.product.id &&
-					p.partitions.includes(partition) &&
+					p.defaultPartitions.includes(partition) &&
 					`${p.brand} ${p.model}`.toLowerCase().includes(query.toLowerCase())
 			)
 			.slice(0, 35)

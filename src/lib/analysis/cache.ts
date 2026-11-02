@@ -1,7 +1,10 @@
 /** Bounded async LRU. Failed requests are retryable, including after eviction/replacement. */
 export class AsyncLru<K, V> {
 	private entries = new Map<K, Promise<V>>();
-	constructor(private readonly limit: number) {}
+	private readonly limit: number;
+	constructor(limit: number) {
+		this.limit = limit;
+	}
 	get(key: K, load: () => Promise<V>): Promise<V> {
 		let pending = this.entries.get(key);
 		if (pending) this.entries.delete(key);

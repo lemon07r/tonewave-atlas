@@ -1,7 +1,6 @@
 import type { Source } from '#core/dataset/types.ts';
 import type { ProductDetail, ProductListItem, ProductSpread } from '#core/atlas/types.ts';
-import { consensus } from '#core/atlas/index.ts';
-import { GRID } from '#core/grid.ts';
+import { spreadFor } from '#core/atlas/spread.ts';
 import { analysis } from '#lib/atlas.ts';
 import type { Channel } from '#lib/compare/url.ts';
 
@@ -52,32 +51,11 @@ export async function channelSpread(
 		rows.map((row) => row.measurement.id),
 		{ channel }
 	);
-	const pooled = consensus(
+	return spreadFor(
 		curves.flatMap((curve, i) => {
 			const row = rows[i];
 			return curve.values && row ? [{ measurement: row.measurement, values: curve.values }] : [];
 		}),
-		GRID
+		partition
 	);
-	if (!pooled) return null;
-	const min = new Float64Array(GRID.length).fill(NaN),
-		max = min.slice(),
-		support = new Uint16Array(GRID.length);
-	for (let i = 0; i < GRID.length; i++) {
-		const values = pooled.aligned.map((row) => row.values[i] ?? NaN).filter(Number.isFinite);
-		support[i] = values.length;
-		if (values.length) {
-			min[i] = Math.min(...values);
-			max[i] = Math.max(...values);
-		}
-	}
-	return {
-		partition,
-		centre: pooled.values,
-		min,
-		max,
-		support,
-		sourceCount: new Set(pooled.aligned.map((row) => row.measurement.sourceId)).size,
-		measurementIds: pooled.aligned.map((row) => row.measurement.id)
-	};
 }

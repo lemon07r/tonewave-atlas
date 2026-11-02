@@ -64,6 +64,8 @@ export interface ProductListItem {
 	brand: string;
 	model: string;
 	partitions: string[];
+	/** Rigs with default measurements eligible for product consensus and product-target EQ. */
+	defaultPartitions: string[];
 	sourceCount: number;
 	measurementCount: number;
 	variantLabels: string[];

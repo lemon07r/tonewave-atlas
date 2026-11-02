@@ -24,6 +24,7 @@ import { GRID, RANK_GRID, RANK_SIZE, RANK_STEP } from '../grid.ts';
 import { parseMeasurement } from '../measurement/parse.ts';
 import { averageChannels, resample } from '../measurement/resample.ts';
 import { smoothOctave } from '../smooth.ts';
+import { spreadFor } from './spread.ts';
 import {
 	buildPartitionIndex,
 	consensus,
@@ -111,31 +112,6 @@ function channelValues(curves: readonly PackedCurve[], channel: 'avg' | 'L' | 'R
 			: left || right
 				? averageChannels(left, right).values
 				: null;
-}
-
-function spreadFor(curves: IndexedCurve[], partition: string): ProductSpread | null {
-	const pooled = consensus(curves, GRID);
-	if (!pooled) return null;
-	const min = new Float64Array(GRID.length).fill(NaN),
-		max = min.slice();
-	const support = new Uint16Array(GRID.length);
-	for (let i = 0; i < GRID.length; i++) {
-		const finite = pooled.aligned.map((c) => c.values[i] ?? NaN).filter(Number.isFinite);
-		support[i] = finite.length;
-		if (finite.length) {
-			min[i] = Math.min(...finite);
-			max[i] = Math.max(...finite);
-		}
-	}
-	return {
-		partition,
-		measurementIds: pooled.aligned.map((c) => c.measurement.id),
-		sourceCount: new Set(pooled.aligned.map((c) => c.measurement.sourceId)).size,
-		centre: pooled.values,
-		min,
-		max,
-		support
-	};
 }
 
 /** Framework-free, partition-local dataset facade. All returned values are structured-clone friendly. */
@@ -353,7 +329,8 @@ export class AtlasService {
 				);
 			const found = await this.locatePartition(input.partition);
 			if (!found) return failure('not-measured-on-rig', 'Unknown partition.');
-			const index = await this.rankingIndex(found.catalog, found.partition, input.harmonise);
+			// Uploads have no catalog source identity, so both sides must remain on the raw basis.
+			const index = await this.rankingIndex(found.catalog, found.partition, false);
 			if ('ok' in index) return index;
 			return {
 				ok: true,
@@ -535,6 +512,9 @@ export class AtlasService {
 				brand: p.brand,
 				model: p.model,
 				partitions: [...new Set(measurements.map((m) => m.partition))],
+				defaultPartitions: [
+					...new Set(measurements.filter((m) => m.variant.kind === 'default').map((m) => m.partition))
+				],
 				sourceCount: new Set(measurements.map((m) => m.sourceId)).size,
 				measurementCount: measurements.length,
 				variantLabels: [
