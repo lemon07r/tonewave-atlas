@@ -27,7 +27,7 @@ export function validateManifest(value: unknown): Manifest {
 			!record(f) ||
 			typeof f.path !== 'string' ||
 			!f.path.startsWith(`${version}/`) ||
-			!/^[a-f0-9]{24}\/(?:catalog-(?:iem|headphone)\.json|(?:rank|detail)-[a-z0-9-]+\.bin)\.gz$/.test(
+			!/^[a-f0-9]{24}\/(?:targets\.json|catalog-(?:iem|headphone)\.json|(?:rank|detail)-[a-z0-9-]+\.bin)\.gz$/.test(
 				f.path
 			) ||
 			typeof f.sha256 !== 'string' ||

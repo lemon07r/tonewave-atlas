@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import type { Catalog, Manifest } from '#core/dataset/types.ts';
+import type { Catalog, Manifest, ReferenceTarget } from '#core/dataset/types.ts';
 import { decodePack } from '#core/dataset/codec.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
-import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL, ROOT } from './common.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -31,6 +31,7 @@ async function fixture(configBody: string | null = config, extraBodies: [string,
 	roots.push(root);
 	const paths = { root, cache: resolve(root, 'cache'), output: resolve(root, 'output') };
 	await mkdir(resolve(root, 'data'));
+	await cp(resolve(ROOT, 'data/targets'), resolve(root, 'data/targets'), { recursive: true });
 	for (const [name, value] of Object.entries({
 		exclusions: { sources: [], files: [], products: [] },
 		aliases: { brands: {} },
@@ -184,6 +185,13 @@ describe('cached dataset build safety', () => {
 		expect(rank.statistics).toEqual(before.catalog.partitions[0]?.statistics);
 		expect(rank.statistics?.support?.status).toBe('low');
 		expect(before.report.statistics[0]?.statistics).toEqual(rank.statistics);
+		expect(before.manifest.files.some((f) => f.path === `${before.manifest.version}/targets.json.gz`)).toBe(
+			true
+		);
+		const targets = JSON.parse(
+			gunzipSync(await readFile(resolve(paths.output, before.manifest.version, 'targets.json.gz'))).toString()
+		) as ReferenceTarget[];
+		expect(targets.map((t) => t.id)).toEqual(['harman-in-ear-2019', 'diffuse-field-5128']);
 		expect(
 			datasetVersion(
 				before.manifest.files.map((f) => ({ ...f, path: f.path.slice(before.manifest.version.length + 1) })),

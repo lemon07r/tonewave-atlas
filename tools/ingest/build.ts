@@ -43,6 +43,7 @@ import {
 import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
 import { publishDataset, removeStaging } from './publish.ts';
 import { medianSpreadByBand, rankStatistics } from './statistics.ts';
+import { referenceTargets } from './targets.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -83,6 +84,7 @@ interface SourceCount {
 
 export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
 	const { excluded, brands, overrides, productAliases } = await readInputs(paths.root);
+	const targets = await referenceTargets(paths.root);
 	const [directory, optScript] = await Promise.all([
 		cached(DIRECTORY_URL, paths.cache),
 		cached(OPT_OUT_URL, paths.cache)
@@ -415,6 +417,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		);
 	}
 	const artifacts = new Map<string, Uint8Array>();
+	artifacts.set('targets.json.gz', gzipSync(JSON.stringify(targets), { level: 9 }));
 	const partitionMetadata: Partition[] = [];
 	for (const [id, curves] of [...partitions].sort(([a], [b]) => a.localeCompare(b, 'en'))) {
 		curves.sort(

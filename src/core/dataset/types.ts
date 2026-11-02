@@ -107,6 +107,17 @@ export interface DatasetFile {
 	bytes: number;
 }
 
+export interface ReferenceTarget {
+	id: string;
+	name: string;
+	partitions: string[];
+	form: Form;
+	description: string;
+	attribution: string;
+	/** Relative dB on the canonical GRID, with no smoothing or level normalization. */
+	values: number[];
+}
+
 export interface Manifest {
 	formatVersion: 1;
 	version: string;

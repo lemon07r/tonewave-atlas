@@ -73,6 +73,18 @@ accuracy. The same statistics and median spread per methodology frequency band a
 
 ## Updating and limitations
 
+### Reference targets
+
+`<version>/targets.json.gz` is manifest-listed and contains two attributed reference curves on GRID:
+Harman in-ear 2019 for `iem-711`, and diffuse field 5128 for `iem-5128`. Inputs are copied unchanged
+from AutoEq commit `7ae0f56d53074872b028649617a22bbb4232feb7` into `data/targets/`; its README records
+the research citations and rights status: published research curves, redistributed with attribution,
+remove on request. Processing is log-Hz interpolation only, no smoothing/normalization; references
+are not individual preference or calibration guarantees. Harman over-ear 2018 is deliberately absent
+because its GRAS basis does not match our headphone rigs. Targets never train partition statistics.
+
+### Commands and reports
+
 Updates are explicit: `pnpm data:crawl`, then `pnpm data:build`. There is no automatic schedule yet.
 Use `--sites superreview,elrics --limit 10` for a partial crawl (limit is filename stems per database).
 The crawler uses an identifying User-Agent, four global request slots (never more than six),
