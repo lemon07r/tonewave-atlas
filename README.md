@@ -9,7 +9,7 @@ Pick an IEM you know and get its closest measured matches, each with a plain des
 differs: more bass, a recessed upper midrange, extra treble energy. Rate a few more and the ranking
 follows your taste instead of a single reference.
 
-As of November 2026 the catalog covers **10,013 products** and **41,064 measurements** from
+As of November 2026 the catalog covers **9,610 products** and **40,821 measurements** from
 **138 databases** published by **118 reviewers** in the squig.link network.
 
 ## What you can do
@@ -54,11 +54,11 @@ limits.
   name their rig default to the 711 group and are labelled as inferred.
 - **Reviewers are combined, not cherry-picked.** A product's reference is the level-aligned median of
   every usable default measurement on that rig family. Tuning variants are separate candidates.
-- **Measured disagreement sets the weighting.** About 2,500 IEMs have been measured by more than one
+- **Measured disagreement sets the weighting.** About 2,450 IEMs have been measured by more than one
   reviewer. That overlap shows how much measurements disagree at each frequency, and the comparison
   trusts noisy regions less. Correction for each reviewer's systematic offset is switched on only
   where held-out validation shows it helps: in the current 711-group data it reduces the average
-  difference between two reviewers' measurements of the same IEM from 1.76 to 1.58 dB.
+  difference between two reviewers' measurements of the same IEM from 1.77 to 1.58 dB.
 - **No percentages.** Distances are in dB. Taste rankings add penalties for your dislikes and show
   that as a separately labelled ranking score. Neither is a "% match" or a sound-quality rating. Every
   number is defined in [the methodology](docs/METHODOLOGY.md).
