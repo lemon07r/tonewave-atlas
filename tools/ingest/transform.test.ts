@@ -161,6 +161,50 @@ describe('source transforms', () => {
 		expect(collisionGroups(products)).toEqual([['Brand Referenc', 'Brand Reference']]);
 		expect(products).toHaveLength(3);
 	});
+	it('reports every collision group rather than silently truncating at twenty', () => {
+		const products = Array.from({ length: 21 }, (_, i) => [
+			{ id: `${i}-a`, brand: `Maker ${i}`, model: 'Reference' },
+			{ id: `${i}-b`, brand: `Maker ${i}`, model: 'Referenc' }
+		]).flat();
+		expect(collisionGroups(products)).toHaveLength(21);
+	});
+	it('joins only verified maker and model aliases, retaining revision/tuning/sample suffixes', async () => {
+		const { brands, productAliases } = await readInputs();
+		const aliases: Record<string, string> = {};
+		for (const [from, to] of Object.entries(brands)) {
+			aliases[normalise(from)] = to;
+			aliases[normalise(to)] = to;
+		}
+		const canonical = identity('Binary', 'EP321', 'iem', aliases, productAliases);
+		for (const brand of ['Binary', 'BINARYACOUSTICS', 'Binary Acoustic']) {
+			for (const model of ['EP321', 'EP321 MEMS', 'EP321-MEMS']) {
+				expect(identity(brand, model, 'iem', aliases, productAliases).id).toBe(canonical.id);
+			}
+			for (const model of ['EP321 Pro', 'EP321 2', 'EP321 SE', 'EP321 MEMS sample 2', 'EP321 10ohm']) {
+				expect(identity(brand, model, 'iem', aliases, productAliases).id).not.toBe(canonical.id);
+			}
+		}
+		for (const [brand, from, to] of [
+			['Binary', 'Chopin', 'x Gizaudio Chopin'],
+			['Kiwi Ears', 'Halycon', 'Halcyon'],
+			['Kiwi Ears', 'Haylcon', 'Halcyon'],
+			['Kiwi Ears', 'Fortenza', 'Forteza'],
+			['Kiwi Ears', 'Airioso', 'Airoso'],
+			['MOONDROP', 'Solis II', 'Solis 2'],
+			['MOONDROP', 'Variation', 'Variations'],
+			['KZ', 'Linlong', 'Ling Long'],
+			['Symphonium', 'Crimsom', 'Crimson'],
+			['Juzear', 'Dragonly 81T', 'Dragonfly 81T'],
+			['Focal', 'Azuyrs', 'Azurys']
+		] as const) {
+			expect(identity(brand, from, 'iem', aliases, productAliases).id).toBe(
+				identity(brand, to, 'iem', aliases, productAliases).id
+			);
+			expect(identity(brand, `${from} Pro`, 'iem', aliases, productAliases).id).not.toBe(
+				identity(brand, to, 'iem', aliases, productAliases).id
+			);
+		}
+	});
 	it('keeps audit candidates separate by form and labels known forms in groups', () => {
 		const iem = { id: 'i-a', brand: 'Brand', model: 'Reference', form: 'iem' as const };
 		const headphone = { id: 'h-a', brand: 'Brand', model: 'Reference', form: 'headphone' as const };

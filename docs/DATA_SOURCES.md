@@ -135,8 +135,10 @@ and lowercase Unicode letters, then lexicographic UTF-16 order. Only observed sp
 singleton all-caps labels stay all-caps, and alias-table casing never supplies a display vote. IDs,
 variant labels and original URLs are unaffected by display voting.
 
-`data/products.json` contains only explicit, terminal brand/model aliases; string `_note`
-entries are permitted at the top level and inside `aliases`. Malformed,
+`data/products.json` contains explicit, terminal `brands` (optional) and brand/model `aliases` maps;
+string `_note` entries are permitted at the top level and inside either map. Its maker aliases are
+validated together with `data/aliases.json`, and product alias keys/targets are checked after maker
+normalization, so cross-table conflicts and brand-hidden product chains are rejected. Malformed,
 duplicate, cyclic or chained mappings stop ingestion. Initial Roman/Arabic numeral aliases were
 verified against catalog/file names in dataset `3c9d923462f8b79c98aa4ef9` (evidence in the input note).
 Two explicit collaboration-spelling aliases were verified in dataset `82c0a5df23cc64e5d7268caa`
@@ -147,3 +149,56 @@ original keys; `productsAfter` is the final count and `merged` is their net diff
 can differ from net reduction when an original key also splits across final products. The report also
 records remaining suspicious near-name pairs for manual review, never fuzzy auto-merging.
 Near-name audit candidates are separated by form, and known forms are labelled in collision groups.
+The complete `remainingCollisionGroups` list is retained, not just the first twenty. These adjacent-name
+heuristics are not an exhaustive duplicate detector, particularly across unrelated brand keys.
+
+### Identity audit (November 2026)
+
+The baseline was dataset `208ae49722c1645d1b838cd4`, 7,952 products. Its 858 adjacent-name pairs form
+**585** disjoint connected groups, rather than the approximate 315 initially expected. Only exact,
+reviewed alias entries change identity; distances are corroboration, not automatic merge thresholds.
+
+The [maker's own Binary site](https://binary.audio/) is titled “Binary Acoustics Official”, welcomes
+visitors to “Binary”, and lists Binary 1900, Dynaquattro and Gizaudio × Binary Chopin (also “Chopin”
+in its product navigation). This establishes the long/short maker names and Chopin collaboration
+spelling. The singular source spelling “Binary Acoustic” shares the same named models and nearby
+curves. The [EP321 product page](https://binary.audio/products/binary-ep321-mems-2dd-3ba-1-mems-driver-in-ear-monitors)
+and [maker announcement](https://binary.audio/blogs/news/breaking-the-mold-introducing-the-ep321-worlds-first-direct-drive-mems-iem)
+call the same 2DD+3BA+MEMS product both EP321 and EP321 MEMS: MEMS is not stripped generically.
+
+Distances below are dB RMS using the analysis engine's `responseDistance` on the baseline's decoded,
+0.02 dB-quantized default rank curves, 20 Hz–20 kHz, least-squares constant-level alignment, common
+finite bins only. Every compared pair shares `iem-711` (a rig family, not proof of identical hardware).
+Each cross-product measurement pair contributes once; “median” is over all such pairs, not a
+perceptual bound or claim that every source agrees. All listed closest pairs are cross-source;
+there are no within-database pairs for these merges. Focal has no shared rig partition, so no
+cross-rig distance was fabricated. Original filenames, source links and measurement variants remain.
+
+| Merge / maker evidence | Pairs | Minimum / median dB | Closest source IDs (directory usernames) and original filenames |
+| --- | ---: | ---: | --- |
+| Binary Acoustics ↔ Binary, 1900 | 65 | 0.447697 / 1.159805 | tonedeafmonk / breampike: both `Binary 1900` |
+| Binary Acoustic ↔ Binary, 1900 | 10 | 0.560647 / 0.996723 | breampike `Binary 1900` / boizoff `1900 (stock silicone tips)` |
+| Binary Acoustics ↔ Binary, Dynaquattro | 48 | 0.917373 / 1.974563 | pw `Binary Dynaquattro` / aftersound `BINARYACOUSTIC DYNAQUATTRO` |
+| Binary Acoustics ↔ Binary, EP321 | 12 | 0.792045 / 1.584451 | jaytiss `BinaryEP321` / lumerion `Binary Acoustics EP321` |
+| Binary Acoustics ↔ Binary, EP321 MEMS | 9 | 0.625162 / 1.268355 | bassaudio `Binary Acoustics EP321 MEMS` / elrics `Binary Acoustics EP321 MEMS Sample 1` |
+| Binary Acoustic ↔ Binary Acoustics, EP321 MEMS | 9 | 0.746351 / 1.798084 | aftersound `BINARYACOUSTICS EP321 MEMS` / boizoff `EP321-MEMS (TENNMAK SoFoam tips) ✓` |
+| Binary Acoustics ↔ Binary, x Gizaudio Chopin | 56 | 0.511124 / 1.208575 | gadgetrytech `Binary Chopin` / jaytiss `Gizaudio × Binary Chopin` |
+| Binary EP321 ↔ EP321 MEMS | 3 | 0.657514 / 1.281976 | jaytiss `BinaryEP321` / bassaudio `Binary Acoustics EP321 MEMS` |
+| Binary Chopin ↔ x Gizaudio Chopin | 21 | 0.654797 / 1.216321 | iemocean `Binary Acoustics Chopin` / fahryst `Binary x Gizaudio Chopin` |
+| Kiwi Ears Halycon → [Halcyon](https://kiwiears.com/products/kiwi-ears-halcyon) | 13 | 0.912881 / 2.043505 | hobbytalk / practiphile: both `Kiwi Ears Halcyon` |
+| Kiwi Ears Haylcon → Halcyon (same maker page) | 13 | 0.851655 / 1.323996 | soundcheck39 `Kiwi Ears Halcyon` / jaytiss `KiwiHalycon` |
+| Kiwi Ears Fortenza → [Forteza](https://kiwiears.com/products/kiwi-ears-forteza) | 22 | 0.725555 / 1.374885 | vortexreviews `Kiwi Ears Forteza` / tonedeafmonk `KIWIEARS FORTENZA` |
+| Kiwi Ears Airioso → [Airoso](https://kiwiears.com/products/kiwi-ears-airoso) | 16 | 0.596324 / 2.696680 | jaytiss `Airoso` / audioamigo `Kiwi Ears Airioso` |
+| MOONDROP Solis II → [Solis 2](https://moondroplab.com/en/products/solis-ii) (maker uses both) | 2 | 1.169798 / 1.189029 | precog `Moondrop Solis 2` / boizoff `Solis II (TENNMAK SoFoam tips) ✓` |
+| MOONDROP Variation → [Variations](https://moondroplab.com/en/products/variations) | 75 | 0.911864 / 2.028026 | bukanaudiophile `Variations` / dl `Variation white` |
+| KZ LINLONG → [Ling Long](https://kz-audio.com/kz-ling-long.html) | 27 | 0.878127 / 1.851431 | aftersound `KZ LINLONG` / dl `KZ LingLong` |
+| Symphonium Crimsom → [Crimson](https://www.symphoniumaudio.com/products/crimson) | 8 | 0.000000 / 1.266468 | treblewellxtended / theaudiostore: both `Symphonium Crimsom` (duplicated response, not independent agreement) |
+| Juzear Dragonly 81T → [Dragonfly 81T](https://juzearaudio.com/products/juzear-81t) | 3 | 1.114915 / 1.294263 | tonedeafmonk / soundcheck39: both `Juzear Dragonfly 81T` |
+| Focal Azuyrs → [Azurys](https://www.focal.com/products/azurys) (plain transposition, same maker) | 0 | Not comparable | No shared headphone rig partition |
+
+This audit does not fold separately indexed samples, resistor loads, tips, switch settings or revisions
+into defaults. For example, Airoso 10ohm stays separate (3.542617 dB from standard Airoso on the same
+source), as do Crimson tip suffixes and Chopin S1/S2 entries. Punch Martilo/Martillo stays separate:
+0.754084 dB minimum alone is insufficient without maker-name evidence. Campfire Honeydrew/Honeydew
+also stays separate pending a same-rig response check; the maker's history confirms Honeydew but
+the curve comparison was not completed in this audit.

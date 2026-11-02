@@ -34,6 +34,20 @@ describe('hand-maintained input validation', () => {
 		});
 	});
 	it.each([
+		{ aliases: {}, brands: [] },
+		{ aliases: {}, brands: null },
+		{ aliases: {}, brands: { _note: 42 } },
+		{ aliases: {}, brands: { Maker: 42 } },
+		{ aliases: {}, brands: { Maker: '!!!' } },
+		{ aliases: {}, brands: { '!!!': 'Maker' } },
+		{ aliases: {}, brands: { 'Maker|Old': 'Maker' } },
+		{ aliases: {}, brands: { Maker: 'Maker|New' } },
+		{ aliases: {}, brands: { Maker: 'MAKER' } },
+		{ aliases: {}, brands: { Maker: 'Other', 'MAKE R': 'Third' } },
+		{ aliases: {}, brands: { Maker: 'Other', Other: 'Third' } },
+		{ aliases: {}, brands: { Maker: 'Other', Other: 'Maker' } },
+		{ aliases: { 'Maker|A': 'Other|B', 'Other|B': 'Maker|C' }, brands: { Other: 'Maker' } },
+		{ aliases: { 'Maker|A': 'Maker|B', 'Other|A': 'Maker|C' }, brands: { Other: 'Maker' } },
 		{},
 		{ aliases: [] },
 		{ aliases: {}, extra: true },
@@ -46,6 +60,20 @@ describe('hand-maintained input validation', () => {
 		{ aliases: { 'Brand|A': 'Brand|B', 'brand|a': 'Brand|C' } }
 	])('rejects malformed or ambiguous product aliases: %j', (value) => {
 		expect(() => validateProducts(value)).toThrow('Invalid');
+	});
+	it('validates additional brands against the existing table before normalizing product aliases', () => {
+		expect(
+			validateProducts({
+				brands: { _note: 'maker evidence', Old: 'Maker' },
+				aliases: { 'Old|Previous': 'Maker|Current' }
+			})
+		).toEqual({ 'maker|previous': 'Maker|Current' });
+		expect(() => validateProducts({ aliases: {}, brands: { Maker: 'New' } }, { Old: 'Maker' })).toThrow(
+			'chain'
+		);
+		expect(() => validateProducts({ aliases: {}, brands: { Old: 'New' } }, { Old: 'Maker' })).toThrow(
+			'duplicate'
+		);
 	});
 	it.each([
 		{ files: [], products: [] },

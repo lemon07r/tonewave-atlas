@@ -168,8 +168,51 @@ export function productAliasKey(brand: string, model: string): string {
 		.join('|');
 }
 
-export function validateProducts(value: unknown): Record<string, string> {
-	const v = keys(value, ['aliases'], ['aliases'], 'products.json');
+/** Additional maker aliases are terminal; legacy punctuation/case-only entries remain valid. */
+export function validateProductBrands(
+	value: unknown,
+	existing: Record<string, string> = {}
+): Record<string, string> {
+	const v = keys(value, ['aliases', 'brands'], ['aliases'], 'products.json');
+	if (v.brands !== undefined && !record(v.brands))
+		throw new Error('Invalid products.brands: expected a string map');
+	const normalized = (brand: string) => productAliasKey(brand, '').slice(0, -1);
+	const mappings: Record<string, string> = Object.create(null) as Record<string, string>;
+	for (const [from, to] of Object.entries(existing)) {
+		const key = normalized(from);
+		if (Object.hasOwn(mappings, key) && normalized(mappings[key] ?? '') !== normalized(to))
+			throw new Error(`Invalid conflicting brand alias: ${from}`);
+		mappings[key] = to;
+	}
+	const brands: Record<string, string> = Object.create(null) as Record<string, string>;
+	for (const [from, to] of Object.entries(v.brands ?? {})) {
+		if (typeof to !== 'string') throw new Error(`Invalid products.brands.${from}: expected a string`);
+		if (from === '_note') continue;
+		const key = normalized(from);
+		if (!key || !normalized(to) || from.includes('|') || to.includes('|'))
+			throw new Error(`Invalid brand alias: ${from}`);
+		if (Object.hasOwn(mappings, key) || key === normalized(to))
+			throw new Error(`Invalid duplicate/redundant brand alias: ${from}`);
+		brands[key] = to.trim().replace(/\s+/g, ' ');
+		mappings[key] = brands[key];
+	}
+	for (const to of Object.values(mappings)) {
+		const next = mappings[normalized(to)];
+		if (next !== undefined && normalized(next) !== normalized(to))
+			throw new Error('Invalid brand alias chain/cycle');
+	}
+	return brands;
+}
+
+export function validateProducts(
+	value: unknown,
+	existingBrands: Record<string, string> = {}
+): Record<string, string> {
+	const brands = validateProductBrands(value, existingBrands);
+	for (const [from, to] of Object.entries(existingBrands))
+		brands[productAliasKey(from, '').slice(0, -1)] = to;
+	const canonicalBrand = (brand: string) => brands[productAliasKey(brand, '').slice(0, -1)] ?? brand;
+	const v = keys(value, ['aliases', 'brands'], ['aliases'], 'products.json');
 	if (!record(v.aliases)) throw new Error('Invalid products.aliases: expected a string map');
 	const aliases: Record<string, string> = Object.create(null) as Record<string, string>;
 	const pair = (value: string): string[] => {
@@ -183,13 +226,13 @@ export function validateProducts(value: unknown): Record<string, string> {
 		if (from === '_note') continue;
 		const [brand = '', model = ''] = pair(from);
 		pair(to);
-		const key = productAliasKey(brand, model);
+		const key = productAliasKey(canonicalBrand(brand), model);
 		if (Object.hasOwn(aliases, key)) throw new Error(`Invalid duplicate product alias: ${from}`);
 		aliases[key] = to;
 	}
 	for (const to of Object.values(aliases)) {
 		const [brand = '', model = ''] = pair(to);
-		if (Object.hasOwn(aliases, productAliasKey(brand, model)))
+		if (Object.hasOwn(aliases, productAliasKey(canonicalBrand(brand), model)))
 			throw new Error('Invalid product alias chain/cycle/redundant mapping');
 	}
 	return aliases;
@@ -248,10 +291,11 @@ export async function readInputs(root = ROOT): Promise<{
 			readJson(resolve(root, `data/${name}.json`))
 		)
 	);
+	const existingBrands = validateAliases(brands);
 	return {
 		excluded: validateExclusions(excluded),
-		brands: validateAliases(brands),
-		productAliases: validateProducts(products),
+		brands: { ...existingBrands, ...validateProductBrands(products, existingBrands) },
+		productAliases: validateProducts(products, existingBrands),
 		overrides: validateSources(overrides)
 	};
 }

@@ -233,6 +233,30 @@ describe('cached dataset build safety', () => {
 		expect(catalog.measurements).toHaveLength(3);
 		expect(report.identityMerges).toEqual({ productsBefore: 3, productsAfter: 1, merged: 2 });
 	});
+	it('combines maker and model aliases before identity but votes the original source spelling', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{ name: 'Maker Acoustics', phones: [{ name: 'Model MEMS', file: 'Model' }] },
+					{ name: 'Maker', phones: [{ name: 'Model', file: 'Model2' }] }
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)]
+		]);
+		await writeFile(
+			resolve(paths.root, 'data/products.json'),
+			JSON.stringify({
+				brands: { 'Maker Acoustics': 'Maker' },
+				aliases: { 'Maker Acoustics|Model MEMS': 'Maker|Model' }
+			})
+		);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.products).toHaveLength(1);
+		expect(catalog.products[0]).toMatchObject({ brand: 'Maker', model: 'Model' });
+		expect(catalog.measurements).toHaveLength(2);
+	});
 	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
 		'reports stale discovery/calibration/measurement %s',
 		async (url) => {

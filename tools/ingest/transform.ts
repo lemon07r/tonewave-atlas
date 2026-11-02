@@ -193,8 +193,7 @@ export function collisionGroups(products: AuditProduct[]): string[][] {
 	const names = new Map(products.map((p) => [p.id, `${p.form ? `[${p.form}] ` : ''}${p.brand} ${p.model}`]));
 	return [...groups.values()]
 		.map((ids) => [...ids].map((id) => names.get(id) ?? id).sort())
-		.sort((a, b) => b.length - a.length || (a[0] ?? '').localeCompare(b[0] ?? '', 'en'))
-		.slice(0, 20);
+		.sort((a, b) => b.length - a.length || (a[0] ?? '').localeCompare(b[0] ?? '', 'en'));
 }
 
 /** Edit-distance candidates are audit suggestions ONLY; no fuzzy identity merges. */
