@@ -71,8 +71,8 @@ The baseline includes `meanBefore` and `medianBefore` over all valid uncorrected
 distances, not medians of fold means. Each product is held out once; finite corrections preserve the
 same missing-data support, and ingestion checks that baseline and validation pair counts agree.
 Positive improvement means reduced same-product response distance in dB, not improved perceptual
-accuracy. The same statistics and median spread per methodology frequency band are written to
-`report.json` and printed per partition.
+accuracy. Full statistics and median spread per methodology frequency band are written to
+`report.json`; the build log prints a per-partition summary of support, band spread and harmonisation.
 
 ## Updating and limitations
 
