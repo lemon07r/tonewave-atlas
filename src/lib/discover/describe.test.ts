@@ -25,8 +25,10 @@ test('never converts raw prices or prints an unattributed amount', () => {
 		sources: [{ id: 'a', name: 'Database A' }]
 	} as CandidateInfo;
 	expect(priceLines(candidate)).toEqual([]);
-	candidate.prices[0]!.usd = 129;
+	const listing = candidate.prices[0];
+	if (!listing) throw new Error('Test fixture requires a listing');
+	listing.usd = 129;
 	expect(priceLines(candidate)).toEqual(['$129 listed by Database A, Nov 2026']);
-	candidate.prices[0]!.sourceId = 'missing';
+	listing.sourceId = 'missing';
 	expect(priceLines(candidate)).toEqual([]);
 });

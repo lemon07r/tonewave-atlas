@@ -24,7 +24,7 @@ export function describeBands(bands: readonly BandDistance[]): string {
 	});
 	const text = phrases.join(', ');
 	return text
-		? text[0]!.toUpperCase() + text.slice(1)
+		? text.charAt(0).toUpperCase() + text.slice(1)
 		: 'No band mean differs by 0.75 dB or more where measured.';
 }
 

@@ -699,10 +699,9 @@
 			min-height: 64px;
 		}
 		.regions button {
-			writing-mode: vertical-rl;
-			min-height: 48px;
-			font-size: 10px;
-			padding: 6px 4px;
+			min-height: 44px;
+			font-size: 9px;
+			padding: 6px 0;
 		}
 		.legend-value {
 			font-size: 10px;
