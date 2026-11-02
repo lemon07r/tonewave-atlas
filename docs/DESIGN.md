@@ -40,20 +40,22 @@ One teal accent denotes interaction, not a preference score. Text contrast on th
 (light / dark). Decorative hairlines are intentionally quieter; input boundaries and focus rings use
 stronger roles. Disabled controls are explicitly disabled, not presented as usable low-contrast text.
 
-| Curve  | Light     | Dark      | Dash sequence (CSS px) |
-| ------ | --------- | --------- | ---------------------- |
-| Teal   | `#007a83` | `#69cbd2` | Solid                  |
-| Rust   | `#a64e22` | `#eda576` | 8, 3                   |
-| Violet | `#6953a3` | `#b5a2ed` | 3, 3                   |
-| Rose   | `#ab3f69` | `#ed91b3` | 10, 3, 2, 3            |
-| Olive  | `#557328` | `#b4ce77` | 5, 2                   |
-| Blue   | `#3765b0` | `#91b5f5` | 2, 4                   |
-| Ochre  | `#946800` | `#e3c36c` | 12, 4                  |
+| Curve  | Light     | Dark      | Dash sequence (CSS px)              |
+| ------ | --------- | --------- | ----------------------------------- |
+| Teal   | `#007a83` | `#69cbd2` | Solid                               |
+| Rust   | `#a64e22` | `#eda576` | 14, 5 (long dash)                   |
+| Violet | `#6953a3` | `#b5a2ed` | 4, 4 (short dash)                   |
+| Rose   | `#ab3f69` | `#ed91b3` | 1, 4 (dot)                          |
+| Olive  | `#557328` | `#b4ce77` | 12, 4, 2, 4 (dash-dot)              |
+| Blue   | `#3765b0` | `#91b5f5` | 12, 3, 2, 3, 2, 3 (dash-double-dot) |
+| Ochre  | `#946800` | `#e3c36c` | 14, 4, 6, 4 (long-short)            |
 
 All curve colours exceed 4.7:1 against the light workspace and 6.4:1 against the dark workspace.
 The palette separates warm, cool and violet families, but colour alone is never an identifier:
 unique dash patterns, numbered legend labels and an accessible table preserve identity when hues
-converge under colour-vision deficiencies. References use neutral secondary ink with a 6, 5 dash.
+converge under colour-vision deficiencies. References use neutral secondary ink with paired short
+dashes (3, 3, 3, 8), distinct from the long rust dash. Plot, 48 px SVG swatches and export share one
+pattern function so the legend never substitutes a misleading dash.
 Uncertainty shading is supplementary, not a separate clickable series.
 
 ## Layout

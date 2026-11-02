@@ -1,8 +1,23 @@
 import { describe, expect, test } from 'vitest';
 import { GRID_SIZE } from '#core/grid.ts';
-import { chartValues, chartRange, dbLabel, frequencyLabel } from './chart.ts';
+import {
+	chartValues,
+	chartRange,
+	dbLabel,
+	frequencyLabel,
+	CURVE_DASHES,
+	REFERENCE_DASH,
+	curveDash
+} from './chart.ts';
 
 describe('chart display data', () => {
+	test('uses eight distinct patterns with a complete repeat visible in a 48 px legend', () => {
+		const patterns = [...CURVE_DASHES, REFERENCE_DASH];
+		expect(new Set(patterns.map((pattern) => pattern.join(' '))).size).toBe(8);
+		expect(patterns.every((pattern) => pattern.reduce((sum, value) => sum + value, 0) <= 48)).toBe(true);
+		expect(curveDash(1)).toEqual([14, 5]);
+		expect(curveDash(1, true)).toEqual([3, 3, 3, 8]);
+	});
 	test('subtracts the baseline pointwise, retaining missing coverage on either side', () => {
 		const values = new Float64Array(GRID_SIZE).fill(7);
 		const baseline = new Float32Array(GRID_SIZE).fill(2);

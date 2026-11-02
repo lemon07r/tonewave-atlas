@@ -34,6 +34,11 @@ test('renders all series and an accessible octave-resolution table', async () =>
 	await expect.element(screen.getByRole('button', { name: 'Hide Curve A' })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: 'Hide Curve B' })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: 'Hide Reference' })).toBeVisible();
+	expect(
+		[...screen.container.querySelectorAll('.legend-row line')].map((line) =>
+			line.getAttribute('stroke-dasharray')
+		)
+	).toEqual(['', '14 5', '3 3 3 8']);
 	expect(screen.container.querySelectorAll('canvas')).toHaveLength(1);
 	await expect
 		.element(screen.getByRole('link', { name: 'Sources and limitations' }))

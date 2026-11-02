@@ -9,7 +9,7 @@
 		frequencyLabel,
 		dbLabel,
 		FREQUENCY_TICKS,
-		CURVE_DASHES,
+		curveDash as dash,
 		REGIONS,
 		type FrSeries
 	} from '#lib/chart.ts';
@@ -72,9 +72,6 @@
 	const octaveIndices = Array.from({ length: 10 }, (_, i) => i * 24);
 	function colour(index: number, reference: boolean | undefined) {
 		return reference ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
-	}
-	function dash(index: number, reference: boolean | undefined) {
-		return reference ? [6, 5] : (CURVE_DASHES[index % 7] ?? []);
 	}
 	function focusSeries(index: number | null) {
 		plot?.setSeries(index === null ? null : index + 1, { focus: true });
@@ -284,7 +281,7 @@
 			const legends = series.map((item, index) =>
 				wrap(
 					`${index + 1}. ${item.label}${hidden.includes(item.id) ? ' (hidden)' : ''}`,
-					width - 96,
+					width - 108,
 					'13px "DM Sans Variable"'
 				)
 			);
@@ -316,13 +313,13 @@
 				ctx.setLineDash(dash(index, item.reference));
 				ctx.beginPath();
 				ctx.moveTo(24, y - 4);
-				ctx.lineTo(60, y - 4);
+				ctx.lineTo(72, y - 4);
 				ctx.stroke();
 				ctx.setLineDash([]);
 				ctx.fillStyle = style.getPropertyValue('--ink');
 				ctx.font = '13px "DM Sans Variable"';
 				for (const line of legends[index] ?? []) {
-					ctx.fillText(line, 72, y);
+					ctx.fillText(line, 84, y);
 					y += 18;
 				}
 				y += 6;
@@ -460,10 +457,10 @@
 							(hidden = hidden.includes(curve.id)
 								? hidden.filter((item) => item !== curve.id)
 								: [...hidden, curve.id])}
-						><svg width="28" height="10" aria-hidden="true"
+						><svg width="48" height="10" aria-hidden="true"
 							><line
 								x1="0"
-								x2="28"
+								x2="48"
 								y1="5"
 								y2="5"
 								stroke={colour(curve.index, curve.reference)}
@@ -715,9 +712,6 @@
 		.legend-row button {
 			font-size: 11px;
 			gap: 6px;
-		}
-		.legend-row button > svg {
-			width: 20px;
 		}
 	}
 </style>

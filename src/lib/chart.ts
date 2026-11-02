@@ -12,7 +12,21 @@ export interface FrSeries {
 }
 
 export const FREQUENCY_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-export const CURVE_DASHES: number[][] = [[], [8, 3], [3, 3], [10, 3, 2, 3], [5, 2], [2, 4], [12, 4]];
+export const CURVE_DASHES: number[][] = [
+	[],
+	[14, 5],
+	[4, 4],
+	[1, 4],
+	[12, 4, 2, 4],
+	[12, 3, 2, 3, 2, 3],
+	[14, 4, 6, 4]
+];
+export const REFERENCE_DASH = [3, 3, 3, 8];
+
+/** Shared by uPlot, the SVG legend and PNG legend, in CSS pixels. */
+export function curveDash(index: number, reference?: boolean): number[] {
+	return reference ? REFERENCE_DASH : (CURVE_DASHES[index % CURVE_DASHES.length] ?? []);
+}
 
 export const REGIONS = [
 	{
