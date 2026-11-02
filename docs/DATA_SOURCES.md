@@ -54,6 +54,9 @@ local ingestion state, never part of the published dataset. Discovery must succe
   alternatives. Uncertain labels, including EQ1/EQ2 and Qudelix's “Sunrise Neutral EQ”, are non-default
   tuning, listed under `quality.ambiguousEqLabelsKeptAsTuning` (“ambiguous EQ labels kept as tuning”).
   `+ HiFi EQ` is not the explicit `+ EQ` operation. The word “Delta” alone is not an exclusion.
+  Tone-control/knob values such as “K7 EQ (+12 Bass, +6 Treble)” do not establish post-hoc processing
+  without further evidence; they and a named “EQ: custom - MRS” slot stay ambiguous non-default tuning.
+  Explicit numeric EQ band lists and declared user/third-party operations remain excluded.
 - Detail packs retain each available channel and numbered repetition. Ranking uses finite dB means
   within repeated channels, then the L/R dB mean (or available channel), 1/12-octave smoothing and
   every second canonical bin. Missing data stays missing. Channel contribution masks and paired-bin
@@ -171,6 +174,44 @@ remains the fallback, including mode-only products such as CMF Buds Pro. Other m
 tuning and cannot train consensus/statistics. Explicit sample 1 can be default; sample 2 cannot.
 B&W generation labels such as Pi7 S2, Px7 S3 and Px8 S2 are not replacement-sample labels. `quality.defaultSelections` and
 `quality.tuningModes` retain the selection and accepted mode audit.
+
+Recognized terminal switch-state suffixes (high/low impedance, including “impedence”/“imp”, DU or
+binary switch positions, explicit named modes), cable/termination suffixes and recognized tip
+suffixes are folded into an
+**already accepted exact parent** of the same maker/form. Normal identity spelling rules apply;
+no new fuzzy, Roman/Arabic, revision or bare “Balanced” model equivalence is inferred. The suffix
+becomes part of the original variant label, with the identity move retained in processing provenance.
+2.5/3.5/4.4 mm, named cables, balanced connections and single-ended terminations use the existing
+`setup` kind, not a new core kind. A source's sole cable option stays default; multiple split cable
+options retain one default (explicit standard/stock/default first, then source order). DSP cables
+still carry their tuning meaning, and impedance plugs are not treated as neutral terminations.
+Tip suffixes include Stock Tip, branded tips, foam, wide/narrow/standard bore, CP100/CP145 and named
+tip families. They become `fit` only when every token is a recognized tip term; a source's sole
+neutral tip option stays default, while additional split tip defaults prefer stock/standard/default
+then source order. Other tokens (including `02`/`12` in Hisenior T4's foam labels) stay in the variant
+label and make it non-default `tuning`, without guessing their meaning. Model designators such as
+Pro/Max/II/2/S/Ultra/Plus, T4/X2, revisions, samples and mods prevent that suffix from being folded.
+Existing unit or tuning meaning wins over neutral tip metadata. Ambiguous tip suffixes are retained
+in `switchIdentity.tipAmbiguities`, with their tokens in each move and the default protection in
+processing provenance; a switch plurality cannot promote them.
+Recognized tip vocabulary includes stock/standard/original, silicone/foam, ear/tip/bore descriptors,
+CP codes and ABP-T; SpinFit W1/Omni, Azla/Sedna Short/Light/Crystal/Origin, Divinus Velvet, Baroque,
+Moondrop Spring, Final E, JVC Spiral Dot, Sennheiser foam, TENNMAK SoFoam and KZ tips. Other names,
+colors and codes are not assumed neutral merely because the same suffix also contains “tip”.
+
+Before rig evidence and statistics, labelled switch defaults are reconciled **per product**, with
+one vote per source's unambiguous existing default state. A unique plurality selects the common
+state. Each source with an eligible explicitly labelled curve in that state selects it; other
+explicit states are non-default tuning. Existing defaults break within-source ties, then source
+index order. Replacement units, ambiguous EQ and impedance-adapter loads cannot become the bare
+switch-state default. A different switch state wins over incidental tip/fit metadata; same-state tip
+changes remain `fit`. CP100/CP145, ABP-T and wide-bore labels are recognized as tips. Unlabelled
+defaults are preserved, not acoustically assigned.
+Tied pluralities remain unresolved. DU and 00, or named modes and impedance positions, are **not**
+equated without evidence. Sources lacking the selected state can therefore have no explicit default;
+their measurements remain available as tuning variants. The reports `switchIdentity`,
+`switchDefaults`, `variantReview` and `unknownVariants` retain moves, votes, per-source choices,
+every state/cable variant and residual unknown labels for audit.
 Newer index schemas without `file` lists are reported as
 unsupported, not silently guessed. Source hardware, raw calibration, insertion, tips, seal and prices
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
@@ -209,7 +250,8 @@ duplicate, cyclic or chained mappings stop ingestion. Initial Roman/Arabic numer
 verified against catalog/file names in dataset `3c9d923462f8b79c98aa4ef9` (evidence in the input note).
 Two explicit collaboration-spelling aliases were verified in dataset `82c0a5df23cc64e5d7268caa`
 against model/file names and nearby cross-source response shapes (evidence in the nested alias note).
-Tuning/fit/sample suffixes are not stripped. `identityMerges.productsBefore` counts globally unique
+Only the recognized switch/cable/tip suffixes above are folded; sample/revision labels remain separate.
+`identityMerges.productsBefore` counts globally unique
 original keys; `productsAfter` is the final count and `merged` is their net difference. Separately,
 `groupwiseMerges` lists each many-to-one group's original keys and reduction plus their total; this
 can differ from net reduction when an original key also splits across final products. The report also
@@ -424,3 +466,280 @@ the audit preserves them rather than inventing a third core `Form`. Per-source r
 every scanned database's form counts, all quarantine reasons and remaining conflicts are recorded in
 `.cache/ingest/report.json` (`rigEvidence`, `sourceEvidence`, `quality`, `quarantineSummary`,
 `remainingFormConflicts`).
+
+### Switch, accessory and residual-variant audit (November 2026)
+
+The final cached rebuild is **`c103d7e36980d1b60a2e4bc5`**: **9,610 products / 40,821 measurements /
+138 databases / 118 publishers**, compared with `6417dab7343144186a57d2d9`'s 10,065 / 40,814.
+All existing measurement IDs survive; there are **zero removals in every partition** and seven
+restored ambiguous settings: Obodio's `vsk6+6`, `vsk6-6`, `vsk12+12`, `vsk12-12`, K7 max/min values,
+and Superreview's `Sony WH1000XM6 MRS V4`. All seven are non-default tuning, not claimed factory
+presets or confirmed user EQ. Explicit numeric EQ band lists and third-party processing stay excluded.
+
+The state pass changes **128 product/source default sets across 50 products and 50 databases**.
+It reviews 237 products: 170 have a unique labelled-source plurality; 67 have tied or absent votes.
+Among the former, 55 have at least one source without an eligible curve in the selected encoding/state.
+Those sources are reported, not acoustically assigned or excluded. Volume S changes eight source
+default sets; its problematic Obodio, Digaoreviews, Hu-Fi and The Audio Store curves now select low.
+
+Identity folding moves **276 switch-suffixed identities / 337 measurements**, **30 cable/plug/
+termination identities / 53 measurements**, and **149 tip-suffixed identities / 285 measurements**
+into existing exact parents. Current-cache near-name groups are **749 before / 687 after**, not the
+old smaller catalog's 576. Of the original connected groups, **71 resolve fully and six partially**:
+68 fully resolved groups involve switch suffixes, one cable suffixes and two tip suffixes. These are
+membership audits, not subtraction of two
+recomputed heuristic group counts. Fully resolved examples include Volume S's High/Low Imp entries,
+Joyodio VZ10's grouped eight-switch entries and the Quartet switch-suffixed identities. Default
+alignment is a separate result: Quartet's cross-encoding vote remains tied despite identity folding.
+
+The six partial groups retain: Butastur `02`/`12`/`s2`; ivipQ Conch V12 versus V13; QDC Anole VX's
+`1 ON`/`2 ON`/`3 ON`; Canon Pro `1on`; TSMR X `003`/`020`; and CCA `Rhapsody(0000)` (no token
+boundary). There are 134 recognized suffix candidates without an accepted unsuffixed exact parent.
+Remaining groups also include real families such as Westone MACH, Mystery Collab revisions, Sony
+WH-1000XM generations and NAN-Z numbered samples. These counts do not claim every near-name group
+is a switch collision or a duplicate. Full moves, original/remaining groups and unresolved candidates
+are retained in `switchIdentity` and `remainingCollisionGroups`.
+
+Cable examples include Joyce's `Monarch MKIV (Standard 4.4mm)` and `(Rumble 4.4mm)` → `Monarch MKIV`,
+`Monarch MKII with IMR Cable` → `Monarch MKII`, `Hidizs MP145 4.4mm` → `MP145`, `Intime Sora 1
+(3.5mm)` → `Sora 1`, and KZ EDC Pro's OFC/Silver Cable entries → `EDC Pro`. Ten product/source
+groups need duplicate cable defaults reduced to one. Neutral sole-source options remain default.
+The artifact audit caught five explicit ZERO RED PLUG impedance loads being overwritten as setup;
+they now retain non-default tuning. Bass plugs/DSP options cannot become bare cable defaults, and
+`Moondrop MAY S2 CABLE` stays separate rather than consuming its sample marker. Existing fit and unit
+meaning is preserved when a generic cable/plug identity is folded.
+
+Tip examples include `Softears Studio 4 Stock Tip` → `Studio 4`, `7th Acoustics RYUSEI BAROQUE`
+→ `RYUSEI`, `ZiiGaat Crescent Foam` → `Crescent`, and Monarch MK3's Azla Sedna Short/Crystal entries
+→ `Monarch MK3`. All **149 identities / 285 measurements** are preserved in their parents. Of these,
+**32 mixed suffix identities / 80 measurements** contain unrecognized tokens and stay non-default
+tuning; the remaining 117 identities / 205 measurements have tip-only suffixes (fit or an eligible
+default, with any stronger original unit/tuning meaning retained). All 80 ambiguous measurements
+were checked to remain tuning and non-default. T4 `02 Foam`/`12 Foam` join T4 with their codes in the
+labels, not a guessed switch mapping. Twenty-eight product/source groups need duplicate neutral
+tip defaults reduced to one; no sole-tip fallback promotions were needed in this cache. Model
+designators remain separate, and tests cover Pro/Max/II/2/S/Ultra/Plus and letter+digit cases.
+
+Residual `unknown` kinds fall **4,608 → 2,993**. For this audit, patterns remove the final maker/model,
+lowercase descriptors, collapse punctuation and replace numeric runs with `#`; counts are measurements,
+not products. No interpretation is invented for opaque colors, positions or multi-position codes.
+
+| Residual pattern       | Count |
+| ---------------------- | ----: |
+| front                  |   121 |
+| up                     |   120 |
+| down                   |   116 |
+| back                   |    97 |
+| no distinct descriptor |    82 |
+| numeric (`#`)          |    57 |
+| red                    |    48 |
+| black                  |    47 |
+| gold                   |    47 |
+| passive                |    39 |
+| centre                 |    27 |
+| rear                   |    27 |
+| silver                 |    27 |
+| velvet                 |    20 |
+| Linsoul                |    18 |
+
+Examples include Earphones Archive's `Focal Hadenys (front)`, Achoreviews's `Tanchjim 4U (up)`, DL's
+`TSMR X 003`, and Aden's `Ziigaat Lush LS` (“Linsoul”). JVC Spiral Dot labels now classify as fit.
+The complete residual labels,
+filenames and sources remain in `unknownVariants`; `variantReview` covers 2,799 products with
+recognized state/accessory descriptors, including every source variant.
+
+#### IEM harmonisation and artifact checks
+
+These are the existing engine's held-out within-partition comparisons, not 711-to-5128 conversion.
+
+| Partition | Multi-source products | Sources | Held-out pairs | Mean before → after dB | Mean / median improvement dB | Fold mean-improvement range dB |
+| --------- | --------------------: | ------: | -------------: | ---------------------: | ---------------------------: | -----------------------------: |
+| iem-711   |                 2,407 |     107 |         83,066 |    1.764786 → 1.576253 |          0.188533 / 0.170218 |            0.178289 … 0.195317 |
+| iem-5128  |                    21 |       3 |             27 |    1.628695 → 1.611542 |          0.017153 / 0.021444 |            0.000576 … 0.110390 |
+
+Both meet the existing support rule; per-bin product support is 1,938–2,407 and 19–21 respectively.
+All five folds improve in each partition, but 5128's 21-product/three-source evidence is small and
+does not establish universal benefit. Full fold/support and band-spread arrays remain in the report.
+All **232 artifact byte lengths/SHA-256 hashes and 229 binary packs** pass: **40,821 rank curves /
+80,361 detail-channel curves**, with catalog/pack references intact. Retained channel metadata,
+dates, prices, review URLs and original/calibration URLs match the baseline. The five-product source
+lists below were also mechanically compared against the final catalogs: all **130 source listings**
+match. Before integrating the engine branch, `pnpm verify` passes **54 files / 727 tests**, with zero
+type errors or warnings. The rebuild used the complete local cache; no crawl was run.
+
+#### Worked-example source listings
+
+The source listings below retain original filenames; a different original suffix follows in
+parentheses. Source IDs omit only their trailing hash. `none` means no eligible default or no tuning
+variant, not a missing measurement. Fit, unit, setup and unknown variants are retained but are not
+enumerated in these default/tuning lists; `variantReview` contains all kinds and full source IDs.
+Unlabelled defaults are not evidence of a particular switch state. These results supersede the
+earlier switch-group examples above, not the historical artifact/removal counts.
+
+#### Softears Volume S
+
+Selected state: `impedance:low`; source votes `{"impedance:low":20,"impedance:high":4,"mode:classical":1}`.
+All explicitly selected defaults are low impedance. Animagus's Classical/Pop encoding is not equated
+with impedance labels. Hobbytalk and Sai retain unlabelled defaults; their labelled high states
+remain tuning. Same-low-state tip changes remain fit rather than extra tuning states.
+
+- **aden-iems** (iem-711): default `Softears Volume S (L)` ((Low Impedance)); tuning `Softears Volume S (H)` ((High Impedance)).
+- **aftersound-iems** (iem-711): default `SOFTEARS VOLUME S LOW IMP` (Low Impedance); tuning `SOFTEARS VOLUME S HIGH IMP` (High Impedance).
+- **animagus-iems** (iem-711): default **none**; tuning `Softears Volume S (Classical Mode)`; `Softears Volume S (Pop Mode)`.
+- **atechreviews-iems** (iem-711): default `Softears Volume S (low impedance)` ((low impedance)); tuning `Softears Volume S (high impedance)` ((high impedance)).
+- **audioamigo-iems** (iem-711): default `Softears Volume S LowΩ` ((Impedance Dial: Low, Impedance: <1 Ohm)); tuning `Softears Volume S HighΩ + 15 Ohm` ((Impedance Dial: High, Impedance: 15 Ohms)); `Softears Volume S LowΩ + 15 Ohm` ((Impedance Dial: Low, Impedance: 15 Ohms)); `Softears Volume S HighΩ` ((Impedance Dial: High, Impedance: <1 Ohm)).
+- **boizoff-iems** (iem-711): default `Volume S (TENNMAK SoFoam tips, low impedance) ✓`; tuning `Volume S (stock silicone tips, high impedance)`; `Volume S (TENNMAK SoFoam tips, high impedance) ✓`.
+- **digaoreviews-iems** (iem-711): default `Volume S Low Impedance` (Low Impedance); tuning `Volume S High Impedance` (High Impedance).
+- **ducbloke-iems** (iem-711): default `Softears Volume S`; tuning none.
+- **dvewlsh-iems** (iem-711): default `Softears Vol S Low` ((switch: low impedance)); tuning `Softears Volume S high` ((switch: high impedance)).
+- **earphonesarchive-5128** (iem-5128): default `Softears Volume S (Low Impedance Mode)`; tuning `Softears Volume S (High Impedance Mode)`.
+- **eliseaudio-iems** (iem-711): default `Softears Volume S`; tuning none.
+- **flare-iems** (iem-711): default `Softears Volume S` ((Low Impedance)); tuning none.
+- **gadgetgenerations-iems** (iem-711): default `Softears VolumeS LowImp` (Low Impedance); tuning `Softears VolumeS Hi Imp` (High Impedance).
+- **gadgetrytech-iems** (iem-711): default `Softears Volume S Low-Impedance` (Switch - Low Impedance)); tuning `Softears Volume S High-Impedance` ((Switch - High Impedance)).
+- **hbb-iems** (iem-711): default `Soft Volu S`; tuning none.
+- **hobbytalk-iems** (iem-711): default `Softears Volume S`; tuning `Softears Volume S 75` ((High Impedance Mode)).
+- **hu-fi-iems** (iem-711): default `Volume S (Low Impedance)`; tuning `Volume S (High Impedance)`.
+- **iemocean-iems** (iem-711): default `Sofears Volume S low impedance`; tuning none.
+- **jaytiss-iems** (iem-711): default `VolumeS`; tuning none.
+- **koi-iems** (iem-711): default `softears volume s low`; tuning none.
+- **lestat-iems** (iem-711): default `Volume S` (Low Impedence); tuning none.
+- **listener-5128** (iem-5128): default `VolumeS 5128` ((Softears Standard Tips)); tuning none.
+- **listener-iems** (iem-711): default `VolS Black` ((Stock Black Tips)); tuning none.
+- **lown-fi-iems** (iem-711): default `SOFTEARS Volume S low` ((Low Impedance) (Tips: Openaudio 003)); tuning `SOFTEARS Volume S high` ((High Impedance) (Tips: Openaudio 003)).
+- **lumerion-iems** (iem-711): default `Softears Volume S`; tuning none.
+- **obodio-iems** (iem-711): default `volume s li` (Low Impedance); tuning `volume s k7 max values` (K7 EQ Max Values (+12 Bass, +6 Treble)); `vsk12-12` (K7 EQ (-12 Bass, 0 Treble)); `vsk12+12` (K7 EQ (+12 Bass, 0 Treble)); `vsk6-6` (K7 EQ (0 Bass, -6 Treble)); `vsk6+6` (K7 EQ (0 Bass, +6 Treble)); `volume s k7 min values` (K7 EQ Min Values (-12 Bass, -6 Treble)); `volume s hi` (High Impedance).
+- **practiphile-iems** (iem-711): default `Softears Volume S` (low imp); tuning `Softears Volume S high imp` (high imp).
+- **precog-iems** (iem-711): default `Softears Volume S (Low Impedance)` (Low Impedance); tuning `Softears Volume S (High Impedance)` (High Impedance).
+- **pw-iems** (iem-711): default `Softears Volume S Low` (Low); tuning `Softears Volume S 10ohm` (Low+10ohm).
+- **sai-headphones** (iem-711): default `Softears VolumeS (black tip)`; tuning `Softears VolumeS (black tip high impedance mode)`.
+- **sl0the-iems** (iem-711): default `Softears Volume S LOW W1` (: Low Impedance Mode (Spinfit W1)); tuning `Softears Volume S HIGH Velvet` (: High Impedance Mode (Divinus Velvet)); `Softears Volume S HIGH W1` (: High Impedance Mode (Spinfit W1)).
+- **superreview-iems** (iem-711): default `Softears Volume S` ((switch: low impedance)); tuning `Softears Volume S impedance` ((switch: high impedance)).
+- **theaudiostore-iems** (iem-711): default `SOFTEARS Volume S Low Imp` (Low Imp); tuning `SOFTEARS Volume S High Imp` (High Imp).
+- **timmyv-iems** (iem-711): default `Softears VolumeS (LN)` ((Low Impedance Normal Insertion)); tuning `Softears VolumeS (HN)` ((High Impedance Normal Insertion)).
+- **tonedeafmonk-iems** (iem-711): default `SOFTEARS VOLUME S LOW` ((low Impedance Setting)); tuning `SOFTEARS VOLUME S HIGH` ((High Impedance Setting)).
+- **treblewellxtended-iems** (iem-711): default `Volume S Low` (Low Impedence); tuning `Volume S` (High Impedence).
+- **zerostresslevel-iems** (iem-711): default `Volume S` ((Low Impedance)); tuning none.
+
+#### CrinEar Reference
+
+No bare switch-state vote applies: only impedance-adapter states were found. Hobbytalk's stock
+curves are replacement units, so its 75-ohm adapter must not become the fallback default. Standard,
+shorter-bore and other tip alternatives are fit variants, not modes inferred from the word Reference.
+
+- **aden-iems** (iem-711): default `Crinear Reference` ((Sample 1)); tuning none.
+- **aftersound-iems** (iem-711): default `CRINEAR REFERENCE`; tuning none.
+- **animagus-iems** (iem-711): default `CrinEar Reference`; tuning none.
+- **atechreviews-iems** (iem-711): default `CrinEar Reference`; tuning `CrinEar Reference (impedance adapter 10 ohm)` ((impedance adapter 10 ohm)).
+- **audioamigo-iems** (iem-711): default `CrinEar Reference` ((Impedance: <1 Ohm)); tuning `CrinEar Reference 15 Ohm` ((Impedance: 15 Ohms)); `CrinEar Reference 30 Ohm` ((Impedance: 30 Ohms)).
+- **banzai1122-iems** (iem-711): default `Crinear Reference`; tuning none.
+- **bassaudio-iems** (iem-711): default `Crinear Reference` (Regular DAC); tuning none.
+- **bloomaudio-iems** (iem-711): default `Crinear Reference`; tuning none.
+- **boizoff-iems** (iem-711): default `Reference (stock standard, shorter bore tips) ✓`; tuning none.
+- **breampike-iems** (iem-711): default `Crinear Reference`; tuning none.
+- **dentreviews-iems** (iem-711): default `CrinEar Reference Moondrop`; tuning none.
+- **dl-iems** (iem-711): default `Reference`; tuning none.
+- **dvewlsh-iems** (iem-711): default `Crinear Ref Std` ((standard bore tips)); tuning none.
+- **earphonesarchive-5128** (iem-5128): default `CrinEar Reference (Standard bore eartips)`; tuning none.
+- **elrics-iems** (iem-711): default `CrinEar Reference Standard` ((Standard Bore Eartip)); tuning none.
+- **faxepremium-iems** (iem-711): default `Crinear Reference`; tuning none.
+- **fernandagunsan-iems** (iem-711): default `CrinEar Reference`; tuning none.
+- **flare-iems** (iem-711): default `CrinEar Reference`; tuning none.
+- **hbb-iems** (iem-711): default `Crin Ref`; tuning none.
+- **headphonezone-iems** (iem-711): default `Crinear Reference`; tuning none.
+- **hobbytalk-iems** (iem-711): default **none**; tuning `CrinEar Reference 75` ((75ohm Adapter)).
+- **iemocean-iems** (iem-711): default `CrinEar Reference`; tuning `CrinEar Reference 10 Ohm` (10 Ohm adapter).
+- **jaraba-iems** (iem-711): default `Reference`; tuning none.
+- **jaytiss-iems** (iem-711): default `Crinears Reference`; tuning none.
+- **lestat-iems** (iem-711): default `Shorter bore reference`; tuning none.
+- **lumerion-iems** (iem-711): default `Crinear Reference`; tuning `Crinear Reference 33ohm Fiio adapter`.
+- **practiphile-iems** (iem-711): default `CrinEar Reference`; tuning none.
+- **precog-iems** (iem-711): default `Crinears Reference`; tuning none.
+- **sai-headphones** (iem-711): default `CrinEar Reference (standard bore tips)`; tuning none.
+- **soundignity-iems** (iem-711): default `CrinEar Reference SE15` (w/ Azla Sedna SE1500); tuning none.
+- **superreview-iems** (iem-711): default `CrinEar Reference` ((sample 1)); tuning none.
+- **tdl-iems** (iem-711): default `Crinear Reference Azla Sedna Origin Tip`; tuning none.
+- **tonedeafmonk-iems** (iem-711): default `Crinear Reference`; tuning none.
+
+#### Kiwi Ears Quartet
+
+Unresolved: source votes `{"switch:bits:00":6,"switch:du:dd":6,"switch:bits:11":3,"switch:du:uu":4}`.
+The 00/DD tie is not broken by guessing an encoding equivalence. Multiple defaults below are
+unresolved defaults inherited from separate source-index products, not a completed reconciliation.
+
+- **achoreviews-iems** (iem-711): default `Kiwi Ears Quartet (0-0)` ((0-0)); tuning none.
+- **aden-iems** (iem-711): default `KE Quartet 00 LS` ((Linsoul) (00)); tuning `KE Quartet 10 LS` ((Linsoul) (10)); `KE Quartet 01 LS` ((Linsoul) (01)); `KE Quartet 11 LS` ((Linsoul) (11)).
+- **adri-n-iems** (iem-711): default `Kiwi Ears Quartet (S1 UU)` ((S1 UU)); tuning none.
+- **ankramutt-iems** (iem-711): default `KiwiEars Quartet 00` (00); tuning `KiwiEars Quartet 01` (01); `KiwiEars Quartet 11` (11); `KiwiEars Quartet 10` (10).
+- **atechreviews-iems** (iem-711): default `Kiwi Ears Quartet (OFF-OFF)` ((OFF-OFF)); tuning `Kiwi Ears Quartet (OFF-ON)` ((OFF-ON)); `Kiwi Ears Quartet (ON-ON)` ((ON-ON)); `Kiwi Ears Quartet (ON-OFF)` ((ON-OFF)).
+- **audioamigo-iems** (iem-711): default `Kiwi Ears Quartet DD` ((Switches: 00)); tuning `Kiwi Ears Quartet DD 15 Ohm` ((Switches: 00, Impedance: 15 Ohms)); `Kiwi Ears Quartet UD` ((Switches: 10)); `Kiwi Ears Quartet UU 15 Ohm` ((Switches: 11, Impedance: 15 Ohms)); `Kiwi Ears Quartet UU` ((Switches: 11)); `Kiwi Ears Quartet DD 30 Ohm` ((Switches: 00, Impedance: 30 Ohms)); `Kiwi Ears Quartet DU` ((Switches: 01)); `Kiwi Ears Quartet UU 30 Ohm` ((Switches: 11, Impedance: 30 Ohms)).
+- **bakkwatan-iems** (iem-711): default `Kiwi Ears Quartet 00` (1:OFF; 2:OFF); tuning `Kiwi Ears Quartet 11` (1:ON; 2:ON); `Kiwi Ears Quartet 01` (1:OFF; 2:ON); `Kiwi Ears Quartet 10` (1:ON; 2:OFF).
+- **bassyalexander-iems** (iem-711): default `KiwiEars Quartet`; tuning none.
+- **bloomaudio-iems** (iem-711): default `Kiwi Ears Quartet`; tuning none.
+- **cqtek-iems** (iem-711): default `Kiwi Ears Quartet 00` (00); `Kiwi Ears Quartet 10` (10); `Kiwi Ears Quartet 01` (01); `Kiwi Ears Quartet 11` (11); tuning none.
+- **dentreviews-iems** (iem-711): default `Kiwi Ears Quartet off off`; tuning `Kiwi Ears Quartet off on`; `Kiwi Ears Quartet on off`; `Kiwi Ears Quartet on on`.
+- **earphonesarchive-5128** (iem-5128): default `Kiwi Ears Quartet (DD)`; tuning `Kiwi Ears Quartet (DU)`; `Kiwi Ears Quartet (UD)`; `Kiwi Ears Quartet (UU)`.
+- **flare-iems** (iem-711): default `Kiwi Ears Quartet` ((UU)); tuning none.
+- **hadoe-iems** (iem-711): default `Kiwi Ears Quartet (11)` ((11)); tuning none.
+- **harpo-iems** (iem-711): default `Kiwi Ears Quartet DD` ((DD)); `Kiwi Ears Quartet UU` ((UU)); `Kiwi Ears Quartet UD` ((UD)); `Kiwi Ears Quartet DU` ((DU)); tuning none.
+- **hbb-iems** (iem-711): default `Kiwi Ears Quartet Bass`; tuning none.
+- **headphonezone-iems** (iem-711): default `Kiwi Quartet 1D 2U`; tuning none.
+- **hobbytalk-iems** (iem-711): default `Kiwi Ears Quartet DD` (DD); tuning `Kiwi Ears Quartet UU` (UU); `Kiwi Ears Quartet UD` (UD); `Kiwi Ears Quartet UD 75` (UD (75ohm Adapter)); `Kiwi Ears Quartet DU` (DU).
+- **ianfann-iems** (iem-711): default `KIWIEARS QUARTET DU` ((DU)); `KIWIEARS QUARTET DD` ((DD)); `KIWIEARS QUARTET UD` ((UD)); `KIWIEARS QUARTET UU` ((UU)); tuning none.
+- **joshtbvo-iems** (iem-711): default `Kiwi Ears Quartet (UU)` ((UU)); `Kiwi Ears Quartet (DD)` ((DD)); `Kiwi Ears Quartet (DU)` ((DU)); `Kiwi Ears Quartet (UD)` ((UD)); tuning none.
+- **listener-iems** (iem-711): default `Quartet UU Stock` ((Stock Tips)); tuning none.
+- **mmagtech-iems** (iem-711): default `Kiwi Ears Quartet s.00 Foam` (s.00 (Foam)); tuning `Kiwi Ears Quartet s.10 Foam` (s.10 (Foam)); `Kiwi Ears Quartet s.01 Foam` (s.01 (Foam)); `Kiwi Ears Quartet s.11 Foam` (s.11 (Foam)).
+- **nymz-iems** (iem-711): default `Kiwi Ears Quartet ON ON` ((ON/ON)); tuning `Kiwi Ears Quartet OFF OFF` ((OFF/OFF)); `Kiwi Ears Quartet OFF ON` ((OFF/ON)); `Kiwi Ears Quartet ON OFF` ((ON/OFF)).
+- **obodio-iems** (iem-711): default `quatro dd` (DD); tuning `quatro uu` (UU); `quatro ud` (UD); `quatro du` (DU).
+- **practiphile-iems** (iem-711): default `Kiwi Ears Quartet DD` (stock); tuning `Kiwi Ears Quartet UD` (UD); `Kiwi Ears Quartet DU` (DU); `Kiwi Ears Quartet UU` (UU).
+- **precog-iems** (iem-711): default `KiwiEars Quartet (OFF)`; tuning none.
+- **soundcheck39-iems** (iem-711): default `Kiwi Ears Quartet 00` (00); tuning `Kiwi Ears Quartet 11` (11); `Kiwi Ears Quartet 01` (01); `Kiwi Ears Quartet 10` (10).
+- **superreview-iems** (iem-711): default `Kiwi Ears Quartet (11)` ((switches: on - on)); tuning `Kiwi Ears Quartet (10)` ((switches: on - off)); `Kiwi Ears Quartet (00)` ((switches: off - off)); `Kiwi Ears Quartet (01)` ((switches: off - on)).
+- **suporsalad-iems** (iem-711): default `Kiwiears Quartet 11`; tuning `Kiwiears Quartet 10`; `Kiwiears Quartet 01`; `Kiwiears Quartet 00`.
+- **tdl-iems** (iem-711): default `Kiwi Ears Quartet DD`; tuning `Kiwi Ears Quartet DU`; `Kiwi Ears Quartet UU`; `Kiwi Ears Quartet UD`.
+- **therollo9-iems** (iem-711): default `Kiwi Ears Quartet UU` ((UU)); tuning `Kiwi Ears Quartet DU` ((DU)); `Kiwi Ears Quartet DD` ((DD)); `Kiwi Ears Quartet UD` ((UD)).
+- **tonedeafmonk-iems** (iem-711): default `KiwiEars Quartet DD` ((DD)); tuning `KiwiEars Quartet DU` ((DU)); `KiwiEars Quartet UD` ((UD)); `KiwiEars Quartet UU` ((UU)).
+
+#### Yanyin Canon Pro
+
+Selected state: `switch:bits:00`; source votes `{"switch:bits:11":1,"switch:du:uuu":1,"switch:du:dd":2,"switch:du:ud":1,"switch:bits:00":3,"switch:du:uu":1}`.
+DU-only sources without a separately labelled 00 state have no eligible explicit default. Their
+curves remain tuning; no DD/00 or two-/three-switch equivalence is invented. `Canon Pro 1on` remains
+a separate identity, outside the exact parent listing below.
+
+- **aftersound-iems** (iem-711): default **none**; tuning `YANYIN CANON PRO UU` (UU); `YANYIN CANON PRO DD` (DD); `YANYIN CANON PRO UD` (UD); `YANYIN CANON PRO DU` (DU).
+- **audioamigo-iems** (iem-711): default `Yanyin Canon Pro 00` ((Switches: 00)); tuning `Yanyin Canon Pro 10 15 Ohm` ((Switches: 10, Impedance: 15 Ohms)); `Yanyin Canon Pro 11` ((Switches: 11)); `Yanyin Canon Pro 11 15 Ohm` ((Switches: 11, Impedance: 15 Ohms)); `Yanyin Canon Pro 10` ((Switches: 10)); `Yanyin Canon Pro 11 30 Ohm` ((Switches: 11, Impedance: 30 Ohms)); `Yanyin Canon Pro 10 30 Ohm` ((Switches: 10, Impedance: 30 Ohms)); `Yanyin Canon Pro 00 15 Ohm` ((Switches: 00, Impedance: 15 Ohms)); `Yanyin Canon Pro 00 30 Ohm` ((Switches: 00, Impedance: 30 Ohms)).
+- **boizoff-iems** (iem-711): default `Canon Pro (00) (TENNMAK SoFoam tips) ✓`; tuning `Canon Pro (11) (any stock silicone tips)`; `Canon Pro (01) (TENNMAK SoFoam tips) ✓`; `Canon Pro (10) (TENNMAK SoFoam tips) ✓`; `Canon Pro (11) (TENNMAK SoFoam tips) ✓`.
+- **breampike-iems** (iem-711): default `Yanyin Canon Pro 00` ((switches: 00)); tuning `Yanyin Canon Pro 11` ((switches: 11)); `Yanyin Canon Pro 01` ((switches: 01)); `Yanyin Canon Pro 10` ((switches: 10)).
+- **cqtek-iems** (iem-711): default `Yanyin Canon Pro 00` ((00) · 00); tuning `Yanyin Canon Pro 01` ((01) · 01); `Yanyin Canon Pro 11` ((11) · 11); `Yanyin Canon Pro 10` ((10) · 10).
+- **dl-iems** (iem-711): default **none**; tuning `Yanyin Canon Pro UU` ((Up Up)); `Yanyin Canon Pro DD` ((Down Down)); `Yanyin Canon Pro UD` ((Up Down)).
+- **earphonesarchive-5128** (iem-5128): default **none**; tuning `Yanyin Canon Pro (UD)`; `Yanyin Canon Pro (DU)`; `Yanyin Canon Pro (DD)`; `Yanyin Canon Pro (UU)`.
+- **foxtoldmeso-5128** (iem-5128): default `Yanyin Canon Pro`; tuning none.
+- **gadgetrytech-iems** (iem-711): default **none**; tuning `Yanyin Canon Pro (UDU)` ((UDU)); `Yanyin Canon Pro (DUD)` ((DUD)); `Yanyin Canon Pro (UUU)` ((UUU)); `Yanyin Canon Pro (DDU)` ((DDU)); `Yanyin Canon Pro (DDD)` ((DDD)); `Yanyin Canon Pro (DUU)` ((DUU)).
+- **hbb-iems** (iem-711): default `Yan Can P`; tuning `Yan Can Dd` (DD); `Yan C Uu` (UU).
+- **iemocean-iems** (iem-711): default `Yanyin Canon Pro 12` (12); tuning none.
+- **joycesreview-iems** (iem-711): default `Yanyin Canon Pro`; tuning none.
+- **soundcheck39-iems** (iem-711): default `Yanyin Canon Pro 00` (00); tuning `Yanyin Canon Pro 10` (10); `Yanyin Canon Pro 01` (01); `Yanyin Canon Pro 11` (11).
+- **soundignity-iems** (iem-711): default **none**; tuning `Yanyin Canon Pro DD` (switch: DD); `Yanyin Canon Pro DU` (switch: DU); `Yanyin Canon Pro UD` (switch: UD); `Yanyin Canon Pro UU` (switch: UU).
+- **superreview-iems** (iem-711): default **none**; tuning `Yanyin Canon Pro DD` ((switches: down - down)); `Yanyin Canon Pro UU` ((switches: up - up)); `Yanyin Canon Pro UD` ((switches: up - down)); `Yanyin Canon Pro DU` ((switches: down - up)).
+
+#### Night Oblivion Butastur
+
+Selected state: `switch:du:dd`; source votes `{"switch:bits:00":2,"switch:du:dd":4,"switch:du:ud":2,"switch:named:bass=off,treble=off":1}`.
+Bits and named bass/treble toggles are not equated with DD. Separate `Butastur 02`, `12` and `s2`
+identities remain outside the exact parent listing; their multi-position/sample meanings are not
+silently stripped.
+
+- **breampike-iems** (iem-711): default **none**; tuning `night oblivion butastur 01` ((switches: 01)); `night oblivion butastur 10` ((switches: 10)); `night oblivion butastur 11` ((switches: 11)); `night oblivion butastur 00` ((switches: 00)).
+- **ducbloke-iems** (iem-711): default `Night Oblivion Butastur`; tuning none.
+- **faxepremium-iems** (iem-711): default `Night Oblivion Butastur DD` (DD); tuning none.
+- **flare-iems** (iem-711): default `Night Oblivion Butastur` ((DD)); tuning none.
+- **hbb-iems** (iem-711): default `No DD` (DD); tuning `No Uu` (UU); `No Du` (DU); `No Ud` (UD).
+- **iemocean-iems** (iem-711): default `Night Oblivion Butastur DD` (DD); tuning `Night Oblivion Butastur UD` (UD); `Night Oblivion Butastur UU` (UU); `Night Oblivion Butastur DU` (DU).
+- **jaytiss-iems** (iem-711): default **none**; tuning `Butastur` (UD).
+- **kr0mka-iems** (iem-711): default **none**; tuning `butastur 10` (10); `butastur 00` (00); `butastur 11` (11); `butastur 01` (01).
+- **mmagtech-iems** (iem-711): default `Night Oblivion Butastur s.DD Foam` (s.DD (Foam)); tuning `Night Oblivion Butastur s.UU Foam` (s.UU (Foam)); `Night Oblivion Butastur s.DU Foam` (s.DU (Foam)); `Night Oblivion Butastur s.UD Foam` (s.UD (Foam)).
+- **precog-iems** (iem-711): default `Night Oblivion Butastur`; tuning none.
+- **superreview-iems** (iem-711): default `Night Oblivion Butastur (DD)` ((switches: DD)); tuning `Night Oblivion Butastur (UU)` ((switches: UU)); `Night Oblivion Butastur (UD)` ((switches: UD)); `Night Oblivion Butastur (DU)` ((switches: DU)).
+- **tgx78-iems** (iem-711): default **none**; tuning `Butasturoo` (00); `Butastur10` (10).
+- **zerostresslevel-iems** (iem-711): default **none**; tuning `Night Oblivion Butastur (Bass Off, Treble On) Deep` ((Bass: Off, Treble: On) Deep); `Night Oblivion Butastur (Bass On, Treble On)` ((Bass: On, Treble: On)); `Night Oblivion Butastur (Bass Off, Treble Off) Deep` ((Bass: Off, Treble: Off) Deep); `Night Oblivion Butastur (Bass Off, Treble Off) Shallow` ((Bass: Off, Treble: Off) Shallow); `Night Oblivion Butastur (Bass On, Treble Off)` ((Bass: On, Treble: Off)); `Night Oblivion Butastur (Bass On, Treble On) Shallow` ((Bass: On, Treble: On) Shallow); `Night Oblivion Butastur (Bass Off, Treble Off)` ((Bass: Off, Treble: Off)); `Night Oblivion Butastur (Bass On, Treble On) Deep` ((Bass: On, Treble: On) Deep); `Night Oblivion Butastur (Bass Off, Treble On) Shallow` ((Bass: Off, Treble: On) Shallow); `Night Oblivion Butastur (Bass Off, Treble On)` ((Bass: Off, Treble: On)); `Night Oblivion Butastur (Bass On, Treble Off) Deep` ((Bass: On, Treble: Off) Deep); `Night Oblivion Butastur (Bass On, Treble Off) Shallow` ((Bass: On, Treble: Off) Shallow).
