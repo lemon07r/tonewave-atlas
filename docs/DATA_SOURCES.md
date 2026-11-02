@@ -319,8 +319,11 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `88d703e027619a6d562891fc`: **9,610 products / 40,821 measurements / 138 databases / 118 publishers**.
+Build `93daa00a38311f657bc31ce4`: **9,610 products / 40,821 measurements / 138 databases / 118 publishers**.
 Its **286 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 100 invalid identities/markers/unidentified customs, 24 target/calibration/delta/sandbox and two population
-averages; these are candidates, not counts of previously published removals. **93 multiple-default
-source groups** remain unresolved. Missing/invalid channels and source-level failures are reported separately.
+averages; these are candidates, not counts of previously published removals. **93 unresolved state
+groups** now have one source-order default each; **zero duplicate source defaults** remain. Against
+published `ba2578bd5a41b28acce7e040`, catalogs retain **613 product / 872 measurement redirects**;
+LOCO correctly classifies **37/37 scored controls**. Missing/invalid channels and source-level failures
+are reported separately.
