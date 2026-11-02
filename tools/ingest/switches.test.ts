@@ -103,10 +103,12 @@ describe('insertion-depth identity folds', () => {
 			finaliseDefaults(ps, rows, []);
 			expect(depth.measurement.variant).toMatchObject({ kind: 'default', isDefault: true });
 			expect(depth.measurement.variant.label).toContain('Depth -1');
-			if (kind !== 'fit')
-				expect(depth.measurement.provenance.processing).toContain(
-					`default coverage: deterministic coverage fallback; previous kind ${kind}; original label retained`
-				);
+			// A fit-only suffix on a source's only file is promoted while folding; other kinds use the coverage fallback.
+			expect(depth.measurement.provenance.processing).toContain(
+				kind === 'fit'
+					? 'recognized tip/fit identity: Softears Model (Green Filter Depth Test) -> Softears Model; Green Filter Depth Test'
+					: `default coverage: deterministic coverage fallback; previous kind ${kind}; original label retained`
+			);
 		}
 	);
 });

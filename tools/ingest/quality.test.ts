@@ -70,7 +70,7 @@ describe('deterministic catalog quality rules', () => {
 		expect(identityProblem('HP Test', 'HEDD2')).toBeNull();
 	});
 	it.each(['evidenced', 'verified'] as const)(
-		'does not route headphone rows using an IEM %s 5128 family',
+		'keeps source-isolated headphone rows out of an IEM %s 5128 family',
 		(evidenceClass) => {
 			const source = sourceFor(
 				{ id: 'mixed', username: 'mixed', name: 'Mixed', url: 'https://mixed.invalid/', dbType: 'IEMs' },
@@ -80,6 +80,10 @@ describe('deterministic catalog quality rules', () => {
 			);
 			source.rigEvidence = { class: evidenceClass, family: '5128', rationale: 'IEM rig evidence' };
 			expect(partitionFor(source, 'iem')).toBe('iem-5128');
+			// Only verified hardware carries over to unisolated headphone rows; statistical IEM evidence does not.
+			expect(partitionFor(source, 'headphone')).toBe(
+				evidenceClass === 'verified' ? 'headphone-5128' : 'headphone-source-mixed'
+			);
 			expect(partitionFor(source, 'headphone', entryForm(phone('HP Test', 'Model')).sourceIsolated)).toBe(
 				'headphone-source-mixed'
 			);
