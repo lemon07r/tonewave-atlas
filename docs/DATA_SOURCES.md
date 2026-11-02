@@ -199,7 +199,7 @@ Pro/Max/II/2/S/Ultra/Plus, T4/X2, revisions, samples and mods prevent that suffi
 Existing unit or tuning meaning wins over neutral tip metadata. Ambiguous tip suffixes are retained
 in `switchIdentity.tipAmbiguities`, with their tokens in each move and the default protection in
 processing provenance; ordinary switch reconciliation cannot promote them, but final default coverage
-can select a fallback without erasing the tuning kind.
+can select a default while retaining the original descriptive label and previous kind in provenance.
 Recognized tip vocabulary includes stock/standard/original, silicone/foam, ear/tip/bore descriptors,
 CP codes and ABP-T; SpinFit W1/Omni, Azla/Sedna Short/Light/Crystal/Origin, Divinus Velvet, Baroque,
 Moondrop Spring, Final E, JVC Spiral Dot, Sennheiser foam, TENNMAK SoFoam and KZ tips. Other names,
@@ -224,13 +224,22 @@ Every (product, source, partition) must also have one except when a selected lab
 absent at that source and another source supplies defaults for that product in the **same partition**.
 Singleton unit/fit/unknown groups always become default. Otherwise missing defaults use the lowest
 numbered sample (or first unit), stock/neutral fit first, or the existing tuning/default tie-break and
-source order. Fallback selection sets `isDefault` without rewriting `kind`, with processing provenance:
-a sample or ambiguous setting can represent an otherwise unusable product without being called stock.
+source order. Every selected default has **`kind: 'default'` and `isDefault: true`**, retaining its
+original label and recording the previous kind in processing provenance. A sample or ambiguous setting
+can represent an otherwise unusable product without a claim that the measurement is stock. The build
+enforces `isDefault === (kind === 'default')` for every published measurement; coverage counts use
+`kind`, which is the field consumed by the engine, UI and rig evidence. Statistics uses the equivalent
+`isDefault` flag.
 Multiple defaults are reduced only when the selected labelled state is present; no encoding is guessed.
 `defaultCoverage` records counts before/after finalisation, selections, justified exceptions and every
 unresolved multiple-default group with filenames. A fatal assertion runs before statistics/publication
-if product coverage or the source exception rule is violated. Counts against the previous published
-catalog are recorded separately in the audit below, not confused with pre-finalisation counts.
+if kind/flag consistency, product coverage or the source exception rule is violated. Rig evidence sees
+kind-correct provisional defaults first; those choices are restored before final selection so final
+partition assignment, not provisional isolation, determines the published fallback. `rigDefaultCoverage`
+records the evidence input. The artifact audit builds the app's real `buildPartitionIndex` for every
+partition, in raw and harmonised modes, and requires a product candidate for every measured product in
+that partition. Counts against the previous published catalog are recorded separately in the audit
+below, not confused with pre-finalisation counts.
 Newer index schemas without `file` lists are reported as
 unsupported, not silently guessed. Source hardware, raw calibration, insertion, tips, seal and prices
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
@@ -591,49 +600,70 @@ type errors or warnings. The rebuild used the complete local cache; no crawl was
 
 #### Default-coverage correction (November 2026)
 
-The corrected offline build is **`8e9325862f3449439a431f18`**, retaining **9,610 products / 40,821
-measurements / 138 databases / 118 publishers**. Against `c103d7e36980d1b60a2e4bc5`, there are **zero
-removals, zero additions and zero product/source identity changes**. Retained channel metadata, dates,
-prices, review URLs and original/calibration URLs match. Original filenames are unchanged, including
-measurer credits; only their neutral label/descriptor interpretation changes.
+The corrected offline build is **`88d703e027619a6d562891fc`**, retaining **9,610 products / 40,821
+measurements / 138 databases / 118 publishers**. The previous flag-only build
+`8e9325862f3449439a431f18` was not app-compatible: its 584 `(non-default kind, isDefault: true)` rows
+left 526 product/partitions without engine consensus. Every selected default now has `kind: 'default'`
+and `isDefault: true`; labels are unchanged and previous kinds are recorded in processing provenance.
+Against that build there are **zero removals, zero additions and zero product/source identity changes**.
+Retained channel metadata, dates, prices, review URLs and original/calibration URLs also match.
 
-**Default coverage**, counted directly from the two catalogs (before → after):
+**Default coverage by `kind === 'default'`**, counted directly from the two catalogs
+(`8e93258…` → `88d703e…`):
 
 | Form      | Measured product/partitions | Product/partitions without default | Product/source groups without default | Product/source groups with multiple defaults |
 | --------- | --------------------------: | ---------------------------------: | ------------------------------------: | -------------------------------------------: |
-| IEM       |                       8,315 |                        497 → **0** |                          775 → **57** |                                  60 → **93** |
-| Headphone |                       2,840 |                        210 → **0** |                           210 → **0** |                                    0 → **0** |
-| Total     |                      11,155 |                        707 → **0** |                          985 → **57** |                                  60 → **93** |
+| IEM       |                       8,315 |                        318 → **0** |                          433 → **57** |                                  93 → **93** |
+| Headphone |                       2,840 |                        208 → **0** |                           208 → **0** |                                    0 → **0** |
+| Total     |                      11,155 |                        526 → **0** |                          641 → **57** |                                  93 → **93** |
 
 There are 20,645 IEM and 2,860 headphone product/source groups. Product/source/partition counts are
 identical here. All 57 remaining source exceptions lack the selected labelled state and have defaults
 from another source in the same partition. None represents a product/partition without a default.
 After parsing/reconciliation, before final coverage, 526 product/partitions and 641 source groups lack
 defaults. Finalisation makes 584 selections (583 deterministic fallbacks and one matching labelled
-state), leaving zero and 57 respectively. The fatal coverage assertion passes; tests also reach its
-failure paths for missing product coverage and unjustified missing source coverage.
+state), leaving zero and 57 respectively. Kind/flag invariant violations fall **376 → 0 IEM** and
+**208 → 0 headphone**. The fatal assertion passes; tests reach both invariant-mismatch directions as
+well as missing product coverage and unjustified missing source coverage. Rig evidence is recomputed
+using kind-correct provisional defaults, then published defaults are selected again in final partitions.
 
-The original 60 multiple-default sets are all unchanged: no selected labelled state is available to
-resolve them. The total rises to 93 because no-match inherited defaults are now preserved instead of
-cleared, and neutral attribution/context corrections expose further defaults. This is unresolved
-metadata, not 93 successful reconciliations. All 93 groups across 61 products are listed below; their
-full measurement IDs, filenames and suffixes are in `defaultCoverage.unresolvedMultipleDefaults`.
+The 93 multiple-default groups remain unresolved: no selected labelled state is available to resolve
+them. This is unresolved metadata, not 93 successful reconciliations. All groups across 61 products
+are listed below; their full measurement IDs, filenames and suffixes are in
+`defaultCoverage.unresolvedMultipleDefaults`.
 
 Requested examples now have defaults: dchpgall's Infinity Ultra, QCY T1 and Aroma Audio Core are not
 units merely because of `(by …)`; Nymz's Olina Sample 2, Animagus's Odin Sample 3, TGX78's KR5 Sample 2
-Silver ATOM, Ankramutt's Hola S2 and Enemyspider's modified Q1 PRO retain unit meaning with
-`isDefault: true`. Aftersound's CADENZA 12 S2 has no supporting source sample context, so S2 remains
-model text. Hore's D-Fi Switch 1011 covers its isolated partition. Eighteen mixed-tip curves need
-coverage defaults but retain `tuning`; no stock or switch-equivalence claim is added.
+Silver ATOM, Ankramutt's Hola S2 and Enemyspider's modified Q1 PRO are now `kind: 'default'`, preserving
+their sample/mod descriptions in names and labels. Aftersound's CADENZA 12 S2 has no supporting source
+sample context, so S2 remains model text. Hore's D-Fi Switch 1011 covers its isolated partition.
+Eighteen mixed-tip curves need coverage defaults; their labels and previous tuning kind remain
+traceable, without claiming a stock configuration or switch equivalence.
 
 All **232 sizes/SHA-256 hashes**, **229 decoded binary packs**, **40,821 rank curves** and **80,361
-detail-channel curves** pass references/coverage checks. Of the 229 binary artifacts, **228 are
-byte-identical** to the previous round, including every detail pack; only the iem-711 rank pack changes,
-which embeds the recalculated statistics. The seven protected K7/MRS curves remain non-default tuning.
-All 130 worked source listings match the corrected catalogs; only four rows change: Reference/Hobbytalk,
-Canon Pro/Aftersound, Canon Pro/HBB and Butastur/TGX78.
+detail-channel curves** pass references/coverage checks. All **121,182 decoded curve payloads** and all
+**229 binary artifacts** are unchanged from `8e93258…`. The seven protected K7/MRS curves remain
+non-default tuning. All 130 worked source listings match the corrected catalogs. Counting by kind,
+Reference/Hobbytalk now has its `CrinEar Reference S2` default; its 75-ohm adapter remains tuning.
+
+The audit runs the app's actual **`buildPartitionIndex`** on every published catalog/rank pack, in both
+raw and harmonised modes. It verifies the exact product-ID set, not just aggregate candidate counts:
+
+| Form      | Partitions | Measured product/partitions | Raw product candidates | Harmonised product candidates |
+| --------- | ---------: | --------------------------: | ---------------------: | ----------------------------: |
+| IEM       |         15 |                       8,315 |                  8,315 |                         8,315 |
+| Headphone |         42 |                       2,840 |                  2,840 |                         2,840 |
+| Total     |         57 |                  **11,155** |             **11,155** |                    **11,155** |
+
+There are zero missing product candidates. A cached-build integration test also reaches the real
+engine index with selected sample/fit/tuning defaults, without mocking engine behavior.
 
 Updated held-out IEM harmonisation, using the unchanged engine and support rules:
+
+These recomputed figures are unchanged from `8e93258…`: `statisticsProducts` already selected
+`isDefault` rows, unlike the app index and rig-evidence code. The repaired invariant now makes kind
+and flag selection equivalent. Rig projections are recomputed with the additional defaults; final
+partition membership is unchanged. No artificial statistical change is introduced.
 
 | Partition | Multi-source products | Sources | Held-out pairs | Mean before → after dB | Mean / median improvement dB | Fold mean-improvement range dB |
 | --------- | --------------------: | ------: | -------------: | ---------------------: | ---------------------------: | -----------------------------: |
@@ -643,11 +673,11 @@ Updated held-out IEM harmonisation, using the unchanged engine and support rules
 All five folds improve in each partition. Per-bin product support is 1,954–2,448 and 19–21;
 5128 evidence remains small and no cross-rig conversion is implied.
 
-SHA-256: manifest `b029df51c3b95eac1dd5bd149651b9f614251ab517a645309c376ce409c981f3`;
-IEM catalog `b95135e770acc5866be30c0aa4b7114f432202347753e844aaece98db8035236`;
-headphone catalog `da4e21cfafee00513a87d30b3129daa25452957f45305b50d17c0e6788b203b5`.
+SHA-256: manifest `8cbeba033c20744e2a12b83fa644f93391a8b3f7702823929b545acffaee3561`;
+IEM catalog `c29496a739bab519045be24efedc0f707cafa7984949bc1b54ef98b7aa7de418`;
+headphone catalog `dc5ad18dd335ae21441bfba18bbe089610f86b5884b9705e3bba17a68264927b`.
 
-`pnpm verify` passes **58 files / 791 tests**, with zero Svelte/type errors or warnings. `origin/main`
+`pnpm verify` passes **58 files / 793 tests**, with zero Svelte/type errors or warnings. `origin/main`
 remains `0b6ff4a37d411d7d9781aebef3c2b740bd90aa48`; no further rebase is needed. No crawl or push is run.
 
 ##### Unresolved multiple-default groups
@@ -724,7 +754,7 @@ No listed group has an available curve in its product's selected labelled state.
 The source listings below retain original filenames; a different original suffix follows in
 parentheses. Source IDs omit only their trailing hash. `none` means no eligible default or no tuning
 variant, not a missing measurement. Non-default fit, unit, setup and unknown variants are retained but
-not enumerated here; coverage defaults are listed regardless of kind. `variantReview` contains all
+not enumerated here; defaults are listed by `kind === 'default'`. `variantReview` contains all
 kinds and full source IDs.
 Unlabelled defaults are not evidence of a particular switch state. These results supersede the
 earlier switch-group examples above, not the historical artifact/removal counts.
