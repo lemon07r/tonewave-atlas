@@ -53,7 +53,8 @@
 				{#each data.measurements.filter((m) => !partition || m.measurement.partition === partition || m.measurement.id === currentMeasurement) as entry (entry.measurement.id)}
 					<option value={entry.measurement.id}
 						>{entry.source.name} · {entry.measurement.variant.label} · {rigLabel(
-							entry.measurement.partition
+							entry.measurement.partition,
+							[entry.source]
 						)}</option
 					>
 				{/each}

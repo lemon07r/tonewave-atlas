@@ -87,28 +87,36 @@ test('two aliases use stable profile order if neither entry already has the cano
 });
 
 test('three-way collisions retain all evidence matching the canonical winner, independent of reduction order', () => {
-	const result = migrateItems(
-		[
-			item('old', 'like'),
-			item('older', 'dislike', {
-				likedAspects: ['bass'],
-				dislikeReasons: ['other'],
-				soundRelated: false,
-				measurementId: 'old-variant'
-			}),
-			item('current', 'dislike', { likedAspects: ['mids'], dislikeReasons: ['bass-lacks-punch'] })
-		],
-		catalog
-	);
-	expect(result.items).toEqual([
-		item('current', 'dislike', {
-			likedAspects: ['bass', 'mids'],
-			dislikeReasons: ['other', 'bass-lacks-punch'],
+	const a = item('old', 'like');
+	const b = item('older', 'dislike', {
+		likedAspects: ['bass'],
+		dislikeReasons: ['other'],
+		soundRelated: false,
+		measurementId: 'old-variant'
+	});
+	const c = item('current', 'dislike', { likedAspects: ['mids'], dislikeReasons: ['bass-lacks-punch'] });
+	for (const rows of [
+		[a, b, c],
+		[a, c, b],
+		[b, a, c],
+		[b, c, a],
+		[c, a, b],
+		[c, b, a]
+	]) {
+		const result = migrateItems(rows, catalog);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]).toMatchObject({
+			productId: 'current',
+			rating: 'dislike',
 			soundRelated: false,
 			measurementId: 'variant'
-		})
-	]);
-	expect(result.messages).toEqual(['Fixture One: a duplicate rating from an older link was dropped (like).']);
+		});
+		expect(result.items[0]?.likedAspects?.toSorted()).toEqual(['bass', 'mids']);
+		expect(result.items[0]?.dislikeReasons?.toSorted()).toEqual(['bass-lacks-punch', 'other']);
+		expect(result.messages).toEqual([
+			'Fixture One: a duplicate rating from an older link was dropped (like).'
+		]);
+	}
 });
 
 test('a split with no product redirect resolves only through its explicit measurement', () => {

@@ -12,7 +12,7 @@ export function migrationMessages(messages: readonly string[]): string[] {
 	const fresh = [...new Set(messages)].filter((message) => !seen.has(message));
 	for (const message of fresh) seen.add(message);
 	try {
-		sessionStorage.setItem(key, JSON.stringify([...seen].slice(-100)));
+		sessionStorage.setItem(key, JSON.stringify([...seen]));
 	} catch {
 		/* A notice must never prevent loading the catalog. */
 	}

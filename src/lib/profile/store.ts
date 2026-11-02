@@ -7,14 +7,18 @@ export function profileStore(storage: Storage) {
 	let value = emptyProfile();
 	let previous: Profile | undefined;
 	let error = '';
+	let sessionOnly = false;
 	try {
 		const saved = storage.getItem(PROFILE_KEY);
 		if (saved) value = parseProfile(saved);
 	} catch {
-		error = 'Saved profile could not be read. It has not been overwritten; export your edits to keep them.';
+		sessionOnly = true;
+		error =
+			'Saved profile could not be read. It has not been overwritten. Edits stay in this session; export them to keep them.';
 	}
 	function write(next: Profile) {
 		value = next;
+		if (sessionOnly) return;
 		try {
 			storage.setItem(PROFILE_KEY, JSON.stringify(next));
 			error = '';
@@ -40,6 +44,9 @@ export function profileStore(storage: Storage) {
 		restoreSession(before: Profile) {
 			value = before;
 			previous = undefined;
+			sessionOnly = true;
+			error =
+				'This restored profile and further edits are session-only. The saved canonical profile is unchanged; export your edits to keep them.';
 		},
 		undo() {
 			if (previous) {

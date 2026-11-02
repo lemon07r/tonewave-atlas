@@ -42,8 +42,12 @@
 			}}
 		/>
 	</div>
-	{#if item.rating === 'unrated'}<p class="inactive">
-			Not used for matching until you give it a sound-related rating.
+	{#if item.rating === 'unrated' || item.rating === 'neutral' || !item.soundRelated}<p class="inactive">
+			{!item.soundRelated
+				? 'Fit or comfort only · not used for sound matching.'
+				: item.rating === 'neutral'
+					? 'Neutral · not used for sound matching.'
+					: 'Not used for matching until you give it a sound-related rating.'}
 		</p>{/if}
 	<details bind:open>
 		<summary>Details<span class="sr-only"> for {name}</span></summary>

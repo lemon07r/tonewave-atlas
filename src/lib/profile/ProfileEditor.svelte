@@ -32,7 +32,7 @@
 			onchange={(next: WorkspaceItem) => {
 				onchange(
 					items.map((row) => (row.productId === next.productId ? next : row)),
-					'Rating updated.'
+					'Preferences updated.'
 				);
 			}}
 			onremove={() => {

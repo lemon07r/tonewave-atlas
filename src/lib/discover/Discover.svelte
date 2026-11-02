@@ -181,6 +181,7 @@
 		migrationUndone = true;
 		store.restoreSession(migrationBefore.profile);
 		profile = store.value;
+		storageError = store.error;
 		const restored = new URL(migrationBefore.url, page.url.href);
 		void goto(resolve(`${restored.pathname}${restored.search}${restored.hash}` as PathnameWithSearchOrHash), {
 			state: page.state,
@@ -200,7 +201,7 @@
 	}
 	function updateItems(next: WorkspaceItem[], message = 'Workspace updated.') {
 		if (!store) return;
-		const before = { ...profile, profiles: { ...profile.profiles, [form]: items } };
+		const before = profile;
 		store.change({ ...profile, profiles: { ...profile.profiles, [form]: next } }, before);
 		profile = store.value;
 		storageError = store.error;
@@ -271,12 +272,12 @@
 			const migrated = migrateProfile(parsed, catalogs);
 			const next = migrated.profile;
 			migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
-			if (migrated.droppedRating)
+			if (migrated.droppedRating && !migrationBefore)
 				migrationBefore = {
 					profile: parsed,
 					url: `/?${withItems(page.url.searchParams, parsed.profiles[form])}`
 				};
-			store.change(next, { ...profile, profiles: { ...profile.profiles, [form]: items } });
+			store.change(next, profile);
 			profile = store.value;
 			storageError = store.error;
 			undoMessage = 'Profile imported.';

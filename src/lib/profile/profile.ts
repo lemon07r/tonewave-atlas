@@ -6,8 +6,8 @@ export const PROFILE_KEY = 'tonewave.profile.v1';
 export const PROFILE_LIMIT = 200;
 export const reasonLabels: Record<DislikeReason, string> = {
 	...DISLIKE_REASON_LABELS,
-	'tonal-balance-wrong': `${DISLIKE_REASON_LABELS['tonal-balance-wrong']} (overall balance)`,
-	other: `${DISLIKE_REASON_LABELS.other} (other reason)`
+	'tonal-balance-wrong': 'Tonal balance just wrong',
+	other: 'Other'
 };
 export const aspectLabels = {
 	bass: 'Bass',
