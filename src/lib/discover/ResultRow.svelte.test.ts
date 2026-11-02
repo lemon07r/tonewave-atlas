@@ -25,7 +25,7 @@ test('keeps small reference and band headers readable with normal tracking and e
 		rank: 1,
 		distance: 0.8,
 		bands: [{ band: 'sub-bass', meanDb: 1, rmsDb: 1, contribution: 0.3, coverage: 1 }],
-		tradeoff: { distances: [0.76, 0.84], mean: 0.8, minimax: 0.84, pareto: true },
+		tradeoff: { distances: [0.76, 0.84], offsets: [0, 0], mean: 0.8, minimax: 0.84, pareto: true },
 		referenceNames: ['CrinEar Reference', 'Softears Volume S'],
 		onshow: vi.fn()
 	});

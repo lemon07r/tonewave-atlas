@@ -40,7 +40,7 @@ test('compare overlays preserve exact returned values aligned to the second refe
 				rankCurve: ranked,
 				offsetDb: 7,
 				alignedTo: 1,
-				tradeoff: { distances: [null, 1], mean: null, minimax: null, pareto: false }
+				tradeoff: { distances: [null, 1], offsets: [null, 0], mean: null, minimax: null, pareto: false }
 			}
 		],
 		counts: { candidates: 1, pareto: 0 },

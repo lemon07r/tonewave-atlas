@@ -38,7 +38,7 @@ test('separates overlays by returned alignment reference and excludes null align
 			alignedTo,
 			offsetDb: 0,
 			rankCurve: new Float64Array([2, 3, 4]),
-			tradeoff: { distances: [1, 1], mean: 1, minimax: 1, pareto: true }
+			tradeoff: { distances: [1, 1], offsets: [0, 0], mean: 1, minimax: 1, pareto: true }
 		})),
 		counts: { candidates: 3, pareto: 3 },
 		caveats: []
