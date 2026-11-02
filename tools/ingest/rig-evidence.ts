@@ -123,15 +123,17 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		};
 	};
 	const direction = directionFor('');
-	const details = sources.map((source) => {
+	const scoreSource = (source: Source, vector: Direction, exclude: string) => {
 		const control = family.get(source.id) ?? null;
-		const vector = control ? directionFor(source.id) : direction;
 		const residuals: number[][] = [],
 			distances: number[] = [];
 		for (const rows of byProduct.values()) {
 			const own = rows.find((r) => r.measurement.sourceId === source.id);
 			const others = rows.filter(
-				(r) => r.measurement.sourceId !== source.id && family.get(r.measurement.sourceId) === '711'
+				(r) =>
+					r.measurement.sourceId !== source.id &&
+					r.measurement.sourceId !== exclude &&
+					family.get(r.measurement.sourceId) === '711'
 			);
 			if (!own || others.length < 3) continue;
 			const ref = consensus(others, RANK_GRID);
@@ -144,7 +146,11 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		}
 		const value = residuals.length ? projection(residuals, vector) : NaN;
 		const interval = Number.isFinite(value)
-			? bounds(bootstrap(residuals, `score:${source.id}`, iterations).map((rs) => projection(rs, vector)))
+			? bounds(
+					bootstrap(residuals, `score:${source.id}:${exclude}`, iterations).map((rs) =>
+						projection(rs, vector)
+					)
+				)
 			: null;
 		const score: RigScore = {
 			source: source.id,
@@ -160,24 +166,71 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 			family: control
 		};
 		return { score, vector, residuals };
-	});
-	const controls = details.filter((d) => d.score.control && d.score.interval);
-	const a = controls.filter((d) => d.score.control === '711'),
-		b = controls.filter((d) => d.score.control === '5128');
-	const upper711 = Math.max(...a.map((d) => d.score.interval?.[1] ?? Infinity));
-	const lower5128 = Math.min(...b.map((d) => d.score.interval?.[0] ?? -Infinity));
-	const scoreGap =
-		Math.min(...b.map((d) => d.score.projection ?? -Infinity)) -
-		Math.max(...a.map((d) => d.score.projection ?? Infinity));
-	const typicalWidth = median(
-		controls.map((d) => (d.score.interval?.[1] ?? NaN) - (d.score.interval?.[0] ?? NaN))
+	};
+	const details = sources.map((source) =>
+		scoreSource(source, family.has(source.id) ? directionFor(source.id) : direction, '')
 	);
-	const separated = a.length >= 3 && b.length >= 2 && lower5128 > upper711 && scoreGap > 3 * typicalWidth;
-	const threshold = separated ? (upper711 + lower5128) / 2 : null;
+	const controls = details.filter((d) => d.score.control && d.score.interval);
+	const fitThreshold = (training: typeof controls) => {
+		const a = training.filter((d) => d.score.control === '711'),
+			b = training.filter((d) => d.score.control === '5128');
+		const upper711 = Math.max(...a.map((d) => d.score.interval?.[1] ?? Infinity));
+		const lower5128 = Math.min(...b.map((d) => d.score.interval?.[0] ?? -Infinity));
+		const scoreGap =
+			Math.min(...b.map((d) => d.score.projection ?? -Infinity)) -
+			Math.max(...a.map((d) => d.score.projection ?? Infinity));
+		const typicalWidth = median(
+			training.map((d) => (d.score.interval?.[1] ?? NaN) - (d.score.interval?.[0] ?? NaN))
+		);
+		const separated = a.length >= 3 && b.length >= 2 && lower5128 > upper711 && scoreGap > 3 * typicalWidth;
+		const threshold = separated ? (upper711 + lower5128) / 2 : null;
+		return { threshold, separated, separation: { upper711, lower5128, scoreGap, typicalWidth } };
+	};
+	const { threshold, separated, separation } = fitThreshold(controls);
+	// Each outer fold fits ALL learned quantities solely on the other controls. The training
+	// scores share that fold's direction; their reference still excludes their own source.
+	const locoDetails = controls.map((held) => {
+		const exclude = held.score.source;
+		const vector = directionFor(exclude);
+		const training = sources
+			.filter((s) => family.has(s.id) && s.id !== exclude)
+			.map((s) => scoreSource(s, vector, exclude))
+			.filter((d) => d.score.interval);
+		const fit = fitThreshold(training);
+		const interval = held.score.interval;
+		const prediction =
+			fit.threshold !== null && interval
+				? interval[1] < fit.threshold - 1e-9
+					? '711'
+					: interval[0] > fit.threshold + 1e-9
+						? '5128'
+						: null
+				: null;
+		return {
+			held,
+			threshold: fit.threshold,
+			result: {
+				source: exclude,
+				expected: held.score.control,
+				predicted: prediction,
+				correct: prediction === held.score.control,
+				threshold: fit.threshold,
+				separated: fit.separated,
+				separation: fit.separation,
+				projection: held.score.projection,
+				interval,
+				sharedProducts: held.score.sharedProducts,
+				directionProducts: vector.products,
+				directionBins: vector.mask.filter(Boolean).length,
+				training: training.map((d) => d.score)
+			}
+		};
+	});
+	const locoPasses = locoDetails.length > 0 && locoDetails.every((d) => d.result.correct);
 	// Fixed, nested candidate sizes. Require >=99% correct on EVERY eligible control, not pooled accuracy.
 	const stability = [4, 8, 12, 16, 20, 24, 32].map((n) => {
-		const eligible = controls.filter((d) => d.residuals.length >= n);
-		const results = eligible.map((d) => {
+		const eligible = locoDetails.filter((d) => d.held.residuals.length >= n);
+		const results = eligible.map(({ held: d, threshold }) => {
 			const next = random(`stability:${d.score.source}:${n}`);
 			let correct = 0;
 			for (let trial = 0; trial < 200; trial++) {
@@ -200,7 +253,8 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 			controls: results,
 			passes:
 				separated &&
-				eligible.filter((d) => d.score.control === '5128').length >= 2 &&
+				locoPasses &&
+				eligible.filter((d) => d.held.score.control === '5128').length >= 2 &&
 				results.every((r) => r.correct >= 198)
 		};
 	});
@@ -208,6 +262,7 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 	for (const { score } of details) {
 		if (
 			!score.control &&
+			locoPasses &&
 			threshold !== null &&
 			minimumProducts !== null &&
 			score.sharedProducts >= minimumProducts &&
@@ -223,12 +278,18 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		}
 	}
 	return {
-		method: `product-bootstrap signed projection onto 5128-minus-711 aligned consensus; 95% percentile intervals; ${iterations} replicates; direction CI excludes zero and >=50% product support; >=3 other verified 711 sources per product; controls leave source out of both direction and reference`,
+		method: `product-bootstrap signed projection onto 5128-minus-711 aligned consensus; 95% percentile intervals; ${iterations} replicates; direction CI excludes zero and >=50% product support; >=3 other verified 711 sources per product; nested leave-one-control-out direction, reference, threshold and stability`,
 		direction,
 		threshold,
 		minimumProducts,
 		separated,
-		separation: { upper711, lower5128, scoreGap, typicalWidth },
+		separation,
+		loco: {
+			passes: locoPasses,
+			correct: locoDetails.filter((d) => d.result.correct).length,
+			controls: locoDetails.map((d) => d.result),
+			unscored: details.filter((d) => d.score.control && !d.score.interval).map((d) => d.score.source)
+		},
 		stability,
 		sources: details.map((d) => d.score)
 	};

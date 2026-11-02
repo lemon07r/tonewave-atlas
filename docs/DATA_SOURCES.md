@@ -91,11 +91,15 @@ reference and direction. Total response distance is retained for comparison, not
 
 The threshold bisects the nearest control interval bounds. Controls must have disjoint intervals and
 a score gap exceeding three times their median interval width (at least three 711 and two 5128 controls).
+Validation is nested leave-one-control-out: each fold refits direction, reference and threshold with
+the held-out source absent, then classifies its interval. Training controls share that fold's direction
+and each excludes itself from its reference. Every scored held-out control must classify correctly;
+any failure keeps all unverified sources unknown. Unscorable controls are reported, not called correct.
 Minimum overlap is selected from 4/8/12/16/20/24/32 products: 200 subsamples without replacement must
-classify correctly in at least 99% of trials for **every** eligible control, including at least two
+classify correctly against that control's held-out threshold in at least 99% of trials for **every** eligible control, including at least two
 5128 controls. An unverified source needs that overlap and an interval wholly on one side of the
 threshold; otherwise it stays unknown. Insufficiently separated/stable controls stop the real build.
-The report records the direction, bin support, control scores, intervals, stability trials and every
+The report records the direction, bin support, control scores, intervals, LOCO training/held-out results, stability trials and every
 source decision. No unverified source trains this test; evidenced sources do not certify hardware.
 
 ### Partition statistics

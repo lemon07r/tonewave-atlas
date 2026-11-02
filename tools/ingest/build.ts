@@ -669,7 +669,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	const hasControls =
 		rigReport.sources.some((s) => s.control === '5128') && rigReport.sources.some((s) => s.control === '711');
-	if (hasControls && (!rigReport.separated || rigReport.minimumProducts === null)) {
+	if (hasControls && (!rigReport.separated || !rigReport.loco.passes || rigReport.minimumProducts === null)) {
 		await atomicWrite(resolve(paths.cache, 'rig-evidence-blocked.json'), JSON.stringify(rigReport, null, 2));
 		throw new Error(
 			`BLOCKED: rig projection controls do not separate/stabilise; see rig-evidence-blocked.json (${JSON.stringify(rigReport.separation)})`

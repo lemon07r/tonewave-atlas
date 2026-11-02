@@ -6,7 +6,8 @@ import type { IndexedCurve } from '#core/atlas/index.ts';
 import type { Source } from '#core/dataset/types.ts';
 
 function fixture() {
-	const names = ['a', 'b', 'c', 'd', 'x', 'y', 'z', 'u711', 'u5128', 'middle', 'small'];
+	// Five 711 controls allow >=3 OTHER 711 references even inside each training fold.
+	const names = ['a', 'b', 'c', 'd', 'e', 'x', 'y', 'z', 'u711', 'u5128', 'middle', 'small'];
 	const sources: Source[] = names.map((id, i) =>
 		sourceFor(
 			{
@@ -14,9 +15,9 @@ function fixture() {
 				username: id,
 				name: id,
 				url: `https://${id}.invalid/`,
-				dbType: i >= 4 && i < 7 ? '5128' : 'IEMs'
+				dbType: i >= 5 && i < 8 ? '5128' : 'IEMs'
 			},
-			i < 4 ? 'rig_description="clone 711"' : '',
+			i < 5 ? 'rig_description="clone 711"' : '',
 			'date',
 			{}
 		)
@@ -64,12 +65,38 @@ function fixture() {
 }
 
 describe('signed rig evidence', () => {
+	it('does not admit unknown rigs when a held-out control fails a threshold trained without it', () => {
+		const { sources, rows } = fixture();
+		const biased = rows.map((r) =>
+			r.measurement.sourceId === 'a'
+				? { ...r, values: Float64Array.from(r.values, (v, bin) => v + 0.7 * (bin % 2 ? 2 : -2)) }
+				: r
+		);
+		const report = rigEvidence(sources, biased, 40);
+		// The all-control threshold moves to .85 and calls this .7 control "711";
+		// the other controls alone set .5, so the held-out control is actually misclassified.
+		expect(report.sources.filter((s) => !s.control).every((s) => s.class === 'unknown')).toBe(true);
+		expect(report.loco.controls.find((c) => c.source === 'a')).toMatchObject({
+			expected: '711',
+			predicted: '5128',
+			correct: false
+		});
+		expect(report.loco.passes).toBe(false);
+		expect(report.loco.controls.find((c) => c.source === 'a')?.threshold).toBeCloseTo(0.5, 10);
+		for (const control of report.loco.controls.find((c) => c.source === 'a')?.training ?? [])
+			expect(control.projection).toBeCloseTo(control.control === '711' ? 0 : 1, 10);
+	});
 	it('recovers independently constructed 0/1 projections, abstains at the midpoint and below stability support', () => {
 		const { sources, rows } = fixture();
 		const r = rigEvidence(sources, rows, 40);
 		expect(r.separated).toBe(true);
 		expect(r.threshold).toBeCloseTo(0.5, 10);
 		expect(r.minimumProducts).toBe(4);
+		expect(r.loco).toMatchObject({ passes: true, correct: 8 });
+		for (const fold of r.loco.controls) {
+			expect(fold.threshold).toBeCloseTo(0.5, 10);
+			expect(fold.training.some((c) => c.source === fold.source)).toBe(false);
+		}
 		expect(r.direction.mask.every(Boolean)).toBe(true);
 		r.direction.delta.forEach((d, i) => {
 			expect(d).toBeCloseTo(i % 2 ? 2 : -2, 10);
