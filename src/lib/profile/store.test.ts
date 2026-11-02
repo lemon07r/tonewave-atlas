@@ -36,3 +36,46 @@ test('a restored migration session cannot overwrite canonical storage on the nex
 	expect(setItem).not.toHaveBeenCalled();
 	expect(PROFILE_KEY).toBe('tonewave.profile.v1');
 });
+
+test('a restored migration session and later edits survive a new store without touching canonical storage', () => {
+	const setItem = vi.fn();
+	const canonical = { getItem: () => JSON.stringify(emptyProfile()), setItem };
+	const values = new Map<string, string>();
+	const session = {
+		getItem: (key: string) => values.get(key) ?? null,
+		setItem: (key: string, value: string) => {
+			values.set(key, value);
+		}
+	};
+	const first = profileStore(canonical, session);
+	first.restoreSession(edited);
+	const remount = profileStore(canonical, session);
+	expect(remount.value).toEqual(edited);
+	expect(remount.restoredSession).toBe(true);
+	const next = { ...edited, profiles: { ...edited.profiles, headphone: edited.profiles.iem } };
+	remount.change(next);
+	expect(profileStore(canonical, session).value).toEqual(next);
+	remount.undo();
+	expect(profileStore(canonical, session).value).toEqual(edited);
+	expect(profileStore(canonical).value).toEqual(emptyProfile());
+	expect(setItem).not.toHaveBeenCalled();
+});
+
+test('malformed tab state is ignored, and failed session writes never fall back to canonical writes', () => {
+	const setItem = vi.fn();
+	const storage = { getItem: () => JSON.stringify(emptyProfile()), setItem };
+	const store = profileStore(storage, {
+		getItem: () => '{invalid',
+		setItem: () => {
+			throw new Error('blocked');
+		}
+	});
+	expect(store.value).toEqual(emptyProfile());
+	expect(store.restoredSession).toBe(false);
+	store.restoreSession(edited);
+	store.change(emptyProfile());
+	store.undo();
+	expect(store.value).toEqual(edited);
+	expect(store.error).toContain('Tab storage is unavailable');
+	expect(setItem).not.toHaveBeenCalled();
+});

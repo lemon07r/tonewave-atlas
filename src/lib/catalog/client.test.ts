@@ -57,8 +57,19 @@ for (const event of ['error', 'messageerror']) {
 		const first = catalogMetadata('one'),
 			second = catalogMetadata('two');
 		const outcomes = Promise.allSettled([first, second]);
-		workerAt().dispatchEvent(new Event(event));
-		expect((await outcomes).map((outcome) => outcome.status)).toEqual(['rejected', 'rejected']);
+		const failure =
+			event === 'error'
+				? new ErrorEvent(event, {
+						message: 'worker parse failed',
+						filename: 'metadata.worker.js',
+						lineno: 42
+					})
+				: new MessageEvent(event);
+		workerAt().dispatchEvent(failure);
+		const settled = await outcomes;
+		expect(settled.map((outcome) => outcome.status)).toEqual(['rejected', 'rejected']);
+		for (const outcome of settled)
+			if (outcome.status === 'rejected') expect(outcome.reason).toHaveProperty('cause', failure);
 		expect(workerAt().terminate).toHaveBeenCalledOnce();
 		const retry = catalogMetadata('one');
 		expect(workers).toHaveLength(2);

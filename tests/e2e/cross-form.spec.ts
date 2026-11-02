@@ -185,11 +185,18 @@ for (const version of [1, 2]) {
 		expect(parseProfile(await page.evaluate((key) => localStorage.getItem(key) ?? '', PROFILE_KEY))).toEqual(
 			expected
 		);
-		// Explicit shared ratings override storage. Reopen the saved workspace to test persistence.
+		// The restored tab session must survive returning without explicit URL ratings.
 		await page.goto('/');
-		await page.reload();
-		await expect(page.locator('.profile-row')).toHaveCount(1);
+		await expect(page.locator('.profile-row')).toHaveCount(3);
 		await expect(note).toHaveCount(0);
+		// A fresh tab has no restored migration session and still reads canonical localStorage.
+		const fresh = await page.context().newPage();
+		try {
+			await fresh.goto('/');
+			await expect(fresh.locator('.profile-row')).toHaveCount(1);
+		} finally {
+			await fresh.close();
+		}
 	});
 }
 

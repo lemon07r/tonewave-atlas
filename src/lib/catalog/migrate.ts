@@ -68,14 +68,15 @@ export function profileNeedsOtherCatalog(profile: Profile, form: Form, catalog: 
 	);
 }
 
-/** An explicit surviving measurement can disambiguate a split with no product redirect. */
+/** A redirected measurement adopts its surviving owner, matching the engine's split policy. */
 export function canonicalItem(item: WorkspaceItem, catalog: CatalogIdentity): WorkspaceItem {
 	const productId = catalog.productId(item.productId);
 	const measurementId = item.measurementId ? catalog.measurementId(item.measurementId) : undefined;
 	const owner = measurementId ? catalog.measurementProduct(measurementId) : undefined;
+	const movedOwner = measurementId !== item.measurementId ? owner : undefined;
 	return {
 		...item,
-		productId: productId ?? owner ?? item.productId,
+		productId: movedOwner ?? productId ?? owner ?? item.productId,
 		...(item.measurementId ? { measurementId: measurementId ?? item.measurementId } : {})
 	};
 }
@@ -279,7 +280,8 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity, other?: CatalogId
 		if (!id) continue;
 		const measurement = params.get(key === 'ref' ? 'm' : 'measurement');
 		const owner = measurement ? catalog.measurementProduct(measurement) : undefined;
-		setChanged(key, !catalog.productId(id) && owner ? owner : resolve(id, 'product'));
+		const moved = measurement && catalog.measurementId(measurement) !== measurement;
+		setChanged(key, owner && (moved || !catalog.productId(id)) ? owner : resolve(id, 'product'));
 	}
 	for (const [key, kind] of [
 		['refs', 'product'],

@@ -129,6 +129,37 @@ test('a split with no product redirect resolves only through its explicit measur
 	expect(unresolved.messages[0]).toContain('could not be resolved');
 });
 
+test('a redirected measurement owner wins over a surviving or redirected former product', () => {
+	const split = new CatalogIdentity({
+		...fixture,
+		redirects: { products: { old: 'current' }, measurements: { moved: 'split-variant' } }
+	});
+	for (const productId of ['current', 'old']) {
+		const original = item(productId, 'like', { measurementId: 'moved' });
+		const expected = item('split-current', 'like', { measurementId: 'split-variant' });
+		expect(canonicalItem(original, split)).toEqual(expected);
+		expect(
+			migrateProfile({ version: 2, profiles: { iem: [original], headphone: [] } }, { iem: split }).profile
+				.profiles.iem
+		).toEqual([expected]);
+		for (const [key, measurementKey] of [
+			['ref', 'm'],
+			['product', 'measurement']
+		] as const) {
+			const url = new URL(`https://example.org/?${key}=${productId}&${measurementKey}=moved`);
+			const migrated = migrateUrl(url, split);
+			expect(migrated.url.searchParams.get(key)).toBe('split-current');
+			expect(migrated.url.searchParams.get(measurementKey)).toBe('split-variant');
+			expect(migrateUrl(migrated.url, split).changed).toBe(false);
+		}
+	}
+	// A current mismatched pair is still invalid, not a license to repair arbitrary evidence.
+	const mismatched = item('current', 'like', { measurementId: 'split-variant' });
+	expect(canonicalItem(mismatched, split)).toEqual(mismatched);
+	const invalidUrl = new URL('https://example.org/?ref=current&m=split-variant');
+	expect(migrateUrl(invalidUrl, split).url.href).toBe(invalidUrl.href);
+});
+
 test('migrates v1 and v2 payloads, keeps both forms separate, and Undo restores only the session', () => {
 	for (const version of [1, 2]) {
 		let saved = JSON.stringify({

@@ -82,6 +82,7 @@
 	let uploadRig = $state('');
 	let uploadError = $state('');
 	let uploadLoading = $state(false);
+	let uploadGeneration = 0;
 	let items = $derived(settings.items ?? profile.profiles[form]);
 	let starting = $derived(!items.length && !upload);
 	let route = $derived(upload ? 'similar' : discoveryRoute(items, settings.view));
@@ -218,7 +219,7 @@
 	}
 	function updateItems(next: WorkspaceItem[], message = 'Workspace updated.') {
 		if (!store) return;
-		const before = profile;
+		const before = { ...profile, profiles: { ...profile.profiles, [form]: items } };
 		store.change({ ...profile, profiles: { ...profile.profiles, [form]: next } }, before);
 		profile = store.value;
 		storageError = store.error;
@@ -309,32 +310,50 @@
 		const file = input.files?.[0];
 		if (!file || !uploadRig) return;
 		const rig = uploadRig;
+		const generation = ++uploadGeneration;
+		const href = page.url.href;
+		const current = () => generation === uploadGeneration && page.url.href === href;
 		uploadLoading = true;
 		uploadError = '';
 		try {
 			if (file.size > 5_000_000) throw new Error('Measurement file is too large (maximum 5 MB).');
-			const parsed = await (await analysis()).parseUpload(await file.text(), file.name);
+			const text = await file.text();
+			if (!current()) return;
+			const service = await analysis();
+			if (!current()) return;
+			const parsed = await service.parseUpload(text, file.name);
+			if (!current()) return;
 			if (!parsed.ok) throw new Error(parsed.error);
 			upload = { id: parsed.uploadId, name: file.name, rig, values: parsed.values };
 			change({ chart: undefined, sources: undefined });
 		} catch (cause) {
-			uploadError = errorText(cause);
+			if (current()) uploadError = errorText(cause);
 		} finally {
-			uploadLoading = false;
-			input.value = '';
+			if (generation === uploadGeneration) {
+				uploadLoading = false;
+				input.value = '';
+			}
 		}
 	}
 	onMount(() => {
-		store = profileStore({
-			getItem: (key) => localStorage.getItem(key),
-			setItem: (key, value) => {
-				localStorage.setItem(key, value);
+		store = profileStore(
+			{
+				getItem: (key) => localStorage.getItem(key),
+				setItem: (key, value) => {
+					localStorage.setItem(key, value);
+				}
+			},
+			{
+				getItem: (key) => sessionStorage.getItem(key),
+				setItem: (key, value) => {
+					sessionStorage.setItem(key, value);
+				}
 			}
-		});
+		);
 		const pending = takeMigration(page.url.href);
 		if (pending?.restored) store.restoreSession(pending.restored);
 		migrationBefore = pending?.before;
-		migrationUndone = pending?.undone ?? false;
+		migrationUndone = store.restoredSession || (pending?.undone ?? false);
 		migrationNote = pending?.messages ?? [];
 		profile = store.value;
 		storageError = store.error;
@@ -371,6 +390,7 @@
 				}
 			});
 		return () => {
+			uploadGeneration++;
 			startup.abort();
 			controller.invalidate();
 		};

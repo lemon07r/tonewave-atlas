@@ -1,6 +1,12 @@
 import { expect, test, vi } from 'vitest';
 import type { ProductListItem } from '#core/atlas/types.ts';
-import { catalogIdentity, migrationCatalogs, priceListings, productFor } from './data.ts';
+import {
+	catalogIdentity,
+	migrationCatalogs,
+	priceListings,
+	productFor,
+	productMeasurements
+} from './data.ts';
 import { gzipSync } from 'node:zlib';
 
 vi.mock('#lib/catalog/client.ts', async () => ({
@@ -72,6 +78,49 @@ test('migration lookup fetches the other form only for unresolved identities and
 		const retry = await migrationCatalogs('iem', 'cross-form', new URL('https://example.org/?ref=headphone'));
 		expect(retry.headphone?.productId('headphone')).toBe('headphone');
 		expect(fetch).toHaveBeenCalledTimes(3);
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
+test('real product metadata lookup returns only the canonical product rows, never another product or an unknown ID', async () => {
+	const fixture = {
+		partitions: [],
+		sources: [{ id: 's', name: 'Reviewer' }],
+		products: [
+			{ id: 'p', brand: 'Fixture', model: 'One' },
+			{ id: 'other', brand: 'Fixture', model: 'Other' }
+		],
+		measurements: ['p', 'other'].map((productId) => ({
+			id: `m-${productId}`,
+			productId,
+			sourceId: 's',
+			partition: 'iem-711',
+			variant: { label: 'Default', kind: 'default' }
+		})),
+		redirects: { products: { old: 'p' }, measurements: {} }
+	};
+	const fetch = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(() => Promise.resolve(new Response(JSON.stringify(fixture))));
+	try {
+		const signal = new AbortController().signal;
+		const rows = await productMeasurements('iem', 'metadata-lookup', 'old', signal);
+		expect(rows).toEqual([
+			{
+				id: 'm-p',
+				productId: 'p',
+				brand: 'Fixture',
+				model: 'One',
+				sourceId: 's',
+				sourceName: 'Reviewer',
+				partition: 'iem-711',
+				variantLabel: 'Default',
+				variantKind: 'default'
+			}
+		]);
+		await expect(productMeasurements('iem', 'metadata-lookup', 'unknown', signal)).resolves.toEqual([]);
+		expect(fetch).toHaveBeenCalledWith('/data/metadata-lookup/catalog-iem.json.gz', { signal });
 	} finally {
 		fetch.mockRestore();
 	}

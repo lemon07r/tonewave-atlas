@@ -118,10 +118,63 @@ for (const version of [1, 2]) {
 			'aria-busy',
 			'false'
 		);
-		await expect(page.locator('.profile-row')).toHaveCount(1);
+		await expect(page.locator('.profile-row')).toHaveCount(2);
 		await expect(note).toHaveCount(0);
+		const fresh = await page.context().newPage();
+		try {
+			await fresh.goto('/');
+			await expect(fresh.locator('.profile-row')).toHaveCount(1);
+		} finally {
+			await fresh.close();
+		}
 	});
 }
+
+test('migration Undo and later session edits survive form switches and route remounts', async ({ page }) => {
+	const before = {
+		version: 2,
+		profiles: { iem: [like('legacy-product'), dislike(reference)], headphone: [] }
+	};
+	await page.addInitScript(
+		({ key, text }) => {
+			if (!localStorage.getItem(key)) localStorage.setItem(key, text);
+		},
+		{ key: PROFILE_KEY, text: JSON.stringify(before) }
+	);
+	await page.goto('/');
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	await note.getByRole('button', { name: 'Undo', exact: true }).click();
+	const saved = await page.evaluate((key) => localStorage.getItem(key), PROFILE_KEY);
+	for (const form of ['Headphones', 'IEMs']) {
+		const menu = page.getByRole('button', { name: 'Open navigation', exact: true });
+		if (await menu.isVisible()) await menu.click();
+		await page.getByRole('radio', { name: form, exact: true }).check();
+	}
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await page.locator('.profile-row').first().getByRole('radio', { name: 'Neutral', exact: true }).check();
+	await expect.poll(() => new URL(page.url()).searchParams.get('ratings')).toContain('neutral');
+	await page.goto('/compare');
+	await page.goto('/');
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await expect(
+		page.locator('.profile-row').first().getByRole('radio', { name: 'Neutral', exact: true })
+	).toBeChecked();
+	expect(await page.evaluate((key) => localStorage.getItem(key), PROFILE_KEY)).toBe(saved);
+});
+
+test('Explore retains its product detail when only auxiliary identities migrate', async ({ page }) => {
+	for (const [key, value, canonical] of [
+		['chart', 'legacy-hexa', hexa],
+		['diff', 'legacy-measurement', variant],
+		['refs', 'legacy-hexa', hexa],
+		['ratings', JSON.stringify([like('legacy-hexa')]), JSON.stringify([like(hexa)])]
+	] as const) {
+		await page.goto(`/explore?${new URLSearchParams({ product: reference, [key]: value })}`);
+		await expect.poll(() => new URL(page.url()).searchParams.get(key)).toBe(canonical);
+		await expect(page.getByRole('heading', { name: 'Reference', exact: true })).toBeVisible();
+		await expect(page.locator('.catalog-row')).toHaveCount(0);
+	}
+});
 
 test('split aliases require an explicit measurement, and unresolved links are retained with a one-time quiet note', async ({
 	page

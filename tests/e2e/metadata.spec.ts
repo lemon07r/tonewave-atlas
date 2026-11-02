@@ -1,4 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
+
+async function assertTruthearRows(rows: Locator, timeout = 5000) {
+	await expect(rows.first()).toContainText('Truthear', { timeout });
+	await expect(rows.filter({ hasNotText: 'Truthear' })).toHaveCount(0, { timeout });
+}
+
+test('the brand-filter assertion rejects empty and mixed result sets', async ({ page }) => {
+	await page.setContent('<main>No rows</main>');
+	await expect(assertTruthearRows(page.locator('.catalog-row'), 100)).rejects.toThrow();
+	await page.setContent(
+		'<div class="catalog-row">Truthear Hexa</div><div class="catalog-row">Another brand</div>'
+	);
+	await expect(assertTruthearRows(page.locator('.catalog-row'), 100)).rejects.toThrow();
+});
 
 test('Explore browsing does not need a separate UI identity catalog fetch', async ({ page }) => {
 	let requests = 0;
@@ -88,7 +102,7 @@ test('an unrelated Explore URL change preserves the active brand filter', async 
 	await page.getByRole('link', { name: 'Change unrelated catalog URL' }).click();
 	await expect(page).toHaveURL(/unknown=retained/);
 	await expect(page.getByRole('combobox', { name: 'Brand', exact: true })).toHaveValue('Truthear');
-	for (const row of await page.locator('.catalog-row').all()) await expect(row).toContainText('Truthear');
+	await assertTruthearRows(page.locator('.catalog-row'));
 });
 
 test.afterEach(async ({ page }) => {

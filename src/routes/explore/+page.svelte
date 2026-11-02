@@ -87,7 +87,9 @@
 						),
 						{ state: page.state, replace: true, reset: false }
 					);
-					return;
+					if (formFromUrl(migrated.url) !== selectedForm || migrated.url.searchParams.get('product') !== id)
+						return;
+					abort.signal.throwIfAborted();
 				}
 				const canonical = migrated?.url.searchParams.get('product') ?? id;
 				const result = await service.productDetail(canonical);

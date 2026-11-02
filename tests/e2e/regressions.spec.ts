@@ -44,6 +44,96 @@ test('upload requests keep the declared rig and lock the independent discovery r
 	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
 });
 
+for (const stage of ['file', 'worker'] as const) {
+	test(`a late ${stage} upload completion cannot navigate away from Compare`, async ({ page }) => {
+		await page.addInitScript((stage) => {
+			const gate = { pending: false, completed: false, release: () => {} };
+			Object.assign(window, { uploadGate: gate });
+			if (stage === 'file') {
+				// eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the File receiver.
+				const text = File.prototype.text;
+				File.prototype.text = async function () {
+					const contents = await text.call(this);
+					gate.pending = true;
+					await new Promise<void>((resolve) => {
+						gate.release = resolve;
+					});
+					gate.completed = true;
+					return contents;
+				};
+			} else {
+				// Hold the real Comlink request, not a fabricated parse result.
+				// eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the MessagePort receiver.
+				const post = MessagePort.prototype.postMessage;
+				MessagePort.prototype.postMessage = function (
+					message: unknown,
+					transfer?: Transferable[] | StructuredSerializeOptions
+				) {
+					const options = Array.isArray(transfer) ? { transfer } : transfer;
+					if (
+						message &&
+						typeof message === 'object' &&
+						'path' in message &&
+						Array.isArray(message.path) &&
+						message.path[0] === 'parseUpload' &&
+						'id' in message
+					) {
+						gate.pending = true;
+						gate.release = () => {
+							const completed = (event: MessageEvent<unknown>) => {
+								if (
+									event.data &&
+									typeof event.data === 'object' &&
+									'id' in event.data &&
+									event.data.id === message.id
+								) {
+									gate.completed = true;
+									this.removeEventListener('message', completed);
+								}
+							};
+							this.addEventListener('message', completed);
+							post.call(this, message, options);
+						};
+					} else post.call(this, message, options);
+				};
+			}
+		}, stage);
+		await page.goto('/');
+		await page.locator('.workspace-tools > summary').click();
+		await page.getByRole('combobox', { name: 'Upload measurement rig' }).selectOption('iem-711');
+		await page.getByLabel('Local reference measurement', { exact: true }).setInputFiles(fixture);
+		await expect
+			.poll(() =>
+				page.evaluate(() => (window as unknown as { uploadGate: { pending: boolean } }).uploadGate.pending)
+			)
+			.toBe(true);
+		await page.evaluate(() => {
+			const link = document.createElement('a');
+			link.href = '/compare?late=keep';
+			link.textContent = 'Leave pending upload';
+			document.querySelector('main')?.append(link);
+		});
+		await page.getByRole('link', { name: 'Leave pending upload' }).click();
+		await expect(page.getByRole('combobox', { name: 'Add to comparison', exact: true })).toBeVisible();
+		await page.evaluate(() => {
+			(window as unknown as { uploadGate: { release: () => void } }).uploadGate.release();
+		});
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() => (window as unknown as { uploadGate: { completed: boolean } }).uploadGate.completed
+				)
+			)
+			.toBe(true);
+		await page.evaluate(async () => {
+			await new Promise(requestAnimationFrame);
+			await new Promise(requestAnimationFrame);
+		});
+		await expect(page).toHaveURL(/\/compare\?late=keep$/);
+		await expect(page.getByRole('combobox', { name: 'Add to comparison', exact: true })).toBeVisible();
+	});
+}
+
 test('source-only reviewer Reset returns to coverage atomically instead of failing the query', async ({
 	page
 }) => {
@@ -144,7 +234,7 @@ test('form switches retain shared workspaces and clear Compare selections', asyn
 	await expect(page).not.toHaveURL(/[?&]p=/);
 });
 
-test('Undo after a shared workspace edit restores the saved profile rather than the shared one', async ({
+test('Undo after clearing a shared workspace restores the visible references, not a different saved profile', async ({
 	page
 }) => {
 	await page.addInitScript(
@@ -166,9 +256,27 @@ test('Undo after a shared workspace edit restores the saved profile rather than 
 	await expect(page.locator('.profile-row')).toContainText('CrinEar Reference');
 	await page.getByRole('button', { name: 'Clear all', exact: true }).click();
 	await expect(page.locator('.profile-row')).toHaveCount(0);
+	await expect.poll(() => new URL(page.url()).searchParams.get('ratings')).toBe('[]');
 	await page.getByRole('button', { name: 'Undo', exact: true }).click();
-	await expect(page.locator('.profile-row')).toContainText('Softears Volume S');
-	expect(await page.evaluate(() => localStorage.getItem('tonewave.profile.v1'))).toContain(volume);
+	await expect(page.locator('.profile-row')).toContainText('CrinEar Reference');
+	expect(await page.evaluate(() => localStorage.getItem('tonewave.profile.v1'))).toContain(reference);
+});
+
+test('Undo restores a URL reference rating even when the saved profile was empty', async ({ page }) => {
+	await page.goto(`/?ref=${reference}`);
+	const row = page.locator('.profile-row');
+	await expect(row.getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
+	await row.getByRole('radio', { name: 'Dislike', exact: true }).check();
+	await expect
+		.poll(
+			() =>
+				(JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as { rating: string }[])[0]
+					?.rating
+		)
+		.toBe('dislike');
+	await page.locator('.toast').getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(row).toHaveCount(1);
+	await expect(row.getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
 });
 
 test('pending results retain their returned reference headings, evidence and Compare links', async ({

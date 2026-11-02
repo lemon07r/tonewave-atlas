@@ -58,7 +58,7 @@ function workerHost(): Host {
 	const service = wrap<MetadataService>(worker);
 	const failed = (event: Event) => {
 		event.preventDefault();
-		failHost(current, new Error('Catalog metadata worker failed. Please try again.'));
+		failHost(current, new Error('Catalog metadata worker failed. Please try again.', { cause: event }));
 	};
 	const current: Host = {
 		worker,
