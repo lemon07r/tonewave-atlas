@@ -42,7 +42,7 @@ test('source-only reviewer Reset returns to coverage atomically instead of faili
 	);
 	await expect(page.locator('.result-row')).toHaveCount(20);
 	await expect(page.getByRole('combobox', { name: 'Reviewer scoring mode' })).toHaveValue('coverage');
-	await expect(page.locator('option[value="only"]')).toBeDisabled();
+	await expect(page.locator('option[value="only"]')).toHaveJSProperty('disabled', true);
 	await expect(page).not.toHaveURL(/sourceMode=only/);
 });
 
