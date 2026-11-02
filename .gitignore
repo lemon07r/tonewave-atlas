@@ -32,6 +32,8 @@ Thumbs.db
 *.log
 
 # local agent and tool state
+.agents/
+skills-lock.json
 .vera/
 .opencode/
 .claude/

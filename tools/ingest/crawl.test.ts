@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { crawl } from './crawl.ts';
 import { HttpCache } from './cache.ts';
-import { DIRECTORY_URL, OPT_OUT_URL, type CrawlSnapshot } from './common.ts';
+import { DIRECTORY_URL, type CrawlSnapshot } from './common.ts';
 
 const roots: string[] = [];
 const href = (url: Parameters<typeof fetch>[0]) => (url instanceof Request ? url.url : url.toString());
@@ -38,8 +38,7 @@ async function fixture(config = '') {
 					dbs: [{ type: 'IEMs', folder: '/' }]
 				}))
 			)
-		],
-		[OPT_OUT_URL, 'let optedOut = [];']
+		]
 	]);
 	for (const username of ['reviewer', 'other']) {
 		bodies.set(`https://${username}.squig.link/config.js`, config);
@@ -119,7 +118,7 @@ describe('crawl preflight', () => {
 			await writeFile(file, 'previous snapshot');
 			await expect(crawl(['--sites', sites], paths)).rejects.toThrow('Unknown --sites entry');
 			expect(await readFile(file, 'utf8')).toBe('previous snapshot');
-			expect(request).toHaveBeenCalledTimes(2);
+			expect(request).toHaveBeenCalledTimes(1);
 		}
 	);
 });

@@ -9,7 +9,6 @@ export const CACHE = resolve(ROOT, '.cache/ingest');
 export const OUTPUT = resolve(ROOT, 'static/data');
 export const USER_AGENT = 'TonewaveAtlas-ingest/1 (+https://github.com/lemon07r/tonewave-atlas)';
 export const DIRECTORY_URL = 'https://squig.link/squigsites.json';
-export const OPT_OUT_URL = 'https://squig.link/squigsites.js';
 
 export function sha256(value: string | Uint8Array): string {
 	return createHash('sha256').update(value).digest('hex');
@@ -461,7 +460,7 @@ export function discover(value: unknown): Database[] {
 			!Array.isArray(site.dbs)
 		)
 			throw new Error('Invalid directory entry');
-		// altDomain/crinacle is excluded before constructing URLs.
+		// hangout.audio (crinacle, the only altDomain) serves encrypted files behind an access check; skip it.
 		if (site.urlType === 'altDomain' || site.username === 'crinacle') continue;
 		const origin =
 			site.urlType === 'root'
@@ -486,12 +485,6 @@ export function discover(value: unknown): Database[] {
 		}
 	}
 	return databases;
-}
-
-export function parseOptOuts(script: string): string[] {
-	const content = /\b(?:let|const|var)\s+optedOut\s*=\s*\[([^\]]*)\]/.exec(withoutComments(script))?.[1];
-	if (content === undefined) throw new Error('Could not read upstream opt-outs; refusing to crawl/build');
-	return [...content.matchAll(/["']([^"']+)["']/g)].map((m) => m[1] ?? '');
 }
 
 export function formFor(db: Database): Form {

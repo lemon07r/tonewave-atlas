@@ -31,9 +31,7 @@ import {
 	errorMessage,
 	readInputs,
 	measurementUrl,
-	OPT_OUT_URL,
 	OUTPUT,
-	parseOptOuts,
 	phoneBook,
 	record,
 	ROOT,
@@ -94,13 +92,8 @@ interface SourceCount {
 export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
 	const { excluded, brands, overrides, productAliases } = await readInputs(paths.root);
 	const targets = await referenceTargets(paths.root);
-	const [directory, optScript] = await Promise.all([
-		cached(DIRECTORY_URL, paths.cache),
-		cached(OPT_OUT_URL, paths.cache)
-	]);
-	if (directory?.entry.status !== 200 || optScript?.entry.status !== 200)
-		throw new Error('Run data:crawl first (source directory and opt-outs required)');
-	const opts = parseOptOuts(new TextDecoder().decode(optScript.body));
+	const directory = await cached(DIRECTORY_URL, paths.cache);
+	if (directory?.entry.status !== 200) throw new Error('Run data:crawl first (source directory required)');
 	const aliases: Record<string, string> = {};
 	for (const [a, b] of Object.entries(brands)) {
 		aliases[normalise(a)] = b;
@@ -154,7 +147,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
 		});
 	};
-	for (const response of [directory, optScript]) retained('discovery', response);
+	retained('discovery', directory);
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
 	if (Array.isArray(raw))
 		for (const site of raw as unknown[]) {
@@ -163,13 +156,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 	const databases = discover(raw).sort((a, b) => a.id.localeCompare(b.id, 'en'));
 	for (const db of databases) {
-		const why = opts.includes(db.username)
-			? 'upstream opt-out'
-			: excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
-				? 'local exclusion'
-				: db.dbType === 'Earbuds'
-					? 'earbuds not supported'
-					: null;
+		const why = excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
+			? 'local exclusion'
+			: db.dbType === 'Earbuds'
+				? 'earbuds not supported'
+				: null;
 		if (why) {
 			report.excluded.push({ id: db.id, reason: why });
 			continue;

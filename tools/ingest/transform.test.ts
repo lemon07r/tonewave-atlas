@@ -7,7 +7,6 @@ import {
 	discover,
 	fileChannels,
 	measurementUrl,
-	parseOptOuts,
 	phoneBook,
 	readInputs,
 	validateProducts,
@@ -79,16 +78,11 @@ describe('source transforms', () => {
 		expect(measurementUrl(dataDirectory(db, ''), 'A / #?', 'L')).toBe(
 			'https://reviewer.squig.link/data/A%20%2F%20%23%3F%20L.txt'
 		);
-		expect(parseOptOuts("let optedOut = ['a', 'crinacle']; malicious();")).toEqual(['a', 'crinacle']);
-		expect(() => parseOptOuts('something changed')).toThrow();
 	});
 	it('ignores commented sample/channel settings without stripping URLs', () => {
 		const config = `// num_samples = 5;\n/* default_channels = ['R']; */\nconst default_channels = ['L', 'R'], DIR = 'https://reviewer.squig.link/data/';`;
 		expect(fileChannels(config)).toEqual(['L', 'R']);
 		expect(dataDirectory(db, config)).toBe('https://reviewer.squig.link/data/');
-		expect(
-			parseOptOuts(`// let optedOut = [];\n/* const optedOut = ['stale']; */\nlet optedOut = ['live'];`)
-		).toEqual(['live']);
 	});
 	it.each(['[]', '["A"]', '["L", "R", "C"]'])('rejects unsupported physical channels %s', (list) => {
 		expect(() => supportedChannels(`default_channels = ${list}`)).toThrow('Unsupported channels');

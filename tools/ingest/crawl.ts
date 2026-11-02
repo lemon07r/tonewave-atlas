@@ -14,8 +14,6 @@ import {
 	errorMessage,
 	readInputs,
 	measurementUrl,
-	OPT_OUT_URL,
-	parseOptOuts,
 	phoneBook,
 	record,
 	ROOT,
@@ -35,15 +33,9 @@ export async function crawl(
 	const sites = values.sites?.split(',').map((site) => site.trim());
 	const { excluded } = await readInputs(paths.root);
 	const http = new HttpCache(paths.cache);
-	const [directory, script] = await Promise.all([http.fetch(DIRECTORY_URL), http.fetch(OPT_OUT_URL)]);
-	if (
-		directory.entry.status !== 200 ||
-		script.entry.status !== 200 ||
-		directory.entry.lastFailure ||
-		script.entry.lastFailure
-	)
-		throw new Error('Live source discovery/opt-out retrieval failed');
-	const optOuts = parseOptOuts(new TextDecoder().decode(script.body));
+	const directory = await http.fetch(DIRECTORY_URL);
+	if (directory.entry.status !== 200 || directory.entry.lastFailure)
+		throw new Error('Live source discovery failed');
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
 	const databases = discover(raw);
 	for (const site of sites ?? [])
@@ -73,15 +65,13 @@ export async function crawl(
 				snapshot.excluded.push({ id: String(site.username), reason: 'altDomain/crinacle' });
 		}
 	for (const db of databases) {
-		const reason = optOuts.includes(db.username)
-			? 'upstream opt-out'
-			: excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
-				? 'local exclusion'
-				: db.dbType === 'Earbuds'
-					? 'earbuds not supported'
-					: sites && !sites.includes(db.username) && !sites.includes(db.id)
-						? 'not selected'
-						: null;
+		const reason = excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
+			? 'local exclusion'
+			: db.dbType === 'Earbuds'
+				? 'earbuds not supported'
+				: sites && !sites.includes(db.username) && !sites.includes(db.id)
+					? 'not selected'
+					: null;
 		if (reason) snapshot.excluded.push({ id: db.id, reason });
 		else snapshot.sources.push(db);
 	}

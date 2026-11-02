@@ -15,13 +15,15 @@ availability is not a redistribution licence, and the squig graph software's lic
 rights to reviewers' measurements. We publish resampled curves, not the raw text files. Attribution
 and links are retained; they are not a substitute for permission.
 
-Every crawl reads the network's `optedOut` list from `squigsites.js`; builds reapply the cached list and
-our local `data/exclusions.json`. Opted-out reviewers, all alternate-domain databases, and
-crinacle/hangout.audio are excluded. Earbuds are not supported yet. For exclusion, correction, or
-takedown, open a [GitHub issue on lemon07r/tonewave-atlas](https://github.com/lemon07r/tonewave-atlas/issues).
-We honour source-owner removal requests by adding an exclusion and rebuilding; raw cache entries are
-local ingestion state, never part of the published dataset. Discovery must succeed before a crawl;
-an unrecognisable opt-out list fails closed.
+The site is non-commercial and credits every database it uses. Every database in the directory is
+included unless `data/exclusions.json` lists it, including reviewers on the network's `optedOut` list
+in `squigsites.js` (squig.link uses that list to hide shop links; we do not read it as a data
+opt-out). The maintainer contacts reviewers for consent where possible. Crinacle's hangout.audio is
+never crawled: it serves encrypted files behind an access check, and we do not bypass access
+controls. Earbuds are not supported yet. For exclusion, correction, or takedown, open a
+[GitHub issue on lemon07r/tonewave-atlas](https://github.com/lemon07r/tonewave-atlas/issues). We
+honour source-owner removal requests by adding an exclusion and rebuilding; raw cache entries are
+local ingestion state, never part of the published dataset. Discovery must succeed before a crawl.
 
 ## Rigs and processing
 

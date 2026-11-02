@@ -8,7 +8,7 @@ import { decodePack } from '#core/dataset/codec.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
-import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL, ROOT, sha256 } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, ROOT, sha256 } from './common.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -46,7 +46,6 @@ async function fixture(configBody: string | null = config, extraBodies: [string,
 				{ username: 'reviewer', name: 'Reviewer', urlType: 'subdomain', dbs: [{ type: 'IEMs', folder: '/' }] }
 			])
 		],
-		[OPT_OUT_URL, 'let optedOut = [];'],
 		[bookUrl, book],
 		[`${base}data/offset.txt`, curve(10)],
 		[`${base}data/Model%20L.txt`, curve(80)],
@@ -267,7 +266,7 @@ describe('cached dataset build safety', () => {
 		expect(catalog.products[0]).toMatchObject({ brand: 'MAKER', model: 'MODEL' });
 		expect(catalog.measurements).toHaveLength(3);
 	});
-	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
+	it.each([DIRECTORY_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
 		'reports stale discovery/calibration/measurement %s',
 		async (url) => {
 			const { paths, http } = await fixture();
@@ -277,8 +276,7 @@ describe('cached dataset build safety', () => {
 			const { report, catalog } = await result(paths);
 			expect(catalog.measurements).toHaveLength(1);
 			expect(report.retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
-			if ([DIRECTORY_URL, OPT_OUT_URL].includes(url))
-				expect(report.retainedFailures[0]).toMatchObject({ source: 'discovery' });
+			if (url === DIRECTORY_URL) expect(report.retainedFailures[0]).toMatchObject({ source: 'discovery' });
 			expect(report.issues.some((issue) => issue.reason.includes('last-good'))).toBe(true);
 		}
 	);

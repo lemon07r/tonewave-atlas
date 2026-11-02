@@ -167,9 +167,10 @@
 				<p>
 					Public availability is not a redistribution licence. Unless explicitly granted, permission is
 					“public, not explicitly licensed.” Attribution is not a substitute for permission. We publish
-					resampled curves, not raw text files, and honour source-owner removal requests through exclusions
-					and a rebuild. For correction, exclusion or takedown, <a
-						href="https://github.com/lemon07r/tonewave-atlas/issues">open a GitHub issue</a
+					resampled curves, not raw text files. The site is non-commercial and credits every source. Any
+					reviewer who prefers not to be included is removed through an exclusion and a rebuild. For
+					correction, exclusion or takedown, <a href="https://github.com/lemon07r/tonewave-atlas/issues"
+						>open a GitHub issue</a
 					>.
 				</p>
 				{#if error}<Notice kind="caution" title="Source data unavailable">{error}</Notice
