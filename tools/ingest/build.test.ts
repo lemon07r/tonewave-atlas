@@ -112,6 +112,95 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('quarantines source-chain products but retains named tests, headphones and insertion-depth fits offline', async () => {
+		const groups = [
+			{
+				name: 'DAC Test',
+				phones: [
+					{ name: 'Reference', file: ['Reference'] },
+					{ name: 'DAC Test', file: ['Portable DAC', 'Other Amp'] }
+				]
+			},
+			{
+				name: 'Maker',
+				phones: [
+					{
+						name: 'Pocket Dongle',
+						file: ['Dongle Filter A', 'Dongle Apple'],
+						suffix: ['Green Filter', 'Same IEM, Apple Dongle']
+					},
+					{ name: 'Reference', file: ['Maker Reference'] },
+					{ name: 'Test Pilot', file: ['Maker Test Pilot'] },
+					{ name: 'Model with DAC', file: ['Model with DAC'] },
+					{ name: 'Model', file: ['Model stock'] },
+					{
+						name: 'Model (Green Filter Depth Test)',
+						file: ['Model Depth -1', 'Model Depth -2', 'Model Depth -3']
+					}
+				]
+			},
+			{
+				name: 'HP Test',
+				phones: [
+					{ name: 'Maker Headphone', file: ['HP Test Maker Headphone'] },
+					{ name: 'Unnamed Headphone', file: ['HP Test Unnamed Headphone'] }
+				]
+			}
+		];
+		const files = groups.flatMap((g) => g.phones.flatMap((p) => p.file));
+		const { paths } = await fixture('rig_description="clone 711"', [
+			[bookUrl, JSON.stringify(groups)],
+			...files.map((f): [string, string] => [`${base}data/${encodeURIComponent(f + ' L.txt')}`, curve(80)])
+		]);
+		await writeFile(resolve(paths.root, 'data/aliases.json'), JSON.stringify({ brands: { Maker: 'Maker' } }));
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+		await build(paths);
+		const { catalog, manifest, report } = await result(paths);
+		expect(catalog.products.map((p) => p.model).sort()).toEqual([
+			'Model',
+			'Model with DAC',
+			'Reference',
+			'Test Pilot'
+		]);
+		expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual(
+			['Reference', 'Portable DAC', 'Other Amp', 'Dongle Filter A', 'Dongle Apple'].sort()
+		);
+		const depth = catalog.measurements.filter((m) => m.variant.file.includes('Depth'));
+		expect(depth).toHaveLength(3);
+		expect(depth.every((m) => m.productId === catalog.products.find((p) => p.model === 'Model')?.id)).toBe(
+			true
+		);
+		expect(depth.every((m) => m.variant.kind === 'fit' && !m.variant.isDefault)).toBe(true);
+		for (const m of depth) expect(m.variant.label).toContain(m.variant.file.match(/-\d+/)?.[0]);
+		const headphones = JSON.parse(
+			gunzipSync(
+				await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
+			).toString()
+		) as Catalog;
+		expect(headphones.products.map((p) => [p.brand, p.model]).sort()).toEqual(
+			[
+				['Maker', 'Headphone'],
+				['Unbranded (reviewer)', 'Unnamed Headphone']
+			].sort()
+		);
+		expect(
+			headphones.measurements.every((m) => m.partition === `headphone-source-${manifest.sources[0]?.id}`)
+		).toBe(true);
+		const next = { ...catalog, redirects: { products: {}, measurements: {} } };
+		const existingProduct = catalog.products[0],
+			existingMeasurement = catalog.measurements[0];
+		if (!existingProduct || !existingMeasurement) throw new Error('Missing retained fixture');
+		const gone = { ...existingProduct, id: 'non-product' };
+		const removed = {
+			...existingMeasurement,
+			id: 'removed',
+			productId: gone.id,
+			provenance: { ...existingMeasurement.provenance, originalUrls: [`${base}data/Reference%20L.txt`] }
+		};
+		buildRedirects([{ ...catalog, products: [gone], measurements: [removed] }], [next]);
+		expect(next.redirects.products['non-product']).toBeUndefined();
+		expect(next.redirects.measurements['removed']).toBeUndefined();
+	});
 	it('retains separately labelled same-response fits and every channel before default reconciliation', async () => {
 		const phones = [
 			{ name: 'Model', file: ['Model stock tips'], suffix: ['stock tips'] },

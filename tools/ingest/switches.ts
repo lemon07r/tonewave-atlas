@@ -69,7 +69,10 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			if (kind === 'cable') cableMeasurements.add(m.id);
 			if (kind === 'tip') tipMeasurements.add(m.id);
 			m.productId = parent.id;
-			m.variant.label = [m.variant.label, suffix.label].filter(Boolean).join(' · ');
+			const label = /\bdepth\s+test\b/i.test(suffix.label)
+				? m.variant.label || m.variant.file
+				: m.variant.label;
+			m.variant.label = [label, suffix.label].filter(Boolean).join(' · ');
 			m.provenance.processing.push(
 				`recognized ${kind === 'switch' ? 'switch-state' : kind === 'tip' ? 'tip/fit' : 'cable/termination'} identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${suffix.label}`
 			);

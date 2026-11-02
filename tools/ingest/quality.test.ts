@@ -31,6 +31,41 @@ const phone = (brand = 'Maker', name = 'Model', file = ['Model']): Phone => ({
 });
 
 describe('deterministic catalog quality rules', () => {
+	it.each(['Test', 'DAC Test', 'AMP TEST', 'Cable Test', '[Source-chain comparison]'])(
+		'quarantines an exact non-transducer category, including its Reference: %s',
+		(brand) => {
+			expect(identityProblem(brand, 'Reference')).toBe('source-chain test category');
+		}
+	);
+	it.each(['Pocket DAC', 'S8 Pro Robin Dongle', 'Desktop Amplifier'])(
+		'quarantines a model declared as source-chain equipment: %s',
+		(model) => {
+			expect(identityProblem('Maker', model)).toBe('source-chain device, not a transducer');
+		}
+	);
+	it.each([
+		['Maker', 'Test Pilot'],
+		['Snowy', 'Test HT'],
+		['Snowy88', 'Leo Test'],
+		['ITK', 'Unknown Model'],
+		['Maker', 'Reference'],
+		['Reference', 'One'],
+		['Simgot', 'EG280 With DAC'],
+		['Maker', 'Model via amplifier'],
+		['Contest', 'One']
+	])('retains a named transducer or its setup: %s %s', (brand, model) => {
+		expect(identityProblem(brand, model)).toBeNull();
+	});
+	it('treats a headphone-test category as form metadata, not a maker or source-chain test', () => {
+		const p = phone('HP Test', 'Maker Model', ['HP Test Maker Model']);
+		expect(entryForm(p).form).toBe('headphone');
+		expect(cleanEntry(p, source, ['Maker'])).toMatchObject({ brand: 'Maker', name: 'Model', file: p.file });
+		expect(cleanEntry(phone('HP Test', 'HEDD2'), source, [])).toMatchObject({
+			brand: 'Unbranded (fixture)',
+			name: 'HEDD2'
+		});
+		expect(identityProblem('HP Test', 'HEDD2')).toBeNull();
+	});
 	it('does not route headphone rows using an IEM-evidenced 5128 family', () => {
 		const source = sourceFor(
 			{ id: 'mixed', username: 'mixed', name: 'Mixed', url: 'https://mixed.invalid/', dbType: 'IEMs' },
