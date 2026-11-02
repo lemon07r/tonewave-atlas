@@ -317,6 +317,9 @@ function directionalPenalty(z: number, strength: number): number {
 }
 
 export function buildTasteModel(items: readonly RatedItem[], options: TasteOptions = {}): TasteModel {
+	const threshold = options.clusterThresholdDb ?? TASTE_CLUSTER_DISTANCE_DB;
+	if (!Number.isFinite(threshold) || threshold < 0)
+		throw new RangeError('Cluster threshold must be finite and nonnegative');
 	const first = items[0]?.curve;
 	if (!first) throw new RangeError('At least one rated curve is required');
 	const frequencies = frequenciesFor(first, options.frequencies);
@@ -357,7 +360,7 @@ export function buildTasteModel(items: readonly RatedItem[], options: TasteOptio
 					bi = b;
 				}
 			}
-		if (best > (options.clusterThresholdDb ?? TASTE_CLUSTER_DISTANCE_DB) || ai < 0) break;
+		if (best > threshold || ai < 0) break;
 		clusters[ai]?.push(...(clusters[bi] ?? []));
 		clusters.splice(bi, 1);
 	}

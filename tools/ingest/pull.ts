@@ -1,10 +1,11 @@
-import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { DatasetFile, Manifest, Source } from '#core/dataset/types.ts';
-import { atomicWrite, errorMessage, OUTPUT, record, sha256, USER_AGENT } from './common.ts';
+import { atomicWrite, datasetVersion, errorMessage, OUTPUT, record, sha256, USER_AGENT } from './common.ts';
 import { parallelEach } from './cache.ts';
+import { publishDataset } from './publish.ts';
 
 /** Strict paths and checksums are required before any remote filename reaches the local filesystem. */
 export function validateManifest(value: unknown): Manifest {
@@ -73,7 +74,43 @@ export function validateManifest(value: unknown): Manifest {
 			calibration: s.calibration
 		};
 	});
+	if (
+		datasetVersion(
+			files.map((file) => ({ ...file, path: file.path.slice(version.length + 1) })),
+			sources
+		) !== version
+	)
+		throw new Error('Dataset version/content mismatch');
 	return { formatVersion: 1, version, builtAt: value.builtAt, files, sources };
+}
+
+/** Bound decoded response bytes, including chunked responses without Content-Length. */
+async function boundedBody(response: Response, limit: number): Promise<Uint8Array> {
+	const reader = response.body?.getReader();
+	if (!reader) return new Uint8Array();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value.length > limit - size) {
+				await reader.cancel();
+				throw new Error(`Response exceeds byte limit (${limit})`);
+			}
+			chunks.push(value);
+			size += value.length;
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return bytes;
 }
 
 export async function pull(
@@ -86,7 +123,7 @@ export async function pull(
 		fetch(new URL(name, url), { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(120000) });
 	const response = await get('manifest.json');
 	if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
-	const manifestText = await response.text();
+	const manifestText = new TextDecoder().decode(await boundedBody(response, 25 * 1024 * 1024));
 	const manifest = validateManifest(JSON.parse(manifestText) as unknown);
 	await mkdir(output, { recursive: true });
 	const staging = resolve(output, `.pull-${randomUUID()}`);
@@ -95,17 +132,12 @@ export async function pull(
 		await parallelEach(manifest.files, async (file) => {
 			const response = await get(file.path);
 			if (!response.ok) throw new Error(`${file.path}: HTTP ${response.status}`);
-			const bytes = new Uint8Array(await response.arrayBuffer());
+			const bytes = await boundedBody(response, file.bytes);
 			if (bytes.length !== file.bytes || sha256(bytes) !== file.sha256)
 				throw new Error(`${file.path}: size/sha256 mismatch`);
 			await atomicWrite(resolve(staging, file.path.slice(manifest.version.length + 1)), bytes);
 		});
-		await rm(resolve(output, manifest.version), { recursive: true, force: true });
-		await rename(staging, resolve(output, manifest.version));
-		await atomicWrite(resolve(output, 'manifest.json'), manifestText);
-		for (const entry of await readdir(output, { withFileTypes: true }))
-			if (entry.isDirectory() && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== manifest.version)
-				await rm(resolve(output, entry.name), { recursive: true });
+		await publishDataset(output, staging, manifest, manifestText);
 	} finally {
 		await rm(staging, { recursive: true, force: true });
 	}

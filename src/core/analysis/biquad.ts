@@ -2,6 +2,7 @@ import { GRID } from '../grid.ts';
 import { type Curve } from './common.ts';
 
 export const SAMPLE_RATE = 48000;
+const FILTER_TYPES: readonly string[] = ['peak', 'low-shelf', 'high-shelf'];
 export interface Filter {
 	type: 'peak' | 'low-shelf' | 'high-shelf';
 	frequency: number;
@@ -20,6 +21,7 @@ export interface Biquad {
 /** RBJ Audio EQ Cookbook, Q parameterisation (not shelf slope S). */
 export function biquadCoefficients(filter: Filter, sampleRate = SAMPLE_RATE): Biquad {
 	const { frequency, gain, q, type } = filter;
+	if (!FILTER_TYPES.includes(type)) throw new RangeError('Invalid filter type');
 	if (!(
 		frequency > 0 &&
 		frequency < sampleRate / 2 &&

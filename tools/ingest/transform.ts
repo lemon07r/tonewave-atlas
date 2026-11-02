@@ -29,13 +29,13 @@ export function variant(phone: Phone, index: number, measurementId: string): Var
 	const kind =
 		index === 0
 			? 'default'
-			: /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|anc|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
+			: /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
 						text
 				  )
 				? 'tuning'
 				: /tip|insert|shallow|deep|foam|pad|seal|position/i.test(text)
 					? 'fit'
-					: /adapter|dongle|cable|amp|balanced|single.ended/i.test(text)
+					: /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
 						? 'setup'
 						: /sample|unit|proto|defect|\bs\d\b/i.test(text)
 							? 'unit'
@@ -71,7 +71,12 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 		form,
 		partition,
 		rig: rig || null,
-		rigInferred: !rig,
+		rigInferred:
+			!rig ||
+			(form === 'iem' &&
+				partition === 'iem-711' &&
+				typeof o.partition !== 'string' &&
+				!/\b(?:711|60711)\b|60318[\s-]*4/i.test(rig)),
 		permission:
 			o.permission === 'permission granted' ? 'permission granted' : 'public, not explicitly licensed',
 		crawledAt,

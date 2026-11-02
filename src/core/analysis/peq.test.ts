@@ -7,10 +7,37 @@ import {
 	filterResponse,
 	type Filter
 } from './biquad.ts';
-import { fitPeq, exportEqualizerApo, exportPeqJson, exportWavelet, smoothEqError } from './peq.ts';
+import {
+	fitPeq,
+	exportEqualizerApo,
+	exportPeqJson,
+	exportWavelet,
+	smoothEqError,
+	capTrebleBoost
+} from './peq.ts';
 import { buildTarget } from './targets.ts';
 
+/** Independent objective: demean low-band errors; only the high-band mean has total weight .1. */
+function fittingLoss(filters: readonly Filter[], target: Float64Array): number {
+	const response = equalizerResponse(filters),
+		desired = smoothEqError(target);
+	const low = Array.from(GRID, (f, i) =>
+		f <= 10000 && Number.isFinite(desired[i]) ? (response[i] ?? 0) - (desired[i] ?? 0) : NaN
+	).filter(Number.isFinite);
+	const offset = low.reduce((s, e) => s + e, 0) / low.length;
+	const high = Array.from(GRID, (f, i) =>
+		f > 10000 && Number.isFinite(desired[i]) ? (response[i] ?? 0) - (desired[i] ?? 0) - offset : NaN
+	).filter(Number.isFinite);
+	const mean = high.length ? high.reduce((s, e) => s + e, 0) / high.length : 0;
+	return low.reduce((s, e) => s + (e - offset) ** 2, 0) + 0.1 * mean ** 2;
+}
+
 describe('RBJ filters', () => {
+	it('rejects unsupported filter types at an untyped input boundary', () => {
+		// @ts-expect-error Deliberately exercise invalid deserialised filter data.
+		const type: Filter['type'] = 'not-a-filter';
+		expect(() => biquadCoefficients({ type, frequency: 1000, gain: 3, q: 1 })).toThrow(RangeError);
+	});
 	it('agrees with independent complex evaluation of H(exp(jw)) for every type', () => {
 		for (const type of ['peak', 'low-shelf', 'high-shelf'] as const)
 			for (const gain of [-12, 0, 8]) {
@@ -43,6 +70,10 @@ describe('RBJ filters', () => {
 });
 
 describe('target builder', () => {
+	it('preserves partial base coverage when presence scaling lacks its midrange anchor', () => {
+		const base = Float64Array.from(GRID, (f) => (f >= 1200 ? 5 : NaN));
+		expect(buildTarget(base, { presenceScale: 0.5 })).toEqual(base);
+	});
 	it('is identity by default and has analytic pivoted tilt', () => {
 		const base = Float64Array.from(GRID, (f) => Math.sin(Math.log(f)));
 		expect(buildTarget(base)).toEqual(base);
@@ -66,6 +97,36 @@ describe('target builder', () => {
 });
 
 describe('constrained PEQ', () => {
+	it('groups a contiguous multi-bin notch into one hard-to-correct region', () => {
+		const measurement = new Float64Array(240);
+		measurement[119] = -18;
+		measurement[120] = -18;
+		const result = fitPeq(measurement, new Float64Array(240), { maxFilters: 0 });
+		expect(result?.hardToCorrect.filter((r) => r.reason === 'narrow-notch')).toEqual([
+			{ low: GRID[118], high: GRID[121], reason: 'narrow-notch' }
+		]);
+	});
+	it('validates fitter limits before returning insufficient overlap', () => {
+		const missing = new Float64Array(240).fill(NaN),
+			target = new Float64Array(240);
+		for (const maxFilters of [-1, 11, NaN])
+			expect(() => fitPeq(missing, target, { maxFilters })).toThrow(RangeError);
+		for (const iterations of [0, 101, NaN])
+			expect(() => fitPeq(missing, target, { iterations })).toThrow(RangeError);
+	});
+	it('enforces the treble cap even when only negative shelf gains create the overshoot', () => {
+		const filters: Filter[] = Array.from({ length: 10 }, () => ({
+			type: 'low-shelf',
+			frequency: 6000,
+			gain: -12,
+			q: 1
+		}));
+		const high = Float64Array.from({ length: 513 }, (_, i) => 6000 * 4 ** (i / 512));
+		expect(Math.max(...equalizerResponse(filters, high))).toBeGreaterThan(7);
+		const bounded = capTrebleBoost(filters);
+		expect(Math.max(...equalizerResponse(bounded, high))).toBeLessThanOrEqual(4);
+		expect(filters.every((f) => f.gain === -12)).toBe(true);
+	});
 	it('recovers a known isolated synthetic peak', () => {
 		const known: Filter = { type: 'peak', frequency: 1000, gain: 5, q: 2 },
 			target = filterResponse(known);
@@ -121,6 +182,27 @@ describe('constrained PEQ', () => {
 		const result = fitPeq(new Float64Array(240), target, { maxFilters: 3 });
 		if (!result) throw new Error('fixture');
 		const high = Float64Array.from({ length: 200 }, (_, i) => 6000 * 4 ** (i / 199));
+		expect(Math.max(...equalizerResponse(result.filters, high))).toBeLessThanOrEqual(4.001);
+	});
+	it('fits a bounded shelf when the target differs only above 10 kHz', () => {
+		const target = Float64Array.from(GRID, (f) => (f > 10000 ? 4 : 0));
+		const result = fitPeq(new Float64Array(240), target, { maxFilters: 1 });
+		if (!result) throw new Error('missing fit');
+		expect(result.filters).toHaveLength(1);
+		expect(result.filters[0]?.type).toBe('high-shelf');
+		expect(result.filters[0]?.gain).toBeLessThanOrEqual(4);
+		expect(fittingLoss(result.filters, target)).toBeLessThan(fittingLoss([], target));
+	});
+	it('seeds the high-band average even when missing transition samples prevent a lower-band seed', () => {
+		const target = Float64Array.from(GRID, (f) => (f > 10000 ? 4 : f > 6000 ? NaN : 0));
+		const result = fitPeq(new Float64Array(240), target, { maxFilters: 1 });
+		if (!result) throw new Error('missing fit');
+		expect(result.filters).toHaveLength(1);
+		expect(result.filters[0]?.type).toBe('high-shelf');
+		expect(result.filters[0]?.gain).toBeGreaterThan(0);
+		expect(result.filters[0]?.gain).toBeLessThanOrEqual(4);
+		expect(fittingLoss(result.filters, target)).toBeLessThan(fittingLoss([], target));
+		const high = Float64Array.from({ length: 257 }, (_, i) => 6000 * 4 ** (i / 256));
 		expect(Math.max(...equalizerResponse(result.filters, high))).toBeLessThanOrEqual(4.001);
 	});
 });

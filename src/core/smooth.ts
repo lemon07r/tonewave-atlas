@@ -4,9 +4,9 @@ import { GRID_POINTS_PER_OCTAVE } from './grid.ts';
  * Fractional-octave smoothing of a curve sampled on a uniform log-frequency grid, done in the dB domain.
  *
  * Uses a Gaussian kernel in log-frequency whose standard deviation is chosen so the kernel's
- * equivalent rectangular bandwidth equals 1/fraction octave (σ = bw / √(2π)). NaN samples are skipped
+ * equivalent rectangular bandwidth equals 1/fraction octave (σ = bw / √(2π)). Non-finite samples are skipped
  * and the remaining weights renormalised, so smoothing never invents data beyond the measured range:
- * output is NaN wherever the input is NaN.
+ * output is NaN wherever the input centre is non-finite (the no-smoothing copy mode is unchanged).
  *
  * @param fraction 1/N-octave bandwidth denominator (e.g. 12 for 1/12 octave). `0` returns a copy.
  * @param pointsPerOctave grid density of `values`.

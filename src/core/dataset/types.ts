@@ -50,6 +50,7 @@ export interface Measurement {
 	/** Bitmask on GRID: 0 missing, 1 L, 2 R, 3 paired. */
 	channelContributions: number[];
 	imbalanceDb: number | null;
+	/** Finite paired bins inside 100 Hz–10 kHz used for imbalanceDb, not the full-grid paired count. */
 	pairedBins: number;
 	/** Verbatim REW dates per channel, not inferred UTC timestamps. */
 	dated: Record<string, string | null>;

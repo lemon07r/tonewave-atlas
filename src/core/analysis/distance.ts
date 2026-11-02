@@ -49,7 +49,7 @@ function scalar(
 	for (let i = 0; i < b.length; i++) {
 		const hz = f[i] ?? NaN,
 			w = options.weights?.[i] ?? 1;
-		if (!(hz >= low && hz <= high && w > 0 && Number.isFinite(w))) continue;
+		if (!(Number.isFinite(hz) && hz >= low && hz <= high && w > 0 && Number.isFinite(w))) continue;
 		eligible++;
 		const e = (a[start + i] ?? NaN) - (b[i] ?? NaN);
 		if (!Number.isFinite(e)) continue;
@@ -65,7 +65,15 @@ function scalar(
 		const hz = f[i] ?? NaN,
 			w = options.weights?.[i] ?? 1;
 		const e = (a[start + i] ?? NaN) - (b[i] ?? NaN) - offset;
-		if (hz < low || hz > high || !(w > 0 && Number.isFinite(w) && Number.isFinite(e))) continue;
+		if (!(
+			Number.isFinite(hz) &&
+			hz >= low &&
+			hz <= high &&
+			w > 0 &&
+			Number.isFinite(w) &&
+			Number.isFinite(e)
+		))
+			continue;
 		const alpha = e > 0 && hz >= 2000 && hz <= 10000 ? Math.max(1, options.treblePenalty ?? 1) : 1;
 		sse += w * e * e * alpha;
 	}
@@ -88,7 +96,13 @@ export function responseDistance(a: Curve, b: Curve, options: DistanceOptions = 
 	for (let i = 0; i < a.length; i++) {
 		const hz = f[i] ?? NaN,
 			w = options.weights?.[i] ?? 1;
-		if (hz < (options.minHz ?? 20) || hz > (options.maxHz ?? 20000) || !(w > 0 && Number.isFinite(w)))
+		if (!(
+			Number.isFinite(hz) &&
+			hz >= (options.minHz ?? 20) &&
+			hz <= (options.maxHz ?? 20000) &&
+			w > 0 &&
+			Number.isFinite(w)
+		))
 			continue;
 		const band = sums[bandIndex(hz)];
 		if (band) band.total++;
@@ -154,7 +168,7 @@ export function rankPacked(
 		scores = new Float64Array(k);
 	let size = 0,
 		insufficient = 0;
-	// Scratch record is shared by all rows. Inline moments avoid the scalar result allocation.
+	// Per-row local accumulators avoid allocating a scalar result during the scan.
 	for (let row = 0; row < n; row++) {
 		let sw = 0,
 			se = 0,
@@ -164,7 +178,13 @@ export function rankPacked(
 		for (let i = 0; i < RANK_SIZE; i++) {
 			const hz = f[i] ?? NaN,
 				w = options.weights?.[i] ?? 1;
-			if (!(hz >= (options.minHz ?? 20) && hz <= (options.maxHz ?? 20000) && w > 0 && Number.isFinite(w)))
+			if (!(
+				Number.isFinite(hz) &&
+				hz >= (options.minHz ?? 20) &&
+				hz <= (options.maxHz ?? 20000) &&
+				w > 0 &&
+				Number.isFinite(w)
+			))
 				continue;
 			eligible++;
 			const e = (matrix[start + i] ?? NaN) - (reference[i] ?? NaN);
@@ -185,6 +205,7 @@ export function rankPacked(
 				w = options.weights?.[i] ?? 1;
 			const e = (matrix[start + i] ?? NaN) - (reference[i] ?? NaN) - offset;
 			if (!(
+				Number.isFinite(hz) &&
 				hz >= (options.minHz ?? 20) &&
 				hz <= (options.maxHz ?? 20000) &&
 				w > 0 &&

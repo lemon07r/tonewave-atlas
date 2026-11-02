@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { pull, validateManifest } from './pull.ts';
-import { sha256 } from './common.ts';
+import { datasetVersion, sha256 } from './common.ts';
 
-const version = 'a'.repeat(24);
 const bytes = new TextEncoder().encode('test payload');
+const file = { path: 'catalog-iem.json.gz', bytes: bytes.length, sha256: sha256(bytes) };
+const version = datasetVersion([file], []);
 const manifest = {
 	formatVersion: 1,
 	version,
@@ -47,6 +48,9 @@ describe('dataset pull', () => {
 		await pull('https://dataset.invalid/data/', dir);
 		expect(await readFile(resolve(dir, version, 'catalog-iem.json.gz'))).toEqual(Buffer.from(bytes));
 		expect(JSON.parse(await readFile(resolve(dir, 'manifest.json'), 'utf8')) as unknown).toEqual(manifest);
+		const inode = (await stat(resolve(dir, version))).ino;
+		await pull('https://dataset.invalid/data/', dir);
+		expect((await stat(resolve(dir, version))).ino).toBe(inode);
 	});
 	it('does not publish or retain staging files when a checksum fails', async () => {
 		const dir = await output();
@@ -76,5 +80,47 @@ describe('dataset pull', () => {
 		expect(() => validateManifest({ ...manifest, files: [{ ...manifest.files[0], path }] })).toThrow(
 			'Invalid dataset file'
 		);
+	});
+	it('rejects a version label that does not hash the normalized content', () => {
+		const otherVersion = 'a'.repeat(24);
+		expect(() =>
+			validateManifest({
+				...manifest,
+				version: otherVersion,
+				files: [{ ...file, path: `${otherVersion}/${file.path}` }]
+			})
+		).toThrow('version/content mismatch');
+		expect(() =>
+			validateManifest({ ...manifest, files: [{ ...manifest.files[0], sha256: 'b'.repeat(64) }] })
+		).toThrow('version/content mismatch');
+	});
+	it.each(['manifest', 'artifact'])('cancels an oversized chunked %s before publication', async (kind) => {
+		const dir = await output();
+		const limit = kind === 'manifest' ? 25 * 1024 * 1024 : bytes.length;
+		const cancel = vi.fn();
+		let chunks = 0;
+		const stream = new ReadableStream<Uint8Array>(
+			{
+				pull(controller) {
+					chunks++;
+					controller.enqueue(new Uint8Array(chunks === 1 ? limit : 1));
+				},
+				cancel
+			},
+			{ highWaterMark: 0 }
+		);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn<typeof fetch>().mockImplementation((url) => {
+				const isManifest = (url instanceof Request ? url.url : url.toString()).endsWith('manifest.json');
+				return Promise.resolve(
+					new Response(isManifest && kind !== 'manifest' ? JSON.stringify(manifest) : stream)
+				);
+			})
+		);
+		await expect(pull('https://dataset.invalid/data/', dir)).rejects.toThrow('Response exceeds byte limit');
+		expect(cancel).toHaveBeenCalledTimes(1);
+		expect(chunks).toBe(2);
+		expect(await readdir(dir)).toEqual([]);
 	});
 });

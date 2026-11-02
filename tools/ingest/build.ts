@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -22,25 +22,26 @@ import {
 	atomicWrite,
 	CACHE,
 	calibrationUrl,
-	configChannels,
+	supportedChannels,
 	fileChannels,
 	dataDirectory,
+	datasetVersion,
 	DIRECTORY_URL,
 	discover,
 	errorMessage,
-	exclusions,
+	readInputs,
 	measurementUrl,
 	OPT_OUT_URL,
 	OUTPUT,
 	parseOptOuts,
 	phoneBook,
-	readJson,
 	record,
 	ROOT,
 	sha256,
 	unwanted
 } from './common.ts';
 import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
+import { publishDataset } from './publish.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -81,30 +82,20 @@ interface SourceCount {
 	reasons: Record<string, number>;
 }
 
-export async function build(): Promise<void> {
-	const [directory, optScript, excluded, aliasesRaw, overridesRaw] = await Promise.all([
-		cached(DIRECTORY_URL),
-		cached(OPT_OUT_URL),
-		exclusions(),
-		readJson(resolve(ROOT, 'data/aliases.json')),
-		readJson(resolve(ROOT, 'data/sources.json'))
+export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
+	const { excluded, brands, overrides } = await readInputs(paths.root);
+	const [directory, optScript] = await Promise.all([
+		cached(DIRECTORY_URL, paths.cache),
+		cached(OPT_OUT_URL, paths.cache)
 	]);
 	if (directory?.entry.status !== 200 || optScript?.entry.status !== 200)
 		throw new Error('Run data:crawl first (source directory and opt-outs required)');
 	const opts = parseOptOuts(new TextDecoder().decode(optScript.body));
 	const aliases: Record<string, string> = {};
-	if (
-		!record(aliasesRaw) ||
-		!record(aliasesRaw.brands) ||
-		!record(overridesRaw) ||
-		!record(overridesRaw.overrides)
-	)
-		throw new Error('Invalid hand-maintained inputs');
-	for (const [a, b] of Object.entries(aliasesRaw.brands))
-		if (typeof b === 'string') {
-			aliases[normalise(a)] = b;
-			aliases[normalise(b)] = b;
-		}
+	for (const [a, b] of Object.entries(brands)) {
+		aliases[normalise(a)] = b;
+		aliases[normalise(b)] = b;
+	}
 	const products = new Map<string, Product>();
 	const identities = new Map<string, Set<string>>();
 	const unmatchedBrands = new Set<string>();
@@ -140,21 +131,29 @@ export async function build(): Promise<void> {
 			report.excluded.push({ id: db.id, reason: why });
 			continue;
 		}
-		const bookCache = await cached(new URL('data/phone_book.json', db.url).href);
+		const bookCache = await cached(new URL('data/phone_book.json', db.url).href, paths.cache);
 		if (bookCache?.entry.status !== 200) {
 			report.excluded.push({ id: db.id, reason: 'phone book not cached/available' });
 			continue;
 		}
 		useTime(bookCache.entry.fetchedAt);
-		const configCache = await cached(new URL('config.js', db.url).href);
-		const config = configCache?.entry.status === 200 ? new TextDecoder().decode(configCache.body) : '';
-		if (configCache?.entry.status === 200) useTime(configCache.entry.fetchedAt);
-		const source = sourceFor(
-			db,
-			config,
-			bookCache.entry.fetchedAt,
-			overridesRaw.overrides[db.url] ?? overridesRaw.overrides[db.username]
-		);
+		const configCache = await cached(new URL('config.js', db.url).href, paths.cache);
+		if (configCache?.entry.status !== 200) {
+			report.excluded.push({
+				id: db.id,
+				reason: 'No successful config.js; refusing rig/calibration defaults'
+			});
+			continue;
+		}
+		const config = new TextDecoder().decode(configCache.body);
+		useTime(configCache.entry.fetchedAt);
+		for (const response of [configCache, bookCache])
+			if (response.entry.lastFailure)
+				report.issues.push({
+					source: db.id,
+					file: response.entry.url,
+					reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
+				});
 		const counts: SourceCount = {
 			phones: 0,
 			variants: 0,
@@ -170,22 +169,24 @@ export async function build(): Promise<void> {
 			counts.reasons[reason] = (counts.reasons[reason] ?? 0) + 1;
 			report.issues.push({ source: db.id, file, reason });
 		};
-		const dir = dataDirectory(db, config);
-		const configuredChannels = configChannels(config);
-		const channels = fileChannels(config);
-		if (
-			configuredChannels.some((c) => !['L', 'R', ''].includes(c)) ||
-			configuredChannels.length > 2 ||
-			!channels.length
-		) {
-			report.excluded.push({ id: db.id, reason: `Unsupported channels: ${JSON.stringify(channels)}` });
+		let dir: string;
+		let calUrl: string | null;
+		let source: Source;
+		let channels: string[];
+		try {
+			source = sourceFor(db, config, bookCache.entry.fetchedAt, overrides[db.url] ?? overrides[db.username]);
+			supportedChannels(config);
+			channels = fileChannels(config);
+			dir = dataDirectory(db, config);
+			calUrl = source.calibration ? calibrationUrl(dir, source.calibration) : null;
+		} catch (e) {
+			report.excluded.push({ id: db.id, reason: errorMessage(e) });
 			continue;
 		}
 		// The live squig graphtool subtracts measurement_calibration_file from measurements (not targets).
 		let calibration: Float64Array | null = null;
-		const calUrl = source.calibration ? calibrationUrl(dir, source.calibration) : null;
 		if (calUrl) {
-			const c = await cached(calUrl);
+			const c = await cached(calUrl, paths.cache);
 			if (c?.entry.status === 200) {
 				const p = parseMeasurement(new TextDecoder().decode(c.body), {
 					minPoints: 2,
@@ -193,8 +194,11 @@ export async function build(): Promise<void> {
 					minEndHz: 0
 				});
 				if (p.ok) {
-					calibration = resample(p.points);
-					useTime(c.entry.fetchedAt);
+					const values = resample(p.points);
+					if (values.some(Number.isFinite)) {
+						calibration = values;
+						useTime(c.entry.fetchedAt);
+					}
 				}
 			}
 			if (!calibration) {
@@ -242,7 +246,7 @@ export async function build(): Promise<void> {
 				for (const channel of channels) {
 					const url = measurementUrl(dir, file, channel);
 					if (excluded.files.includes(url)) continue;
-					const response = await cached(url);
+					const response = await cached(url, paths.cache);
 					if (!response) continue;
 					attempted = true;
 					if (response.entry.status !== 200) {
@@ -256,8 +260,12 @@ export async function build(): Promise<void> {
 						warnings.push(`${channel}: ${parsed.error}`);
 						continue;
 					}
-					const low = Math.min(...parsed.points.db),
-						high = Math.max(...parsed.points.db);
+					let low = Infinity,
+						high = -Infinity;
+					for (const db of parsed.points.db) {
+						low = Math.min(low, db);
+						high = Math.max(high, db);
+					}
 					if (high - low < 0.05 || high - low > 100) {
 						warnings.push(`${channel}: ${high - low < 0.05 ? 'flat line' : 'absurd dynamic range'}`);
 						continue;
@@ -456,9 +464,11 @@ export async function build(): Promise<void> {
 			}
 		}
 		flush();
+		const product = products.get(curves[0]?.measurement.productId ?? '');
+		if (!product) throw new Error(`Missing product for partition ${id}`);
 		partitionMetadata.push({
 			id,
-			form: id.startsWith('iem-') ? 'iem' : 'headphone',
+			form: product.form,
 			measurementCount: curves.length,
 			rankFile,
 			detailFiles,
@@ -486,7 +496,7 @@ export async function build(): Promise<void> {
 		.map(([path, bytes]): DatasetFile => ({ path, bytes: bytes.length, sha256: sha256(bytes) }));
 	if (files.length >= 19000 || files.some((f) => f.bytes >= 25 * 1024 * 1024))
 		throw new Error('Dataset exceeds Cloudflare Pages limits');
-	const version = sha256(JSON.stringify({ formatVersion: 1, files, sources })).slice(0, 24);
+	const version = datasetVersion(files, sources);
 	const manifest: Manifest = {
 		formatVersion: 1,
 		version,
@@ -494,19 +504,16 @@ export async function build(): Promise<void> {
 		files: files.map((f) => ({ ...f, path: `${version}/${f.path}` })),
 		sources
 	};
-	await mkdir(OUTPUT, { recursive: true });
-	const staging = resolve(OUTPUT, `.staging-${version}`);
-	await mkdir(staging, { recursive: true });
-	for (const [name, bytes] of artifacts) await atomicWrite(resolve(staging, name), bytes);
-	await rm(resolve(OUTPUT, version), { recursive: true, force: true });
-	await rename(staging, resolve(OUTPUT, version));
-	await atomicWrite(resolve(OUTPUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-	// Only generated version directories are removed; never delete unrelated static files.
-	for (const entry of await readdir(OUTPUT, { withFileTypes: true }))
-		if (entry.isDirectory() && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== version)
-			await rm(resolve(OUTPUT, entry.name), { recursive: true });
+	await mkdir(paths.output, { recursive: true });
+	const staging = await mkdtemp(resolve(paths.output, '.build-'));
+	try {
+		for (const [name, bytes] of artifacts) await atomicWrite(resolve(staging, name), bytes);
+		await publishDataset(paths.output, staging, manifest, JSON.stringify(manifest, null, 2) + '\n');
+	} finally {
+		await rm(staging, { recursive: true, force: true });
+	}
 	await atomicWrite(
-		resolve(CACHE, 'report.json'),
+		resolve(paths.cache, 'report.json'),
 		JSON.stringify(
 			{
 				...report,
@@ -527,7 +534,7 @@ export async function build(): Promise<void> {
 		)
 	);
 	console.log(
-		`Built ${version}: ${products.size} products, ${sources.length} databases, ${files.length} files, ${files.reduce((n, f) => n + f.bytes, 0)} compressed bytes. Report: ${resolve(CACHE, 'report.json')}`
+		`Built ${version}: ${products.size} products, ${sources.length} databases, ${files.length} files, ${files.reduce((n, f) => n + f.bytes, 0)} compressed bytes. Report: ${resolve(paths.cache, 'report.json')}`
 	);
 }
 
