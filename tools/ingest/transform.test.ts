@@ -36,6 +36,47 @@ const db = {
 };
 
 describe('source transforms', () => {
+	it('keeps ANC context when only maker/model prefixes are removed', () => {
+		const phone = {
+			brand: 'Maker',
+			name: 'Model',
+			file: ['Model ANC On', 'Model ANC Off'],
+			suffix: [],
+			price: null,
+			reviewLink: null
+		};
+		expect(phone.file.map((_, i) => variant(phone, i, `m-${i}`).isDefault)).toEqual([false, true]);
+	});
+	it('keeps Sample context shared by sibling filenames', () => {
+		const phone = {
+			brand: 'Maker',
+			name: 'Model',
+			file: ['Model Sample 1', 'Model Sample 2'],
+			suffix: [],
+			price: null,
+			reviewLink: null
+		};
+		expect(variant(phone, 1, 'm-two')).toMatchObject({
+			kind: 'unit',
+			isDefault: false,
+			label: 'Model Sample 2'
+		});
+	});
+	it('labels the demoted first file from its filename', () => {
+		const phone = {
+			brand: 'Maker',
+			name: 'Model',
+			file: ['Model Harman', 'Model Standard'],
+			suffix: ['', ''],
+			price: null,
+			reviewLink: null
+		};
+		expect(variant(phone, 0, 'm-harman')).toMatchObject({
+			kind: 'tuning',
+			isDefault: false,
+			label: 'Model Harman'
+		});
+	});
 	it.each([
 		[['NOVA', 'Nova', 'NOVA'], 'NOVA'],
 		[['nova', 'NOVA', 'Nova'], 'Nova'],

@@ -118,7 +118,7 @@ export function sampleContext(phones: readonly Phone[]): ReadonlySet<Phone> {
 function descriptor(phone: Phone, index: number): string {
 	const file = withoutAttribution(phone.file[index] ?? '');
 	// Descriptors, not the product's own name: e.g. a sample of Tangzu ON must not become tuning.
-	let firstDescriptor = file;
+	let firstDescriptor = withoutAttribution(phone.suffix[index]?.trim() || file);
 	for (const prefix of [`${phone.brand} ${phone.name}`, phone.name]) {
 		if (
 			firstDescriptor.toLowerCase().startsWith(prefix.toLowerCase()) &&
@@ -128,18 +128,7 @@ function descriptor(phone: Phone, index: number): string {
 			break;
 		}
 	}
-	const modelPattern = new RegExp(
-		`(?<![\\p{L}\\p{N}])${phone.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`,
-		'iu'
-	);
-	return withoutAttribution(
-		(
-			phone.suffix[index]?.trim() ||
-			(index === 0
-				? firstDescriptor
-				: file.slice(commonPrefix(withoutAttribution(phone.file[0] ?? ''), file)))
-		).replace(modelPattern, '')
-	);
+	return firstDescriptor;
 }
 
 function sampleDescriptor(phone: Phone, index: number, shortSamples: boolean): string {
@@ -226,15 +215,13 @@ export function variant(
 									: /sample|unit|proto|defect/i.test(text)
 										? 'unit'
 										: 'unknown';
-	return { id: `v-${measurementId.slice(2)}`, file, label, kind, isDefault: kind === 'default' };
-}
-
-function commonPrefix(a: string, b: string): number {
-	if (a === b) return 0;
-	let i = 0;
-	while (i < a.length && a[i]?.toLowerCase() === b[i]?.toLowerCase()) i++;
-	while (i > 0 && i < a.length && /[\p{L}\p{N}]/u.test(b[i - 1] ?? '')) i--;
-	return i;
+	return {
+		id: `v-${measurementId.slice(2)}`,
+		file,
+		label: kind === 'default' ? label : label.trim() || withoutAttribution(file) || file.trim(),
+		kind,
+		isDefault: kind === 'default'
+	};
 }
 
 /** Dollar sign alone follows the source index's USD convention; no bare numbers or conversions. */

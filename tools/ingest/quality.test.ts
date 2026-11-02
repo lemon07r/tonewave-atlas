@@ -231,10 +231,10 @@ describe('deterministic catalog quality rules', () => {
 			expect(sampleContext([p]).has(p)).toBe(false);
 		}
 	);
-	it('removes credits before finding the shared filename prefix, including later measurements', () => {
+	it('removes credits without erasing the filename label on a later non-default measurement', () => {
 		const p = phone('Maker', 'Model', ['Model (by 냥냐냥)', 'Model (by Sample 2)']);
 		p.suffix = ['', ''];
-		expect(variant(p, 1, 'm-later')).toMatchObject({ label: '', kind: 'unknown', isDefault: false });
+		expect(variant(p, 1, 'm-later')).toMatchObject({ label: 'Model', kind: 'unknown', isDefault: false });
 		expect(sampleContext([p]).has(p)).toBe(false);
 	});
 	it('detects duplicate shapes at quantization tolerance but retains distinct shape or coverage', () => {

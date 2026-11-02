@@ -1,6 +1,6 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import type { Phone } from './common.ts';
-import { defaultVariantIndex } from './transform.ts';
+import { defaultVariantIndex, withoutAttribution } from './transform.ts';
 import { labelledState } from './switches.ts';
 
 interface Row {
@@ -90,6 +90,8 @@ export function assertDefaultCoverage(
 	decisions: readonly Decision[]
 ): void {
 	for (const { measurement: m } of rows) {
+		if (m.variant.kind !== 'default' && !m.variant.label.trim())
+			throw new Error(`Non-default label: empty label for ${m.id}`);
 		if (m.variant.isDefault !== (m.variant.kind === 'default'))
 			throw new Error(`Default invariant: isDefault disagrees with kind for ${m.id}`);
 	}
@@ -178,6 +180,13 @@ export function finaliseDefaults(
 				demoted: [],
 				reason
 			});
+		}
+	}
+	// An originally unlabelled default can be demoted during reconciliation.
+	for (const { measurement: m } of rows) {
+		if (m.variant.kind !== 'default' && !m.variant.label.trim()) {
+			m.variant.label = withoutAttribution(m.variant.file) || m.variant.file.trim();
+			m.provenance.processing.push('non-default label derived from original filename');
 		}
 	}
 	assertDefaultCoverage(products, rows, decisions);

@@ -50,6 +50,14 @@ const product = (id = 'parent', model = 'Volume S'): Product => ({
 
 describe('final partition-aware default coverage', () => {
 	const products = () => new Map([['parent', product()]]);
+	it('rejects an empty label on a published non-default measurement', () => {
+		const rows = [row('source', 'Stock'), row('source', 'Model Harman', false)];
+		if (!rows[1]) throw new Error('Missing fixture');
+		rows[1].measurement.variant.label = '';
+		expect(() => {
+			assertDefaultCoverage(products(), rows, []);
+		}).toThrow('Non-default label');
+	});
 	it.each(['unit', 'fit', 'unknown', 'tuning'] as const)(
 		'promotes a sole %s to the engine default kind without erasing its label',
 		(kind) => {
