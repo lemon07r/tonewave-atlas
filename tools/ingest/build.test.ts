@@ -79,6 +79,7 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		statistics: { partition: string; statistics: unknown }[];
 	};
 	return { manifest, catalog, report };
 }
@@ -175,6 +176,14 @@ describe('cached dataset build safety', () => {
 		await build(paths);
 		expect((await result(paths)).manifest).toEqual(before.manifest);
 		expect((await stat(resolve(paths.output, before.manifest.version))).ino).toBe(inode);
+		const rankFile = before.catalog.partitions[0]?.rankFile;
+		if (!rankFile) throw new Error('Missing rank file');
+		const rank = decodePack(
+			gunzipSync(await readFile(resolve(paths.output, before.manifest.version, rankFile)))
+		);
+		expect(rank.statistics).toEqual(before.catalog.partitions[0]?.statistics);
+		expect(rank.statistics?.support?.status).toBe('low');
+		expect(before.report.statistics[0]?.statistics).toEqual(rank.statistics);
 		expect(
 			datasetVersion(
 				before.manifest.files.map((f) => ({ ...f, path: f.path.slice(before.manifest.version.length + 1) })),

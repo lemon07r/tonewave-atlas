@@ -42,6 +42,7 @@ import {
 } from './common.ts';
 import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
 import { publishDataset, removeStaging } from './publish.ts';
+import { medianSpreadByBand, rankStatistics } from './statistics.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -49,11 +50,9 @@ export interface PartitionCurve {
 	rank: PackedCurve;
 }
 
-/** Integration hook: analysis lane supplies cross-source statistics here; null means not computed. */
-export function computePartitionStatistics(curves: readonly PartitionCurve[]): PartitionStatistics | null {
-	// Access makes the hook's input explicit without computing statistics owned by another lane.
-	if (!curves.length) return null;
-	return null;
+/** Engine integration on default, product-balanced rank curves; support is always explicit. */
+export function computePartitionStatistics(curves: readonly PartitionCurve[]): PartitionStatistics {
+	return rankStatistics(curves);
 }
 
 export function compressPack(pack: CurvePack): {
@@ -114,7 +113,12 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			at: string;
 			error: string;
 		}[],
-		layouts: [] as { file: string; layout: string; curveMajorBytes: number; frequencyMajorBytes: number }[]
+		layouts: [] as { file: string; layout: string; curveMajorBytes: number; frequencyMajorBytes: number }[],
+		statistics: [] as {
+			partition: string;
+			statistics: PartitionStatistics;
+			medianSpreadByBand: Record<string, number | null>;
+		}[]
 	};
 	let builtAt = directory.entry.fetchedAt;
 	const useTime = (time: string) => {
@@ -419,6 +423,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				a.measurement.id.localeCompare(b.measurement.id, 'en')
 		);
 		const stats = computePartitionStatistics(curves);
+		const bands = medianSpreadByBand(stats);
+		report.statistics.push({ partition: id, statistics: stats, medianSpreadByBand: bands });
+		console.log(
+			`Statistics ${id}: ${stats.support?.multiSourceProducts ?? 0} multi-source products (${stats.support?.status ?? 'unknown'}); median spread dB ${JSON.stringify(bands)}; harmonisation ${JSON.stringify(stats.harmonisation)}`
+		);
 		const rankFile = `rank-${id}.bin.gz`;
 		const rank = compressPack({
 			kind: 'rank',

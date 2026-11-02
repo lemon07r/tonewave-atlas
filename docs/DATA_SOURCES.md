@@ -49,7 +49,27 @@ an unrecognisable opt-out list fails closed.
 - Binary TWFR v1 uses little-endian int16 at 0.02 dB steps with a NaN sentinel. Each pack's
   curve-major versus frequency-major layout is selected by measured gzip size and recorded in its
   header; `.cache/ingest/report.json` records both sizes. The catalog partitions and binary packs
-  contain `statistics` fields, set to `null` until analysis-engine integration; never invented zeros.
+  contain rank-grid `statistics` from the analysis engine: robust inter-source spread, aligned
+  population median and shrunk source offsets. Unsupported bins are JSON `null`, never invented zeros;
+  TWFR remains v1 (additive JSON metadata, unchanged binary samples).
+
+### Statistics support and validation
+
+Statistics use only products with at least two distinct sources. Each product/source contributes one
+default rank curve (lowest stable measurement ID breaks ties); non-default tuning/fit/unit variants
+never gain population weight. Products without a default from two sources do not train statistics.
+The engine aligns overall level, so the population median's absolute SPL is not a calibration.
+`support` records product/source counts, per-bin spread support and each source offset's product/bin
+support. Fewer than **20 multi-source products**, or no valid held-out pairs, means `status: "low"`
+with a reason; any computed estimates remain explicitly exploratory, not a recommendation to enable
+harmonisation. Empty support yields null bins and empty offsets.
+
+Every partition runs deterministic **five-fold product-held-out validation**, shrinkage 10. Its
+`harmonisation` includes each fold's training/held-out product counts, valid pair counts, mean
+before/after distances and mean/median improvements, plus a pooled (not average-of-folds) summary.
+Positive improvement means reduced same-product response distance in dB, not improved perceptual
+accuracy. The same statistics and median spread per methodology frequency band are written to
+`report.json` and printed per partition; the UI chooses defaults from these results and support.
 
 ## Updating and limitations
 

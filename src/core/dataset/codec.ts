@@ -67,8 +67,26 @@ function object(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function numbers(value: unknown): value is number[] {
-	return Array.isArray(value) && value.every((n: unknown) => typeof n === 'number' && Number.isFinite(n));
+function numbers(value: unknown): value is (number | null)[] {
+	return (
+		Array.isArray(value) &&
+		value.every((n: unknown) => n === null || (typeof n === 'number' && Number.isFinite(n)))
+	);
+}
+
+const count = (value: unknown): value is number =>
+	typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const optionalNumber = (value: unknown) =>
+	value === null || (typeof value === 'number' && Number.isFinite(value));
+function summary(value: unknown): boolean {
+	return (
+		object(value) &&
+		count(value.pairs) &&
+		['meanBefore', 'meanAfter', 'meanImprovement', 'medianImprovement'].every((key) =>
+			optionalNumber(value[key])
+		) &&
+		(value.improved === null || typeof value.improved === 'boolean')
+	);
 }
 
 function statistics(value: unknown, points: number): value is PartitionStatistics | null {
@@ -80,6 +98,43 @@ function statistics(value: unknown, points: number): value is PartitionStatistic
 		!object(value.sourceOffsets)
 	)
 		return false;
+	if (value.support !== undefined) {
+		const s = value.support;
+		if (
+			!object(s) ||
+			!['sufficient', 'low'].includes(String(s.status)) ||
+			!(s.reason === null || typeof s.reason === 'string') ||
+			!count(s.minimumProducts) ||
+			!count(s.multiSourceProducts) ||
+			!count(s.sources) ||
+			!Array.isArray(s.spread) ||
+			s.spread.length !== points ||
+			!s.spread.every(count) ||
+			!object(s.sourceProducts) ||
+			!Object.values(s.sourceProducts).every(count) ||
+			!object(s.sourceBins) ||
+			!Object.values(s.sourceBins).every(
+				(bins) => Array.isArray(bins) && bins.length === points && bins.every(count)
+			)
+		)
+			return false;
+	}
+	if (value.harmonisation !== undefined) {
+		const h = value.harmonisation;
+		if (
+			!object(h) ||
+			!summary(h) ||
+			!count(h.foldCount) ||
+			h.foldCount < 2 ||
+			!Array.isArray(h.folds) ||
+			h.folds.length !== h.foldCount ||
+			!h.folds.every(
+				(f: unknown, i: number) =>
+					object(f) && f.fold === i && count(f.trainingProducts) && count(f.heldOutProducts) && summary(f)
+			)
+		)
+			return false;
+	}
 	return (
 		value.spread.length === points &&
 		value.populationMedian.length === points &&

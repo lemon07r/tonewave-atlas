@@ -193,7 +193,10 @@ describe('source transforms', () => {
 		expect(['Harman Target', 'EQ sandbox', '∆ Reference', 'IEF Calibration'].every(unwanted)).toBe(true);
 		expect(unwanted('CrinEar Reference')).toBe(false);
 		expect(unwanted('Brainwavz Delta')).toBe(false);
-		expect(computePartitionStatistics([])).toBeNull();
+		expect(computePartitionStatistics([])).toMatchObject({
+			support: { status: 'low', multiSourceProducts: 0 },
+			harmonisation: { pairs: 0, meanImprovement: null }
+		});
 	});
 	it.each([
 		['unknown coupler', true],
