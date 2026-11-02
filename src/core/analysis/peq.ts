@@ -124,14 +124,31 @@ function loss(residual: Curve): number {
 	return sum;
 }
 
-function capTrebleBoost(filters: Filter[]): Filter[] {
-	const highGrid = Float64Array.from({ length: 513 }, (_, i) => 6000 * 4 ** (i / 512));
+const TREBLE_SAFETY_GRID = Float64Array.from({ length: 513 }, (_, i) => 6000 * 4 ** (i / 512));
+
+/** Constrain the summed 6 kHz–Nyquist response on the safety grid without mutating input filters. */
+export function capTrebleBoost(filters: Filter[]): Filter[] {
 	for (let iteration = 0; iteration < 12; iteration++) {
-		const max = Math.max(...equalizerResponse(filters, highGrid));
-		if (max <= 4) break;
+		const max = Math.max(...equalizerResponse(filters, TREBLE_SAFETY_GRID));
+		if (max <= 4) return filters;
+		if (!filters.some((f) => f.gain > 0)) break;
 		filters = filters.map((f) => (f.gain > 0 ? { ...f, gain: (f.gain * 3.99) / max } : f));
 	}
-	return filters;
+	if (Math.max(...equalizerResponse(filters, TREBLE_SAFETY_GRID)) <= 4) return filters;
+	// Negative shelves can also overshoot positively. Keep a verified feasible lower bound while
+	// searching a shared gain scale, relaxing cuts as well as boosts only when necessary.
+	let low = 0,
+		high = 1,
+		feasible = filters.map((f) => ({ ...f, gain: 0 }));
+	for (let iteration = 0; iteration < 24; iteration++) {
+		const scale = (low + high) / 2,
+			trial = filters.map((f) => ({ ...f, gain: f.gain * scale }));
+		if (Math.max(...equalizerResponse(trial, TREBLE_SAFETY_GRID)) <= 3.99) {
+			low = scale;
+			feasible = trial;
+		} else high = scale;
+	}
+	return feasible;
 }
 
 function refine(initial: readonly Filter[], desired: Curve, iterations: number): Filter[] {
@@ -189,8 +206,6 @@ function refine(initial: readonly Filter[], desired: Curve, iterations: number):
 export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = {}): PeqResult | null {
 	sameLength(measurement, GRID);
 	sameLength(target, GRID);
-	const distance = responseDistance(measurement, target, { maxHz: 10000 });
-	if (!distance) return null;
 	const maxFilters = options.maxFilters ?? 5,
 		iterations = options.iterations ?? 18;
 	if (
@@ -202,20 +217,15 @@ export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = 
 		iterations > 100
 	)
 		throw new RangeError('Invalid fitter limits');
+	const distance = responseDistance(measurement, target, { maxHz: 10000 });
+	if (!distance) return null;
 	const raw = Float64Array.from(measurement, (v, i) => (target[i] ?? NaN) - v + distance.offset);
 	const safeRaw = raw.slice(),
 		broad = smoothOctave(raw, 3),
 		blocked = new Uint8Array(GRID.length);
 	const hardToCorrect: HardRegion[] = [{ low: 10000, high: 20000, reason: 'high-frequency-uncertainty' }];
 	for (let i = 0; i < raw.length; i++)
-		if ((raw[i] ?? 0) - (broad[i] ?? 0) > 2 && (raw[i] ?? 0) > 0) {
-			blocked[i] = 1;
-			hardToCorrect.push({
-				low: GRID[Math.max(0, i - 1)] ?? 20,
-				high: GRID[Math.min(GRID.length - 1, i + 1)] ?? 20000,
-				reason: 'narrow-notch'
-			});
-		}
+		if ((raw[i] ?? 0) - (broad[i] ?? 0) > 2 && (raw[i] ?? 0) > 0) blocked[i] = 1;
 	// Remove notch requests BEFORE smoothing; otherwise their smoothed shoulders still invite boosts.
 	for (let i = 0; i < raw.length; i++) {
 		if (!blocked[i]) continue;
@@ -224,6 +234,11 @@ export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = 
 		const end = i,
 			left = raw[start - 1] ?? NaN,
 			right = raw[end + 1] ?? NaN;
+		hardToCorrect.push({
+			low: GRID[Math.max(0, start - 1)] ?? 20,
+			high: GRID[Math.min(GRID.length - 1, end + 1)] ?? 20000,
+			reason: 'narrow-notch'
+		});
 		for (let j = start; j <= end; j++)
 			safeRaw[j] =
 				Number.isFinite(left) && Number.isFinite(right)

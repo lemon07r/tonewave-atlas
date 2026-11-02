@@ -36,10 +36,12 @@ least-squares level alignment, not alignment at one frequency. With fixed symmet
 symmetric and invariant to either input's constant level offset. It is a distance on shape modulo
 level when support is fixed; varying missing-data support prevents treating all pairwise results as
 one metric space. Tilt is the weighted regression slope of e−c against log₂(f), in dB/octave, with a
-free intercept. A two-pass calculation avoids subtracting nearly equal raw second moments.
+free intercept. The distance SSE uses a centred two-pass calculation to avoid subtracting nearly
+equal raw second moments; tilt uses the usual weighted raw regression moments.
 
 Defaults: inclusive comparison range 20 Hz–20 kHz, at least 12 finite overlapping points and at least
-50% coverage. Coverage is overlapping **bin count / eligible bin count**, not weight mass and not the
+50% coverage. Frequencies must be finite to be eligible in every distance/statistics pass. Coverage
+is overlapping **bin count / eligible bin count**, not weight mass and not the
 union of measured support. Zero-weight bins are ineligible. Insufficient comparisons return `null`.
 These are data-adequacy safeguards, not confidence intervals; range and adequacy limits are options.
 Distance itself defaults to uniform weights; callers opt into `makeWeights` explicitly.
@@ -99,7 +101,9 @@ The ingestion caller supplies one curve per product/source within a partition, a
 appropriate default/tuning variants. Duplicate product/source rows are rejected. Fit variants remain
 separate evidence of sensitivity, never extra independent reviewers or extra population votes.
 
-1. Within each product, align sources by LS offset to the first source; take a finite-point median
+1. Within each product, align sources by LS offset to the source with the most finite points in
+   20 Hz–20 kHz (input-order ties); a sparse first source cannot discard otherwise well-covered
+   sources. Curves without sufficient anchor overlap remain missing. Take a finite-point median
    consensus, and align sources to that consensus. For nᵢ≥2 finite source values, estimate spread as
    `1.4826 × median(|x−median(x)|) × sqrt(nᵢ/(nᵢ−1))`. The partition σᵢ is the median of these
    product estimates. The 1.4826 factor is Gaussian asymptotic MAD scaling; the finite-consensus
@@ -119,7 +123,8 @@ separate evidence of sensitivity, never extra independent reviewers or extra pop
    requires about ten overlapping products for half-strength correction and limits sparse-overlap
    overfitting; k is configurable. Unobserved offsets remain NaN and are not applied.
 3. Give each product one consensus curve, align those product curves to a common anchor by LS offset,
-   and take the per-frequency median to obtain the population curve. This describes the dataset's
+   and take the per-frequency median to obtain the population curve. Its anchor is likewise the
+   best-covered product curve. This describes the dataset's
    measured product distribution, not an ideal target or a population of listeners.
 4. `validateSourceOffsets(products, frequencies?, shrinkage=10, foldCount=5)` uses deterministic
    **K-fold cross-validation by product** (K≥2). A product's fold is unsigned FNV-1a over its id's
@@ -136,7 +141,8 @@ separate evidence of sensitivity, never extra independent reviewers or extra pop
    Training runs at most K times instead of P times; with K fixed, work no longer grows quadratically
    in product count (robust medians still require sorting). This remains a build-time operation.
 5. Fit variants, when supplied, get their own aligned MAD spread and mean D to their median. These
-   describe sensitivity within the available measurements, not a model of any user's fit.
+   describe sensitivity within the available measurements, not a model of any user's fit. Fewer than
+   two comparable variants yield null mean distance, not a claimed zero sensitivity.
 
 Correlated reviewers, rig calibration, tips, units and measurement selection confound all estimates.
 Robustness does not turn observational overlap into independent controlled replicates. Support arrays
@@ -153,7 +159,8 @@ Positives use **average-linkage** clustering on symmetric D. Merge the closest c
 cross-cluster D≤`TASTE_CLUSTER_DISTANCE_DB=3 dB`. This is a provisional engineering threshold: three
 times the regularisation floor and a visibly distinct broadband shape scale, **not an established
 same-product/noise boundary**. It should be calibrated against the shipped partition's cross-source
-data; it is configurable. Disconnected support is infinite linkage, not a forced merge.
+data; it is configurable, but must be finite and nonnegative. Disconnected support is infinite
+linkage, not a forced merge.
 
 Each cluster is a taste. Members are LS-aligned to its first member; the centre is a per-frequency
 weighted median. Dissimilar clusters are never blended into one target. Member spread sᵢ is 1.4826
@@ -164,8 +171,9 @@ normalises weights, a frequency-independent tolerance factor alone cannot change
 relative regional influence, not a global fit probability. Also report ordinary weighted D to the
 centre and D to the nearest liked item across tastes.
 
-Reasoned dislikes do **not** form a negative-average target. Traits are regional dB level relative
-to the 500 Hz–2 kHz mean (uniform log-bin weights):
+Reasoned dislikes do **not** form a negative-average target. Most traits are regional dB level
+relative to the 500 Hz–2 kHz mean (uniform log-bin weights). Exceptions are the sub-/mid-bass balance
+for `bass-lacks-punch` and the narrow-residual RMS for `sibilance`, as defined below:
 
 | Reason                          | Trait; disliked direction                                                  |
 | ------------------------------- | -------------------------------------------------------------------------- |
@@ -247,12 +255,16 @@ For 2–4 references return each D, arithmetic mean D and minimax D. A candidate
 no other complete candidate is no worse for every reference and strictly better for at least one.
 Tied objective vectors remain non-dominated. Missing any reference makes aggregates null and Pareto
 false; comparisons never quietly drop a difficult reference.
+The current dominance scan is O(N²) in the worst case, separate from the O(N) distance calculations.
+It is not a catalogue-scale packed ranker; the benchmark includes an all-non-dominated 3,000-item
+case to expose that limitation. No 30,000-item latency bound is claimed for this path.
 
 Targets are edits of a supplied base, not universal prescriptions. Bass shelf defaults to 100 Hz,
 Q=.707; warmth is a 200 Hz peak, Q=.7; treble shelf defaults to 6 kHz, Q=.707. Gains are caller inputs.
 Tilt is t·log₂(f/1000) dB. Presence multiplies base ear gain relative to the 500–1000 Hz mean by a
 log-frequency sin² shoulder on 1–6 kHz: add `(scale−1)·(base−midMean)·sin²(π log(f/1000)/log(6))`.
-Outside that interval it is zero; scale=1 is identity. This preserves the shape of the supplied base
+Outside that interval it is zero; scale=1 is identity. If no finite 500–1000 Hz pivot exists, presence
+scaling is skipped rather than erasing finite base coverage. This preserves the shape of the supplied base
 rather than inventing an ear-gain curve. Shelf and peak magnitudes use the same RBJ implementation as PEQ.
 
 ## Constrained parametric EQ
@@ -266,7 +278,8 @@ The desired correction is target−measurement, level-aligned over 20 Hz–10 kH
 below 6 kHz and linearly blend to **2-octave** smoothing at 8 kHz (AutoEq-inspired). Above 10 kHz fit
 only one average residual with total weight 0.1, not sample detail. For narrow positive corrective
 requests >2 dB above the 1/3-oct smooth (measurement notches), interpolate across the request **before
-smoothing**, exclude those locations from greedy seeds, and report the notch. This avoids the
+smoothing**, exclude those locations from greedy seeds, and report one region per contiguous notch
+run. This avoids the
 smoothed shoulders of a notch creating a spurious boost target; it is not proof that any boost is safe.
 
 Greedy initialisation tests peak seeds at the largest residual (Q=.7,1.5,3) and low/high shelves.
@@ -286,6 +299,12 @@ with centres >6 kHz and all high shelves limited to +4 dB. Safety projection red
 gains if their **summed** response exceeds +4 dB from 6 kHz to Nyquist (513-point log sweep). This
 conservative projection is applied before trial acceptance and again after final filter cleanup.
 The returned residual reflects the bounded result, not an uncapped intermediate fit.
+`capTrebleBoost` exposes that same projection. If reducing positive gains cannot satisfy the cap
+(negative shelves can themselves overshoot positively), a 24-step bounded search scales **all** gains
+towards zero while retaining a verified feasible result below 3.99 dB. This may relax cuts as well as
+boosts. The guarantee is on the stated safety grid, not a proof over every continuous frequency.
+Invalid fitter limits are rejected before coverage checks; unsupported RBJ filter types are rejected
+instead of silently being interpreted as shelves.
 
 Output includes filters, summed response, level-aligned corrected−target residual, D over 20 Hz–10 kHz,
 notches, bands with residual RMS>3 dB, and >10 kHz uncertainty. Preamp is −max(0,summed boost)−0.2 dB,

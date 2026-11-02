@@ -18,6 +18,49 @@ function products(n: number, bias = 1): ProductMeasurements[] {
 }
 
 describe('cross-source statistics', () => {
+	it('preserves well-covered sources when the first source has sparse coverage', () => {
+		const sparse = new Float64Array(120).fill(NaN);
+		sparse.fill(70, 0, 20);
+		const product = {
+			id: 'sparse-first',
+			measurements: [
+				{ source: 'sparse', curve: sparse },
+				{ source: 'full-a', curve: new Float64Array(120).fill(70) },
+				{ source: 'full-b', curve: new Float64Array(120).fill(90) }
+			]
+		};
+		const stats = estimatePartitionStatistics([product], RANK_GRID, 0);
+		expect(stats.populationMedian.every((v) => Number.isFinite(v))).toBe(true);
+		expect(stats.spread.every((v) => v === 0)).toBe(true);
+		expect(stats.spreadSupport[60]).toBe(1);
+		expect(stats.sourceOffsets.map((s) => s.source)).toEqual(['full-a', 'full-b']);
+	});
+	it('does not report a singleton fit variant as measured zero sensitivity', () => {
+		const p = products(1, 0)[0];
+		if (!p) throw new Error('fixture');
+		p.fitVariants = [new Float64Array(120).fill(70)];
+		const sensitivity = estimatePartitionStatistics([p], RANK_GRID).fitSensitivity[0];
+		expect(sensitivity?.meanDistance).toBeNull();
+		expect(sensitivity?.spread.every(Number.isNaN)).toBe(true);
+	});
+	it('rejects invalid shrinkage and duplicate product/source observations before fold assignment', () => {
+		for (const shrinkage of [-1, NaN, Infinity]) {
+			expect(() => estimatePartitionStatistics(products(1), RANK_GRID, shrinkage)).toThrow(RangeError);
+			expect(() => validateSourceOffsets(products(1), RANK_GRID, shrinkage)).toThrow(RangeError);
+		}
+		const duplicate = [
+			{
+				id: 'a',
+				measurements: [
+					{ source: 'same', curve: new Float64Array(120) },
+					{ source: 'same', curve: new Float64Array(120) }
+				]
+			}
+		];
+		expect(() => estimatePartitionStatistics(duplicate, RANK_GRID)).toThrow(RangeError);
+		// A single occupied fold has no training products: training-only validation would miss this.
+		expect(() => validateSourceOffsets(duplicate, RANK_GRID, 10, 2)).toThrow(RangeError);
+	});
 	it('removes arbitrary levels before spread and population estimation', () => {
 		const p = products(4, 0),
 			stats = estimatePartitionStatistics(p, RANK_GRID);

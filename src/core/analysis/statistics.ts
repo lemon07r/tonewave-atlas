@@ -26,13 +26,28 @@ export interface PartitionStatistics {
 }
 
 function align(curves: readonly Curve[], f: Curve): Float64Array[] {
-	const anchor = curves[0];
+	let anchor: Curve | undefined,
+		bestCoverage = -1;
+	for (const curve of curves) {
+		sameLength(curve, f);
+		let coverage = 0;
+		for (let i = 0; i < curve.length; i++)
+			if ((f[i] ?? NaN) >= 20 && (f[i] ?? NaN) <= 20000 && Number.isFinite(curve[i])) coverage++;
+		if (coverage > bestCoverage) {
+			bestCoverage = coverage;
+			anchor = curve;
+		}
+	}
 	if (!anchor) return [];
 	return curves.map((curve) => {
-		sameLength(curve, f);
 		const d = responseDistance(curve, anchor, { frequencies: f });
 		return Float64Array.from(curve, (v) => (d ? v - d.offset : NaN));
 	});
+}
+
+function validateSources(product: ProductMeasurements): void {
+	if (new Set(product.measurements.map((m) => m.source)).size !== product.measurements.length)
+		throw new RangeError('Duplicate product/source');
 }
 
 function consensus(curves: readonly Curve[], n: number): Float64Array {
@@ -52,8 +67,7 @@ export function estimatePartitionStatistics(
 	const population: Float64Array[] = [];
 	const fitSensitivity: PartitionStatistics['fitSensitivity'] = [];
 	for (const product of products) {
-		if (new Set(product.measurements.map((m) => m.source)).size !== product.measurements.length)
-			throw new RangeError('Duplicate product/source');
+		validateSources(product);
 		const curves = align(
 			product.measurements.map((m) => m.curve),
 			frequencies
@@ -114,7 +128,7 @@ export function estimatePartitionStatistics(
 						m = median(values);
 					return values.length >= 2 ? 1.4826 * median(values.map((v) => Math.abs(v - m))) : NaN;
 				}),
-				meanDistance: ds.length ? ds.reduce((a, b) => a + b, 0) / ds.length : null
+				meanDistance: ds.length >= 2 ? ds.reduce((a, b) => a + b, 0) / ds.length : null
 			});
 		}
 	}
@@ -197,6 +211,7 @@ export function validateSourceOffsets(
 ): HarmonisationValidation {
 	if (!Number.isInteger(foldCount) || foldCount < 2) throw new RangeError('Use at least two folds');
 	if (!(shrinkage >= 0 && Number.isFinite(shrinkage))) throw new RangeError('Invalid shrinkage');
+	for (const product of products) validateSources(product);
 	const ordered = [...products].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 	const first = ordered.find((p) => p.measurements.length)?.measurements[0]?.curve;
 	const f = first ? frequenciesFor(first, frequencies) : frequencies;

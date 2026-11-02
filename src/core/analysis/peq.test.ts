@@ -7,7 +7,14 @@ import {
 	filterResponse,
 	type Filter
 } from './biquad.ts';
-import { fitPeq, exportEqualizerApo, exportPeqJson, exportWavelet, smoothEqError } from './peq.ts';
+import {
+	fitPeq,
+	exportEqualizerApo,
+	exportPeqJson,
+	exportWavelet,
+	smoothEqError,
+	capTrebleBoost
+} from './peq.ts';
 import { buildTarget } from './targets.ts';
 
 /** Independent objective: demean low-band errors; only the high-band mean has total weight .1. */
@@ -26,6 +33,11 @@ function fittingLoss(filters: readonly Filter[], target: Float64Array): number {
 }
 
 describe('RBJ filters', () => {
+	it('rejects unsupported filter types at an untyped input boundary', () => {
+		// @ts-expect-error Deliberately exercise invalid deserialised filter data.
+		const type: Filter['type'] = 'not-a-filter';
+		expect(() => biquadCoefficients({ type, frequency: 1000, gain: 3, q: 1 })).toThrow(RangeError);
+	});
 	it('agrees with independent complex evaluation of H(exp(jw)) for every type', () => {
 		for (const type of ['peak', 'low-shelf', 'high-shelf'] as const)
 			for (const gain of [-12, 0, 8]) {
@@ -58,6 +70,10 @@ describe('RBJ filters', () => {
 });
 
 describe('target builder', () => {
+	it('preserves partial base coverage when presence scaling lacks its midrange anchor', () => {
+		const base = Float64Array.from(GRID, (f) => (f >= 1200 ? 5 : NaN));
+		expect(buildTarget(base, { presenceScale: 0.5 })).toEqual(base);
+	});
 	it('is identity by default and has analytic pivoted tilt', () => {
 		const base = Float64Array.from(GRID, (f) => Math.sin(Math.log(f)));
 		expect(buildTarget(base)).toEqual(base);
@@ -81,6 +97,36 @@ describe('target builder', () => {
 });
 
 describe('constrained PEQ', () => {
+	it('groups a contiguous multi-bin notch into one hard-to-correct region', () => {
+		const measurement = new Float64Array(240);
+		measurement[119] = -18;
+		measurement[120] = -18;
+		const result = fitPeq(measurement, new Float64Array(240), { maxFilters: 0 });
+		expect(result?.hardToCorrect.filter((r) => r.reason === 'narrow-notch')).toEqual([
+			{ low: GRID[118], high: GRID[121], reason: 'narrow-notch' }
+		]);
+	});
+	it('validates fitter limits before returning insufficient overlap', () => {
+		const missing = new Float64Array(240).fill(NaN),
+			target = new Float64Array(240);
+		for (const maxFilters of [-1, 11, NaN])
+			expect(() => fitPeq(missing, target, { maxFilters })).toThrow(RangeError);
+		for (const iterations of [0, 101, NaN])
+			expect(() => fitPeq(missing, target, { iterations })).toThrow(RangeError);
+	});
+	it('enforces the treble cap even when only negative shelf gains create the overshoot', () => {
+		const filters: Filter[] = Array.from({ length: 10 }, () => ({
+			type: 'low-shelf',
+			frequency: 6000,
+			gain: -12,
+			q: 1
+		}));
+		const high = Float64Array.from({ length: 513 }, (_, i) => 6000 * 4 ** (i / 512));
+		expect(Math.max(...equalizerResponse(filters, high))).toBeGreaterThan(7);
+		const bounded = capTrebleBoost(filters);
+		expect(Math.max(...equalizerResponse(bounded, high))).toBeLessThanOrEqual(4);
+		expect(filters.every((f) => f.gain === -12)).toBe(true);
+	});
 	it('recovers a known isolated synthetic peak', () => {
 		const known: Filter = { type: 'peak', frequency: 1000, gain: 5, q: 2 },
 			target = filterResponse(known);

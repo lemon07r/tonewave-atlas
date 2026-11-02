@@ -31,6 +31,15 @@ const options = {
 };
 
 describe('taste model', () => {
+	it('rejects non-finite or negative clustering thresholds rather than merging unrelated likes', () => {
+		for (const threshold of [NaN, Infinity, -1])
+			expect(() =>
+				buildTasteModel([item('a', bass(12)), item('b', bass(-12))], {
+					...options,
+					clusterThresholdDb: threshold
+				})
+			).toThrow(RangeError);
+	});
 	it('clusters similar likes, with an aligned median and agreement-driven summaries', () => {
 		const model = buildTasteModel([item('a', bass(4)), item('b', bass(4.5))], options);
 		expect(model.tastes).toHaveLength(1);

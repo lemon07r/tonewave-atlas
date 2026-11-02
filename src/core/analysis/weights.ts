@@ -19,6 +19,9 @@ export function defaultSpreadDb(hz: number): number {
 export function makeWeights(frequencies: Curve, options: WeightOptions = {}): Float64Array {
 	if (options.spread && options.spread.length !== frequencies.length)
 		throw new RangeError('Spread/grid length mismatch');
+	for (const multiplier of Object.values(options.bandMultipliers ?? {}))
+		if (!Number.isFinite(multiplier) || multiplier < 0)
+			throw new RangeError('Band multipliers must be finite and nonnegative');
 	const reliability = new Float64Array(frequencies.length);
 	let sum = 0,
 		count = 0;
@@ -41,8 +44,6 @@ export function makeWeights(frequencies: Curve, options: WeightOptions = {}): Fl
 		if (options.focus === 'treble' && f >= 2000 && f <= 10000) focus *= 3;
 		const band = BANDS[bandIndex(f)];
 		const custom = band ? (options.bandMultipliers?.[band.id] ?? 1) : 1;
-		if (!Number.isFinite(custom) || custom < 0)
-			throw new RangeError('Band multipliers must be finite and nonnegative');
 		return sum ? ((r * count) / sum) * focus * custom : 0;
 	});
 }
