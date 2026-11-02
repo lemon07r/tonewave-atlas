@@ -55,3 +55,56 @@ The high-band-average shelf seed and pre-acceptance cap checks increased PEQ fro
 ineligible in all distance passes; ordinary finite-grid ranking semantics are unchanged. The Pareto
 benchmark documents O(N²) behaviour; it does not establish acceptable latency at 30,000 candidates.
 Timings remain single-pass observations, not a controlled performance study.
+
+## Atlas service validation (2026-11-02)
+
+Service tests use the real TWFR encoder and a synthetic in-memory fetch
+dataset. Independent cases cover exact +3 dB offset equivalence, aligned default medians, separate
+tunings, no rig mixing, no default substitution from fit variants, observed-price/source filters,
+per-source ranges and query-specific coverage, unused taste ratings, corrections, Pareto objectives,
+detail channel means and variant spread, LRU eviction, concurrent-load deduplication, gzip, failed-load
+retry, private uploads and PEQ exports. A real `static/data` smoke test checks result structure and
+detail curves when the dataset exists, skipping only when the manifest is absent. A Node worker-thread
+test runs the actual Comlink worker entry and verifies typed-array upload/PEQ round trips. It does not
+exercise dataset-backed curve caching. A standalone Vite production build of the client also bundles
+the ES worker
+successfully (48.87 kB worker, 6.01 kB client before gzip); scratch build output was removed.
+
+`pnpm format`, `pnpm lint`, `pnpm check` and `pnpm test` pass. Knip is not clean before UI integration:
+it reports the unreferenced client/standalone atlas benchmark and exported public types
+`PartitionSummary`, `SimilarMatch`, `TasteItem`, `DetailMeasurement`, alongside existing engine/dataset
+exports and UI/test dependencies (`uplot`, `@axe-core/playwright`, `vitest-browser-svelte`).
+
+Run `node benchmarks/atlas.ts` after `pnpm data:pull`. Same machine/Node as the engine timings above;
+dataset `3c9d923462f8b79c98aa4ef9`, 2,082 IEM products (2,102 products across both forms), 4,293 iem-711
+measurements, top K=20. One cold request, one resident request, then one taste request with three
+likes; no synthetic curve generation in the timed paths. Disk-backed fetch is included, browser
+network latency and worker startup/message serialization are not. The cold service has not loaded its
+manifest or catalogs; benchmark reference-id selection outside the timer can warm the OS file cache.
+
+| Service workload                                                  |     ms | Budget ms |
+| ----------------------------------------------------------------- | -----: | --------: |
+| First similar: manifest + catalog + rank decode + consensus index | 267.66 |     1,500 |
+| Resident similar, including top-K source ranges                   |   1.95 |        50 |
+| Resident taste, including model and winner explanations           |   8.18 |       150 |
+
+All three budgets pass in this local observation. Null partition statistics remain null: no
+on-demand cross-source estimation, invented confidence, held-out real-source improvement or listener
+validation is claimed. These timings are not a latency guarantee or a statistical distribution.
+
+### PR #4 review follow-up
+
+After merging the engine/data/UI lanes, `pnpm format && pnpm lint && pnpm check && pnpm test` passes
+**290 tests in 25 files**. Added independent regression cases for sparse anchors on both grids,
+individually failing measurements, rankable-default rig counts, variant-only rigs, usable taste/compare
+coverage, tuning-reference self-exclusion (including top K=1), finite treble penalties ≥1, and typed
+reference identities. Product-only callers and optional product ownership checks for explicit
+measurements remain valid. Client lifecycle tests control the pending RPC response to verify prompt
+initialization rejection, root-release-before-termination ordering, no late child release, idempotent
+disposal and replacement after a late response. Benchmark guard tests reject non-three-reference,
+failed and zero-winner workloads; guards apply to cold, resident and taste requests.
+
+With those fixes, `node benchmarks/atlas.ts` on the same dataset/machine measured **199.17 ms** cold
+similar, **2.39 ms** resident similar and **8.97 ms** taste, each with 20 winners. All existing budgets
+remain met; these are another single local observation under the timing scope above, not a controlled
+comparison with the earlier run.

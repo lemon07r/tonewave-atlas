@@ -24,6 +24,40 @@ Equal response on a coupler does not establish equal response at a particular pe
 
 ## Response distance and explanations
 
+### Product references and ranking candidates
+
+Inside each partition, the atlas service gives a product one reference: the per-frequency median of
+its **default-variant** rank measurements across available sources. Each measurement is aligned to
+the first measurement with adequate self-coverage by a uniform-weight LS level offset before taking
+the median. Missing frequencies remain
+missing unless another aligned measurement covers them; measurements with insufficient overlap with
+the anchor do not contribute, and their ids are not claimed as contributors. When requested and
+available, estimated source-offset curves are subtracted before alignment/median pooling. Missing
+source offsets leave that source unchanged; absent statistics do not become zeros or fitted offsets.
+The result records contributing measurement ids and source attribution. This median is a robust
+description of the available measurements, not a physical ground truth or an independent-sample
+estimate. A product with no usable default reference is not given a fabricated consensus.
+
+Ranking indexes contain one default consensus per product and one separate, single-source candidate
+per `tuning` measurement, preserving the verbatim variant label. Tunings are opt-in at query time.
+Fit, setup, unit and unknown variants are not ranking candidates. Product detail retains all channels
+and variants. It reports GRID-resolution aligned default min/max bands with finite-bin support, and
+a **separate** variation band including defaults plus fit/setup/unit/unknown measurements. The latter
+mixes available observational variation, not solely reviewer disagreement. A single contributing
+measurement's zero-width band is not evidence of certainty. Detail averages repetitions within each
+channel and then L/R in dB; its full-resolution consensus is not an upsampled rank curve.
+
+For the top-K similarity winners only, compute D from each contributing reviewer's default curve to
+the selected reference, using exactly the query's weights and directional penalty. If a reviewer has
+several defaults, first take its aligned median. Report the min/max of valid per-source distances
+when at least two are available, otherwise null; the result's source count counts those with adequate
+overlap for this query (the candidate separately retains all contributing source attribution).
+For a tuning, use only that tuning's source, not the product's default-source pool. Thus a displayed
+“1.1–1.9 dB across 4 sources” is an observed reviewer range against the chosen reference, **not** a
+confidence interval and not all pairwise distances among reference and candidate measurements.
+
+### Distance calculation
+
 For eligible overlapping finite samples, let eᵢ=aᵢ−bᵢ, W=Σwᵢ, with finite positive weights:
 
 ```
@@ -82,6 +116,8 @@ vocals (250 Hz–5 kHz), or treble (2–10 kHz). Custom nonnegative band multipl
 
 Optional treble sensitivity multiplies **squared positive** aligned residuals in 2–10 kHz by α; use
 `treblePenalty: 2` for the default sensitive setting (otherwise 1; values below 1 are clamped to 1).
+The atlas service boundary accepts only finite multipliers ≥1 and throws `RangeError` otherwise;
+the lower-level engine retains its clamping behavior. No finite upper cap is specified.
 c remains the symmetric LS alignment. This directional score is explicitly **not symmetric**; its
 penalty energy is included in band contribution shares, while band RMS stays in ordinary dB. Peak
 audibility exceeding dip audibility has qualitative support (Bücklein, 1981), but no universal α is
