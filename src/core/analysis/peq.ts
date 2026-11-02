@@ -311,6 +311,17 @@ export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = 
 	for (const b of BANDS)
 		if (b.low < 10000 && (final.bands.find((band) => band.band === b.id)?.rmsDb ?? 0) > 3)
 			hardToCorrect.push({ low: b.low, high: b.high, reason: 'residual' });
+	return {
+		filters,
+		preamp: headroomPreamp(filters),
+		response,
+		residual,
+		residualDistanceDb: final.distance,
+		hardToCorrect
+	};
+}
+
+function headroomPreamp(filters: readonly Filter[]): number {
 	// Dense sweep catches inter-grid maxima, not just the 240 displayed samples.
 	const coefficients = filters.map((f) => biquadCoefficients(f));
 	let maxBoost = 0;
@@ -320,29 +331,50 @@ export function fitPeq(measurement: Curve, target: Curve, options: PeqOptions = 
 		for (const c of coefficients) boost += biquadMagnitudeDb(c, hz);
 		maxBoost = Math.max(maxBoost, boost);
 	}
-	return {
-		filters,
-		preamp: -maxBoost - 0.2,
-		response,
-		residual,
-		residualDistanceDb: final.distance,
-		hardToCorrect
-	};
+	return -maxBoost - 0.2;
 }
 
+/** APO >=1.2.1 supports centre-frequency LSC/HSC with Q, not shelf slope S:
+ * https://sourceforge.net/p/equalizerapo/wiki/Configuration%20reference/#filter
+ * Explicit all-channel selection prevents an enclosing config's L/R selection leaking into this EQ.
+ */
 export function exportEqualizerApo(result: PeqResult): string {
+	const filters = result.filters.map((f) => ({
+		...f,
+		frequency: Number(f.frequency.toFixed(2)),
+		gain: Number(f.gain.toFixed(2)),
+		q: Number(f.q.toFixed(4))
+	}));
+	// Recheck the serialized parameters; round attenuation down, never away from safe headroom.
+	const preamp = Math.floor(Math.min(result.preamp, headroomPreamp(filters)) * 100) / 100;
 	return [
-		`Preamp: ${result.preamp.toFixed(2)} dB`,
-		...result.filters.map(
+		'Channel: all',
+		`Preamp: ${preamp.toFixed(2)} dB`,
+		...filters.map(
 			(f, i) =>
 				`Filter ${i + 1}: ON ${f.type === 'peak' ? 'PK' : f.type === 'low-shelf' ? 'LSC' : 'HSC'} Fc ${f.frequency.toFixed(2)} Hz Gain ${f.gain.toFixed(2)} dB Q ${f.q.toFixed(4)}`
 		)
 	].join('\n');
 }
+
+// AutoEq 7ae0f56d53074872b028649617a22bbb4232feb7, DEFAULT_GRAPHIC_EQ_STEP=1.0563;
+// eqapo_graphic_eq floors 20*step**arange(ceil(log(1000)/log(step))), then unique/sort:
+// https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/autoeq/frequency_response.py#L121-L137
+// https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/autoeq/constants.py#L64
+const WAVELET_FREQUENCIES = [
+	20, 21, 22, 23, 24, 26, 27, 29, 30, 32, 34, 36, 38, 40, 43, 45, 48, 50, 53, 56, 59, 63, 66, 70, 74, 78, 83,
+	87, 92, 97, 103, 109, 115, 121, 128, 136, 143, 151, 160, 169, 178, 188, 199, 210, 222, 235, 248, 262, 277,
+	292, 309, 326, 345, 364, 385, 406, 429, 453, 479, 506, 534, 565, 596, 630, 665, 703, 743, 784, 829, 875,
+	924, 977, 1032, 1090, 1151, 1216, 1284, 1357, 1433, 1514, 1599, 1689, 1784, 1885, 1991, 2103, 2221, 2347,
+	2479, 2618, 2766, 2921, 3086, 3260, 3443, 3637, 3842, 4058, 4287, 4528, 4783, 5052, 5337, 5637, 5955, 6290,
+	6644, 7018, 7414, 7831, 8272, 8738, 9230, 9749, 10298, 10878, 11490, 12137, 12821, 13543, 14305, 15110,
+	15961, 16860, 17809, 18812, 19871
+];
 export function exportWavelet(result: PeqResult): string {
-	const frequencies = Float64Array.from({ length: 127 }, (_, i) => 20 * 1000 ** (i / 126));
-	const response = equalizerResponse(result.filters, frequencies);
-	return `GraphicEQ: ${Array.from(frequencies, (f, i) => `${Math.round(f)} ${((response[i] ?? 0) + result.preamp).toFixed(2)}`).join('; ')}`;
+	const response = equalizerResponse(result.filters, WAVELET_FREQUENCIES);
+	// Values are gains, including nominal headroom once. AutoEq normalizes its sampled maximum to
+	// -0.2 dB; we retain the more conservative dense parametric-sweep preamp rather than renormalizing.
+	return `GraphicEQ: ${WAVELET_FREQUENCIES.map((f, i) => `${f} ${((response[i] ?? 0) + result.preamp).toFixed(2)}`).join('; ')}`;
 }
 export function exportPeqJson(result: PeqResult): string {
 	return JSON.stringify({ sampleRate: SAMPLE_RATE, preamp: result.preamp, filters: result.filters }, null, 2);
