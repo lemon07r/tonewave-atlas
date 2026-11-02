@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { encodePack, type CurvePack } from '../dataset/codec.ts';
 import type {
 	Catalog,
@@ -13,6 +13,7 @@ import type {
 } from '../dataset/types.ts';
 import { GRID, RANK_GRID, RANK_SIZE } from '../grid.ts';
 import { buildPartitionIndex, consensus } from './index.ts';
+import * as indexing from './index.ts';
 import { AtlasService } from './service.ts';
 import type { CompareRequest, SimilarRequest } from './types.ts';
 import { spreadFor } from './spread.ts';
@@ -275,6 +276,90 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 }
 
 describe('atlas service', () => {
+	it.each(['similar', 'compare'] as const)(
+		'reviewer: automatic %s rig selection checks default consensus coverage under query weights',
+		async (method) => {
+			const { service, packs, files } = fixture(
+				8,
+				['a', 'b'].map((productId) => ({
+					id: `${productId}-5128`,
+					productId,
+					kind: 'default',
+					partition: 'iem-5128'
+				}))
+			);
+			const pack = packs.find((p) => p.partition === 'iem-711');
+			if (!pack) throw new Error('fixture');
+			// Still >80% covered on the full grid, but completely unobserved in the selected band.
+			for (const curve of pack.curves)
+				if (['a1', 'a2', 'b1'].includes(curve.measurementId))
+					for (let i = 0; i < RANK_SIZE; i++) if ((RANK_GRID[i] ?? Infinity) < 60) curve.values[i] = NaN;
+			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+			const settings = {
+				customBands: { 'sub-bass': 1, bass: 0, 'low-mid': 0, mid: 0, presence: 0, treble: 0, air: 0 }
+			};
+			const result =
+				method === 'similar'
+					? await service.similar({ productId: 'a', ...settings })
+					: await service.compare({ productIds: ['a', 'b'], ...settings });
+			expect(result).toMatchObject({ ok: true, partition: 'iem-5128' });
+			expect(result.ok && result.results.length).toBeGreaterThan(0);
+		}
+	);
+	it('reviewer: source-only index keys ignore duplicates, order and sources absent from the partition', async () => {
+		const { service } = fixture();
+		const build = vi.spyOn(indexing, 'buildPartitionIndex');
+		try {
+			const query = (sources: string[], productId = 'a', partition = 'iem-711') =>
+				service.similar({
+					productId,
+					partition,
+					harmonise: false,
+					filters: { sourceMode: 'only', sources }
+				});
+			const first = await query(['s2', 'ghost', 's1', 's1']);
+			expect(first.ok).toBe(true);
+			expect(await query(['s1', 's2', 'another-ghost'])).toEqual(first);
+			expect(build).toHaveBeenCalledTimes(1);
+			expect(await query(['ghost'])).toMatchObject({ ok: false, error: 'not-measured-on-rig' });
+			expect(await query(['another-ghost'])).toMatchObject({ ok: false, error: 'not-measured-on-rig' });
+			expect(build).toHaveBeenCalledTimes(2);
+			// s2 is known to the catalog, but not present on 5128.
+			const other = await query(['s1', 's2'], 'd', 'iem-5128');
+			expect(other.ok).toBe(true);
+			expect(await query(['s1'], 'd', 'iem-5128')).toEqual(other);
+			expect(build).toHaveBeenCalledTimes(3);
+		} finally {
+			build.mockRestore();
+		}
+	});
+	it('reviewer: source-specific indexes evict least-recently-used entries while retaining base indexes and shared rank packs', async () => {
+		const { service, calls } = fixture();
+		const build = vi.spyOn(indexing, 'buildPartitionIndex');
+		try {
+			const query = (sources?: string[]) =>
+				service.similar({
+					productId: 'a',
+					partition: 'iem-711',
+					harmonise: false,
+					...(sources ? { filters: { sourceMode: 'only' as const, sources } } : {})
+				});
+			const base = await query();
+			for (const sources of [['s1'], ['s2'], ['s1', 's2'], ['s1', 's3']]) await query(sources);
+			expect(build).toHaveBeenCalledTimes(5);
+			await query(['s1']); // refresh the oldest entry before inserting a fifth source-specific key
+			await query(['s2', 's3']);
+			await query(['s1']);
+			expect(build).toHaveBeenCalledTimes(6);
+			await query(['s2']); // evicted, so rebuild from the resident raw pack
+			expect(build).toHaveBeenCalledTimes(7);
+			expect(await query()).toEqual(base);
+			expect(build).toHaveBeenCalledTimes(7);
+			expect(calls.filter((p) => p.endsWith('rank-iem-711.bin.gz'))).toHaveLength(1);
+		} finally {
+			build.mockRestore();
+		}
+	});
 	it('names coverage as the default source mode and recomputes both reference and candidate consensus in only mode', async () => {
 		const { service, packs, files } = fixture();
 		const pack = packs[0],

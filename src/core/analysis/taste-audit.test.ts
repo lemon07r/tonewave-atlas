@@ -8,6 +8,7 @@ import {
 	scoreTasteCandidate,
 	type RatedItem
 } from './taste.ts';
+import { distanceSummary } from './distance.ts';
 
 const flat = new Float64Array(120);
 const bass = (gain: number) => Float64Array.from(RANK_GRID, (f) => (f < 250 ? gain : 0));
@@ -155,6 +156,43 @@ describe('taste heuristic audit', () => {
 			expect(fit?.penalty).toBe(0);
 			expect(fit?.constraints[0]?.statement).toContain('Insufficient measured coverage');
 		}
+	});
+	it('reviewer: scale-linear distance requires fixed weights; rebuilding positives changes tolerance weights and clustering', () => {
+		const model = (scale: number) =>
+			buildTasteModel(
+				[-1, 0, 1].map((sign, i) =>
+					rating(
+						String(i),
+						Float64Array.from(flat, (_, j) => sign * scale * (j < 30 ? 1 : j < 60 ? -1 : 0))
+					)
+				),
+				options
+			);
+		const candidate = (scale: number) => Float64Array.from(flat, (_, j) => (j < 60 ? 2 * scale : 0));
+		const one = model(1),
+			two = model(2);
+		expect(one.tastes).toHaveLength(1);
+		expect(two.tastes).toHaveLength(1);
+		// Median centre is zero. Member MAD is scale in the first 60 bins, zero elsewhere.
+		// Hence weights are 1/(2 + (1.4826*scale)^2) and 1/2 in equal-sized regions.
+		// Weighted variance of levels [2*scale, 0] is (2*scale)^2*a*b/(a+b)^2.
+		const expected = (scale: number) => {
+			const a = 1 / (2 + (1.4826 * scale) ** 2),
+				b = 0.5;
+			return (2 * scale * Math.sqrt(a * b)) / (a + b);
+		};
+		const fit1 = scoreTasteCandidate(candidate(1), one)?.fit ?? NaN;
+		const fit2 = scoreTasteCandidate(candidate(2), two)?.fit ?? NaN;
+		expect(fit1).toBeCloseTo(expected(1), 12);
+		expect(fit2).toBeCloseTo(expected(2), 12);
+		expect(Math.abs(fit2 - 2 * fit1)).toBeGreaterThan(0.4);
+		const taste = one.tastes[0];
+		if (!taste) throw new Error('missing taste');
+		expect(distanceSummary(candidate(2), taste.centre, { weights: taste.weights })?.distance).toBeCloseTo(
+			2 * fit1,
+			12
+		);
+		expect(model(4).tastes).toHaveLength(2);
 	});
 	it('keeps small positive sets limited and retains conflicting separated tastes without blending away the conflict', () => {
 		for (const count of [1, 2])

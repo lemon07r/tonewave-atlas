@@ -83,7 +83,9 @@ in the set under the default `filters.sourceMode: 'coverage'`, without changing 
 `'only'` instead filters individual rank measurements before pooling references and candidates;
 it requires selected sources, echoes the effective mode, and caveats lost measurements. Partition-wide
 reliability/population/reviewer-offset statistics remain unchanged. Derived indexes are cached by
-partition, harmonisation and canonical source set; raw packs are shared. Tuning candidates are opt-in through
+partition, harmonisation and canonical source set (deduplicated, sorted, restricted to that partition).
+Source-specific indexes use a four-entry LRU separate from resident unfiltered indexes; eviction
+retains shared raw packs. Tuning candidates are opt-in through
 `filters.includeTunings`; similarity excludes the reference product's default but may include its
 explicit tunings when enabled. Taste always excludes every rated product, including its tunings.
 An explicit tuning measurement is never its own similarity candidate, even with tunings enabled.
@@ -93,7 +95,8 @@ the unavailable items and list rigs supporting all requested identities. Default
 uses the greatest coverage of usable requested/rated items; ties prefer more measured products, then
 partition id. Explicit measurement references keep their own rig, including non-default variants. A product with no
 usable default on that rig requires an explicit measurement id rather than substituting a fit variant.
-Explicit reference and alternative-rig adequacy uses query weights, not a full-grid uniform guard.
+Explicit references, automatic default-product selection and alternative-rig adequacy use query
+weights, not a full-grid uniform guard.
 Successful explicit-rig compare requests never load unrelated rigs; alternatives are computed only
 for missing-rig errors, after intersecting metadata support.
 

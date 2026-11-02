@@ -77,12 +77,29 @@ These are single-pass local observations, not a controlled performance study or 
 
 ## Phase-2 audits (2026-11-02)
 
-`pnpm verify` passes **532 tests in 54 files**, plus format, lint, types and knip. The initial knip
+Initial phase-2 `pnpm verify` passed **532 tests in 54 files**, plus format, lint, types and knip. The initial knip
 run flagged the new standalone real-catalog harness as an unused file; it is now folded into the
 existing `benchmarks/atlas.ts` entry, preserving its reference/winner guards rather than bypassing
 unused-code checks. `pnpm bench` passes with checksum **7479.111729**.
 
 ### Deterministic consensus and reviewer regressions
+
+PR #9 follow-up: automatic similar/compare rig selection now checks default consensus coverage using
+query weights, not just index membership. Failing regressions covered a >80%-covered consensus with
+no measured sub-bass bins and a usable alternate rig. Source-only cache regressions reproduced
+unknown-id duplicate keys and missing eviction; canonical keys now retain only partition-present
+sources and source-specific indexes use a four-entry LRU, preserving resident raw packs and ordinary
+indexes. A failing assertion of scale-linear rebuilt fit gave **1.452719688**, not **1.870004921**,
+after doubling deviations; the permanent analytic counterexample also checks fixed-weight linearity
+and scaling-induced clustering changes. The methodology claim is qualified accordingly.
+
+Follow-up `pnpm verify`: **537 tests in 54 files**, plus format, lint, types and knip; `pnpm bench`
+passes with unchanged checksum **7479.111729**. On the same dataset/machine and harness scope below,
+`node benchmarks/atlas.ts` measured cold / warm median / warm max ms: similar **1177.68 / 8.38 / 9.63**,
+taste **1245.66 / 12.39 / 14.81**, compare 2 **1276.44 / 30.60 / 32.94**, compare 3
+**1254.58 / 40.94 / 44.09**, compare 4 **1314.39 / 67.91 / 68.26**. This separate local run is not a
+controlled before/after comparison; it confirms no observed warm call above 150 ms. Logs:
+`$HOME/.local/tmp/tw/engine-lane/{verify,bench,catalog}-pr9.log`.
 
 `consensus.test.ts` retains the old first-anchor algorithm as a regression oracle: the same full-range
 outlier, two clean curves and a partial clean curve produce **10 dB versus 0 dB** at the first bin
