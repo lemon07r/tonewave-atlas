@@ -14,7 +14,7 @@ import type {
 import { GRID, RANK_GRID, RANK_SIZE } from '../grid.ts';
 import { buildPartitionIndex, consensus } from './index.ts';
 import { AtlasService } from './service.ts';
-import type { SimilarRequest } from './types.ts';
+import type { CompareRequest, SimilarRequest } from './types.ts';
 import { spreadFor } from './spread.ts';
 
 interface ExtraMeasurement {
@@ -24,6 +24,31 @@ interface ExtraMeasurement {
 	partition: string;
 	offset?: number;
 	shape?: number;
+}
+
+/** Independently accumulated weighted LS moments, including the documented directional residual term. */
+function returnedDistance(
+	a: Float64Array,
+	b: Float64Array,
+	frequencies: Float64Array,
+	weights: Float64Array,
+	penalty = 1
+): { distance: number; offset: number } {
+	const points = Array.from(frequencies, (hz, i) => ({
+		hz,
+		w: weights[i] ?? 0,
+		e: (a[i] ?? NaN) - (b[i] ?? NaN)
+	})).filter(
+		({ hz, w, e }) =>
+			Number.isFinite(hz) && hz >= 20 && hz <= 20000 && w > 0 && Number.isFinite(w) && Number.isFinite(e)
+	);
+	const mass = points.reduce((s, p) => s + p.w, 0);
+	const offset = points.reduce((s, p) => s + p.w * p.e, 0) / mass;
+	const square = points.reduce((s, p) => {
+		const residual = p.e - offset;
+		return s + p.w * residual ** 2 * (residual > 0 && p.hz >= 2000 && p.hz <= 10000 ? penalty : 1);
+	}, 0);
+	return { distance: Math.sqrt(square / mass), offset };
 }
 
 it('reports default-eligible rigs separately from all inspectable variants', async () => {
@@ -249,6 +274,269 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 }
 
 describe('atlas service', () => {
+	it.each([false, true])(
+		'reproduces similarity, taste and multi-reference distances from exact returned rank curves and weights (harmonise=%s)',
+		async (harmonise) => {
+			const { service, packs, files } = fixture(8, [
+				{ id: 'e1', productId: 'e', kind: 'default', partition: 'iem-711', offset: 7.13, shape: 1.173 }
+			]);
+			const pack = packs[0];
+			if (!pack) throw new Error('fixture');
+			pack.statistics = {
+				spread: Array.from(RANK_GRID, (_, i) => (i % 17 === 0 ? null : 0.5 + (i % 13) / 5)),
+				populationMedian: Array.from(RANK_GRID, () => 0),
+				sourceOffsets: {
+					s1: Array.from(RANK_GRID, (_, i) => 0.173 * Math.cos(i / 9)),
+					s2: Array.from(RANK_GRID, (_, i) => (i % 19 === 0 ? null : 0.319 * Math.sin(i / 7)))
+				},
+				support: {
+					status: 'sufficient',
+					reason: null,
+					minimumProducts: 20,
+					multiSourceProducts: 20,
+					sources: 2,
+					spread: Array.from(RANK_GRID, () => 20),
+					sourceProducts: {},
+					sourceBins: {}
+				}
+			};
+			for (const curve of pack.curves) {
+				for (let i = 0; i < RANK_SIZE; i++)
+					curve.values[i] =
+						i === 11 ? NaN : (curve.values[i] ?? NaN) + 0.173 * Math.sin(i / 13 + curve.measurementId.length);
+				if (curve.measurementId === 'c2') curve.values.fill(NaN, 70, 76);
+			}
+			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+			const similar = await service.similar({
+				productId: 'a',
+				partition: 'iem-711',
+				harmonise,
+				focus: 'treble',
+				customBands: { bass: 0.3, air: 0 },
+				treblePenalty: 2,
+				filters: { includeTunings: true }
+			});
+			if (!similar.ok) throw new Error(similar.message);
+			expect(similar.harmonised).toBe(harmonise);
+			expect(similar.rankFrequencies).toEqual(RANK_GRID);
+			expect(similar.treblePenalty).toBe(2);
+			expect(similar.results.length).toBeGreaterThan(2);
+			for (const value of similar.reference.rankCurve)
+				if (Number.isFinite(value)) expect(value).toBe(Math.fround(value));
+			expect(similar.reference.rankCurve[11]).toBeNaN();
+			for (const match of similar.results) {
+				const reproduced = returnedDistance(
+					match.rankCurve,
+					similar.reference.rankCurve,
+					similar.rankFrequencies,
+					similar.rankWeights,
+					similar.treblePenalty
+				);
+				expect(reproduced.distance).toBeCloseTo(match.distance, 12);
+				expect(reproduced.offset).toBeCloseTo(0, 12);
+				expect(match.offsetDb).toBe(match.offset);
+				expect(match.rankCurve[11]).toBeNaN();
+				for (const value of match.rankCurve)
+					if (Number.isFinite(value))
+						expect(value + match.offsetDb).toBeCloseTo(Math.fround(value + match.offsetDb), 12);
+			}
+			const taste = await service.taste({
+				partition: 'iem-711',
+				harmonise,
+				items: ['a', 'b'].map((productId) => ({
+					productId,
+					rating: 'like',
+					strength: 1,
+					soundRelated: true
+				})),
+				corrections: [{ tasteId: 0, bands: { bass: 1.173 } }]
+			});
+			if (!taste.ok) throw new Error(taste.message);
+			expect(taste.harmonised).toBe(harmonise);
+			expect(taste.results.length).toBeGreaterThan(0);
+			for (const match of taste.results) {
+				const centre = taste.model.tastes.find((t) => t.id === match.tasteId);
+				if (!centre) throw new Error('missing taste centre');
+				expect(match.tasteId).toBe(match.fit.taste);
+				const plain = returnedDistance(
+					match.rankCurve,
+					centre.centre,
+					taste.rankFrequencies,
+					taste.rankWeights
+				);
+				expect(plain.distance).toBeCloseTo(match.fit.plainDistanceDb, 12);
+				expect(plain.offset).toBeCloseTo(0, 12);
+				expect(
+					returnedDistance(match.rankCurve, centre.centre, taste.rankFrequencies, centre.fitWeights).distance
+				).toBeCloseTo(match.fit.fit, 12);
+				for (const value of match.rankCurve)
+					if (Number.isFinite(value))
+						expect(value + match.offsetDb).toBeCloseTo(Math.fround(value + match.offsetDb), 12);
+			}
+			const compare = await service.compare({
+				references: [{ productId: 'a', measurementId: 'a-tune' }, { productId: 'c' }],
+				partition: 'iem-711',
+				harmonise,
+				focus: 'bass',
+				customBands: { presence: 2 },
+				treblePenalty: 3
+			});
+			if (!compare.ok) throw new Error(compare.message);
+			expect(compare.harmonised).toBe(harmonise);
+			expect(compare.treblePenalty).toBe(3);
+			expect(compare.references[0]?.measurementIds).toEqual(['a-tune']);
+			expect(compare.results.length).toBeGreaterThan(0);
+			for (const match of compare.results) {
+				const distances = compare.references.map(
+					(reference) =>
+						returnedDistance(
+							match.rankCurve,
+							reference.rankCurve,
+							compare.rankFrequencies,
+							compare.rankWeights,
+							compare.treblePenalty
+						).distance
+				);
+				distances.forEach((d, i) => {
+					expect(d).toBeCloseTo(match.tradeoff.distances[i] ?? NaN, 12);
+				});
+				expect(match.tradeoff.mean).toBeCloseTo(distances.reduce((a, b) => a + b, 0) / distances.length, 12);
+				expect(match.tradeoff.minimax).toBeCloseTo(Math.max(...distances), 12);
+			}
+			// Returned arrays must not mutate resident indexes/model inputs on a subsequent query.
+			const first = similar.reference.rankCurve[0];
+			similar.reference.rankCurve.fill(999);
+			similar.rankWeights.fill(0);
+			similar.rankFrequencies.fill(0);
+			const again = await service.similar({ productId: 'a', partition: 'iem-711', harmonise });
+			expect(again.ok && again.reference.rankCurve[0]).toBe(first);
+		}
+	);
+	it('breaks equal usable-item coverage by partition product count, then id, never variant row count', async () => {
+		const extra: ExtraMeasurement[] = ['a', 'b'].map((productId) => ({
+			id: `${productId}-5128`,
+			productId,
+			kind: 'default',
+			partition: 'iem-5128'
+		}));
+		extra.push(
+			...[1, 2].map((i): ExtraMeasurement => ({
+				id: `a-extra-${i}`,
+				productId: 'a',
+				kind: 'default',
+				partition: 'iem-5128'
+			}))
+		);
+		const { service } = fixture(8, extra);
+		expect(await service.similar({ productId: 'a' })).toMatchObject({ ok: true, partition: 'iem-711' });
+		const request = {
+			items: ['a', 'b'].map((productId) => ({
+				productId,
+				rating: 'like' as const,
+				strength: 1,
+				soundRelated: true
+			}))
+		};
+		expect(await service.taste(request)).toMatchObject({ ok: true, partition: 'iem-711' });
+		expect(await service.compare({ references: [{ productId: 'a' }, { productId: 'b' }] })).toMatchObject({
+			ok: true,
+			partition: 'iem-711'
+		});
+		const tied = fixture(8, [
+			...extra,
+			{ id: 'c5128', productId: 'c', kind: 'default', partition: 'iem-5128' }
+		]);
+		expect(await tied.service.taste(request)).toMatchObject({ ok: true, partition: 'iem-5128' });
+	});
+	it('compares 2–4 exact variant references, excludes their products, sorts and filters before topK with full-front counts', async () => {
+		const { service } = fixture(8, [
+			{ id: 'd711', productId: 'd', kind: 'default', partition: 'iem-711', shape: 0.8 },
+			{ id: 'e711', productId: 'e', kind: 'default', partition: 'iem-711', shape: 1.5 }
+		]);
+		const references = [{ productId: 'a' }, { productId: 'c' }];
+		const all = await service.compare({ references, filters: { includeTunings: true }, topK: 99 });
+		if (!all.ok) throw new Error(all.message);
+		expect(all.results.map((r) => r.candidate.id).sort()).toEqual(['b', 'b-tune', 'd', 'e']);
+		expect(all.counts).toEqual({ candidates: 4, pareto: 3 });
+		const minimax = await service.compare({ references, sort: 'minimax', topK: 1 });
+		if (!minimax.ok) throw new Error(minimax.message);
+		expect(minimax.results).toHaveLength(1);
+		expect(minimax.results[0]?.candidate.id).toBe('e');
+		const pareto = await service.compare({
+			references,
+			filters: { includeTunings: true },
+			paretoOnly: true,
+			topK: 1
+		});
+		expect(pareto.ok && pareto.counts).toEqual(all.counts);
+		expect(pareto.ok && pareto.results).toHaveLength(1);
+		expect(pareto.ok && pareto.results[0]?.tradeoff.pareto).toBe(true);
+		const filtered = await service.compare({ references, filters: { maxPriceUsd: 55 } });
+		expect(filtered.ok && filtered.results.map((r) => r.candidate.id)).toEqual(['b']);
+		for (const count of [3, 4]) {
+			const result = await service.compare({
+				references: [...references, { productId: 'd' }, { productId: 'e' }].slice(0, count)
+			});
+			expect(result.ok && result.references).toHaveLength(count);
+			expect(result.ok && result.results[0]?.tradeoff.distances).toHaveLength(count);
+		}
+	});
+	it('names every missing compare reference and returns only common usable rigs without substituting variants', async () => {
+		const { service } = fixture(8, [
+			{ id: 'a5128', productId: 'a', kind: 'default', partition: 'iem-5128' },
+			{ id: 'b5128', productId: 'b', kind: 'default', partition: 'iem-5128' }
+		]);
+		const result = await service.compare({
+			references: [{ productId: 'a' }, { productId: 'b' }],
+			partition: 'headphone-unknown'
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			error: 'not-measured-on-rig',
+			partitions: ['iem-5128', 'iem-711']
+		});
+		expect(!result.ok && result.message).toContain('a');
+		expect(!result.ok && result.message).toContain('b');
+		expect(
+			await service.compare({
+				references: [{ productId: 'a', measurementId: 'a-tune' }, { productId: 'b' }],
+				partition: 'iem-5128'
+			})
+		).toMatchObject({ ok: false, error: 'not-measured-on-rig', partitions: ['iem-711'] });
+		expect(await service.compare({ references: [{ productId: 'e' }, { productId: 'b' }] })).toMatchObject({
+			ok: false,
+			error: 'not-measured-on-rig',
+			partitions: []
+		});
+		expect(
+			await service.compare({ references: [{ productId: 'a', measurementId: 'b1' }, { productId: 'b' }] })
+		).toMatchObject({ ok: false, error: 'unknown-measurement' });
+		expect(
+			await service.compare({ references: [{ productId: 'unknown' }, { productId: 'b' }] })
+		).toMatchObject({ ok: false, error: 'unknown-product' });
+	});
+	it('validates compare settings and accepts legacy productIds without ambiguous reference forms', async () => {
+		expectTypeOf<{
+			references: { productId: string; measurementId?: string }[];
+		}>().toExtend<CompareRequest>();
+		expectTypeOf<{ productIds: string[] }>().toExtend<CompareRequest>();
+		expectTypeOf<{
+			productIds: string[];
+			references: { productId: string }[];
+		}>().not.toExtend<CompareRequest>();
+		const { service } = fixture();
+		for (const productIds of [[], ['a'], ['a', 'b', 'c', 'd', 'e']])
+			await expect(service.compare({ productIds })).rejects.toThrow(RangeError);
+		for (const penalty of [NaN, Infinity, 0.5])
+			await expect(service.compare({ productIds: ['a', 'b'], treblePenalty: penalty })).rejects.toThrow(
+				RangeError
+			);
+		await expect(service.compare({ productIds: ['a', 'b'], topK: -1 })).rejects.toThrow(RangeError);
+		const legacy = await service.compare({ productIds: ['a', 'b'] });
+		const current = await service.compare({ references: [{ productId: 'a' }, { productId: 'b' }] });
+		expect(legacy).toEqual(current);
+		expect(current.ok && current.treblePenalty).toBe(1);
+	});
 	it('lazily caches reference targets across forms, retaining GRID values and provenance', async () => {
 		const { service, calls } = fixture();
 		expect(calls).toEqual([]);
@@ -760,13 +1048,13 @@ describe('atlas service', () => {
 		const result = await service.compare({ productIds: ['a', 'b'] });
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		expect(result.results).toHaveLength(3);
-		const endpoint = result.results.find((r) => r.candidate.id === 'a')?.tradeoff;
-		expect(endpoint?.pareto).toBe(true);
-		for (const distance of endpoint?.distances ?? []) expect(distance).toBeCloseTo(0, 8);
-		expect(endpoint?.mean).toBeCloseTo(0, 8);
-		expect(endpoint?.minimax).toBeCloseTo(0, 8);
-		expect(result.results.find((r) => r.candidate.id === 'c')?.tradeoff).toMatchObject({ pareto: false });
+		expect(result.results.map((r) => r.candidate.id)).toEqual(['c']);
+		expect(result.counts).toEqual({ candidates: 1, pareto: 1 });
+		const remaining = result.results[0]?.tradeoff;
+		expect(remaining?.pareto).toBe(true);
+		expect(remaining?.distances[0]).toBeCloseTo(remaining?.distances[1] ?? NaN, 8);
+		expect(remaining?.mean).toBeCloseTo(remaining?.distances[0] ?? NaN, 8);
+		expect(remaining?.minimax).toBeCloseTo(remaining?.mean ?? NaN, 8);
 		expect(result.results[0]?.tradeoff.distances).toHaveLength(2);
 		expect(await service.compare({ productIds: ['a', 'd'] })).toMatchObject({
 			ok: false,

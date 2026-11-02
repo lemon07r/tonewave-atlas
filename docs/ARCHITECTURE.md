@@ -83,16 +83,20 @@ in the set, without silently changing the consensus curve. Tuning candidates are
 `filters.includeTunings`; similarity excludes the reference product's default but may include its
 explicit tunings when enabled. Taste always excludes every rated product, including its tunings.
 An explicit tuning measurement is never its own similarity candidate, even with tunings enabled.
-Multi-reference compare retains the reference products as Pareto endpoints alongside other defaults.
-Default partition selection uses the reference's largest contributing rankable-default measurement
-count, or the greatest coverage of usable rated/reference items for taste/compare; ties use partition
-id order. Explicit measurement references keep their own rig, including non-default variants. A product with no
+Multi-reference compare excludes all reference products, accepts exact measurement variants, and
+returns filtered/sorted top-K trade-offs with full candidate/Pareto counts. Missing references name
+the unavailable items and list rigs supporting all requested identities. Default partition selection
+uses the greatest coverage of usable requested/rated items; ties prefer more measured products, then
+partition id. Explicit measurement references keep their own rig, including non-default variants. A product with no
 usable default on that rig requires an explicit measurement id rather than substituting a fit variant.
 
 `targets(form)` lazily caches published GRID reference curves with attribution and artifact provenance.
 PEQ accepts product, raw curve or `{ kind: 'reference', targetId }` targets. Reference targets must
 explicitly include the measurement's partition; uploads require an explicit matching partition.
-Compare, detail and PEQ retain uncorrected measurements, independent of similar/taste defaults.
+Similar, taste and compare expose rank frequencies, exact scored/aligned curves and effective weights;
+taste also exposes per-centre fit weights, similar/compare their effective treble penalty. These fields
+support rank-basis charts and independent score reproduction without loading detail shards. Compare
+uses the same validated harmonisation policy as similar/taste; detail and PEQ remain uncorrected.
 
 ## Dataset files (`static/data/`)
 

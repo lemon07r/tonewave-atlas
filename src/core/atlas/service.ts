@@ -9,7 +9,7 @@ import {
 	renderPreference,
 	type RatedItem
 } from '../analysis/taste.ts';
-import { makeWeights, type Focus } from '../analysis/weights.ts';
+import { makeWeights } from '../analysis/weights.ts';
 import { decodePack, decompressGzip, type CurvePack, type PackedCurve } from '../dataset/codec.ts';
 import type {
 	Catalog,
@@ -82,6 +82,23 @@ function failure(error: AtlasError['error'], message: string): AtlasError {
 function topK(value = 20): number {
 	if (!Number.isInteger(value) || value < 0) throw new RangeError('topK must be a nonnegative integer');
 	return value;
+}
+function treblePenalty(value = 1): number {
+	if (!Number.isFinite(value) || value < 1)
+		throw new RangeError('treblePenalty must be finite and at least 1');
+	return value;
+}
+function scoredCurve(values: Curve): Float64Array {
+	return Float64Array.from(values, (value) => {
+		const rounded = Math.fround(value);
+		return Number.isFinite(rounded) ? rounded : NaN;
+	});
+}
+function alignedCurve(values: Curve, offset: number): Float64Array {
+	return Float64Array.from(values, (value) => (Number.isFinite(value) ? value - offset : NaN));
+}
+function partitionProducts(catalog: Catalog, id: string): number {
+	return new Set(catalog.measurements.filter((m) => m.partition === id).map((m) => m.productId)).size;
 }
 /** JSON null bins remain missing when crossing from dataset metadata into numerical APIs. */
 function statisticCurve(values: readonly (number | null)[]): Float64Array {
@@ -306,14 +323,18 @@ export class AtlasService {
 				.map(async (partition) => ({
 					partition,
 					count: defaultProductId
-						? ((await this.index(catalog, partition)).products.get(defaultProductId)?.info.measurementIds
-								.length ?? 0)
+						? Number((await this.index(catalog, partition)).products.has(defaultProductId))
 						: (counts.get(partition.id) ?? 0)
 				}))
 		);
 		return available
 			.filter((p) => p.count > 0)
-			.sort((a, b) => b.count - a.count || a.partition.id.localeCompare(b.partition.id))[0]?.partition;
+			.sort(
+				(a, b) =>
+					b.count - a.count ||
+					partitionProducts(catalog, b.partition.id) - partitionProducts(catalog, a.partition.id) ||
+					a.partition.id.localeCompare(b.partition.id)
+			)[0]?.partition;
 	}
 	private async reference(
 		input: Pick<SimilarRequest, 'productId' | 'measurementId' | 'uploadId' | 'partition' | 'harmonise'>
@@ -370,7 +391,7 @@ export class AtlasService {
 		const candidate = index.products.get(found.product.id);
 		const row = selected ? index.measurements.get(selected.id) : undefined;
 		const values = selected ? row?.values : candidate?.values;
-		if (!values)
+		if (!values || !responseDistance(values, values, { frequencies: RANK_GRID }))
 			return failure(
 				'not-measured-on-rig',
 				'No usable default reference on this rig; select an explicit measurement for a non-default variant.'
@@ -383,7 +404,7 @@ export class AtlasService {
 			ok: true,
 			catalog: found.catalog,
 			index,
-			values,
+			values: scoredCurve(values),
 			info: { productId: found.product.id, uploadId: null, measurementIds, sources }
 		};
 	}
@@ -400,12 +421,17 @@ export class AtlasService {
 			notes.push('Available estimated source offsets were subtracted; this is not physical rig calibration.');
 		return notes;
 	}
-	private distanceOptions(index: PartitionIndex, focus?: Focus): DistanceOptions {
+	private distanceOptions(
+		index: PartitionIndex,
+		settings: Pick<SimilarRequest, 'focus' | 'customBands' | 'treblePenalty'> = {}
+	): DistanceOptions & { weights: Float64Array; treblePenalty: number } {
 		return {
 			frequencies: RANK_GRID,
+			treblePenalty: treblePenalty(settings.treblePenalty),
 			weights: makeWeights(RANK_GRID, {
 				...(index.statistics ? { spread: statisticCurve(index.statistics.spread) } : {}),
-				...(focus ? { focus } : {})
+				...(settings.focus ? { focus: settings.focus } : {}),
+				...(settings.customBands ? { bandMultipliers: settings.customBands } : {})
 			})
 		};
 	}
@@ -549,21 +575,11 @@ export class AtlasService {
 	}
 	async similar(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
 		const k = topK(request.topK);
-		if (
-			request.treblePenalty !== undefined &&
-			(!Number.isFinite(request.treblePenalty) || request.treblePenalty < 1)
-		)
-			throw new RangeError('treblePenalty must be finite and at least 1');
+		treblePenalty(request.treblePenalty);
 		const reference = await this.reference(request);
 		if (!reference.ok) return reference;
 		const { index } = reference;
-		const options = this.distanceOptions(index, request.focus);
-		options.weights = makeWeights(RANK_GRID, {
-			...(index.statistics ? { spread: statisticCurve(index.statistics.spread) } : {}),
-			...(request.focus ? { focus: request.focus } : {}),
-			...(request.customBands ? { bandMultipliers: request.customBands } : {})
-		});
-		if (request.treblePenalty !== undefined) options.treblePenalty = request.treblePenalty;
+		const options = this.distanceOptions(index, request);
 		const selected = this.selection(
 			index,
 			request.filters,
@@ -576,7 +592,10 @@ export class AtlasService {
 			ok: true,
 			partition: index.partition.id,
 			harmonised: index.harmonised,
-			reference: reference.info,
+			rankFrequencies: RANK_GRID.slice(),
+			rankWeights: options.weights.slice(),
+			treblePenalty: options.treblePenalty,
+			reference: { ...reference.info, rankCurve: reference.values.slice() },
 			results: ranked.matches.flatMap((match) => {
 				const candidate = selected.candidates[match.index];
 				if (!candidate) return [];
@@ -588,6 +607,11 @@ export class AtlasService {
 					{
 						candidate: candidate.info,
 						...match.stats,
+						rankCurve: alignedCurve(
+							selected.matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE),
+							match.stats.offset
+						),
+						offsetDb: match.stats.offset,
 						perSourceRange:
 							distances.length > 1
 								? ([Math.min(...distances), Math.max(...distances)] as [number, number])
@@ -607,6 +631,7 @@ export class AtlasService {
 	): Promise<string | undefined> {
 		if (requested) return requested;
 		const counts = new Map<string, number>();
+		const productCounts = new Map<string, number>();
 		for (const item of items) {
 			const found = await this.locateProduct(item.productId);
 			if (!found) continue;
@@ -623,13 +648,21 @@ export class AtlasService {
 				const partition = found.catalog.partitions.find((p) => p.id === id);
 				if (!partition) continue;
 				const index = await this.index(found.catalog, partition);
+				const row = item.measurementId ? index.measurements.get(item.measurementId) : undefined;
 				const usable = item.measurementId
-					? index.measurements.has(item.measurementId)
+					? row?.measurement.productId === item.productId &&
+						!!responseDistance(row.values, row.values, { frequencies: RANK_GRID })
 					: index.products.has(item.productId);
 				if (usable) counts.set(id, (counts.get(id) ?? 0) + 1);
+				productCounts.set(id, partitionProducts(found.catalog, id));
 			}
 		}
-		return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+		return [...counts].sort(
+			(a, b) =>
+				b[1] - a[1] ||
+				(productCounts.get(b[0]) ?? 0) - (productCounts.get(a[0]) ?? 0) ||
+				a[0].localeCompare(b[0])
+		)[0]?.[0];
 	}
 	async taste(request: TasteRequest): Promise<TasteResult | AtlasError> {
 		const k = topK(request.topK);
@@ -681,6 +714,8 @@ export class AtlasService {
 				ok: true,
 				partition: partitionId,
 				harmonised: index.harmonised,
+				rankFrequencies: RANK_GRID.slice(),
+				rankWeights: this.distanceOptions(index).weights,
 				model: {
 					tastes: [],
 					confidence: { level: 'limited', reasons: ['No usable sound-related ratings on this rig.'] },
@@ -707,11 +742,14 @@ export class AtlasService {
 			ok: true,
 			partition: partitionId,
 			harmonised: index.harmonised,
+			rankFrequencies: RANK_GRID.slice(),
+			rankWeights: model.weights.slice(),
 			model: {
 				tastes: model.tastes.map((t) => ({
 					id: t.id,
 					members: t.members.map((m) => m.id),
-					centre: t.centre,
+					centre: t.centre.slice(),
+					fitWeights: t.weights.slice(),
 					summary: t.summary,
 					statements: t.summary.map((s) =>
 						renderPreference(s, found.catalog.form === 'iem' ? 'IEM' : 'headphone')
@@ -723,42 +761,128 @@ export class AtlasService {
 			unusedItems,
 			results: matches.flatMap((m) => {
 				const candidate = selected.candidates[m.index];
-				return candidate ? [{ candidate: candidate.info, fit: m.fit }] : [];
+				const taste = model.tastes.find((t) => t.id === m.fit.taste);
+				if (!candidate || !taste) return [];
+				const values = selected.matrix.subarray(m.index * RANK_SIZE, (m.index + 1) * RANK_SIZE);
+				const distance = responseDistance(values, taste.centre, {
+					frequencies: RANK_GRID,
+					weights: model.weights
+				});
+				if (!distance) return [];
+				return [
+					{
+						candidate: candidate.info,
+						fit: m.fit,
+						tasteId: taste.id,
+						rankCurve: alignedCurve(values, distance.offset),
+						offsetDb: distance.offset
+					}
+				];
 			}),
 			caveats: this.caveats(index)
 		};
 	}
 	async compare(request: CompareRequest): Promise<CompareResult | AtlasError> {
-		if (request.productIds.length < 2 || request.productIds.length > 4)
-			throw new RangeError('Use 2–4 references');
-		const partitionId = await this.bestPartition(
-			request.productIds.map((productId) => ({ productId })),
-			request.partition
-		);
-		if (!partitionId) return failure('not-measured-on-rig', 'No measured references.');
-		const references: ResolvedReference[] = [];
-		for (const productId of request.productIds) {
-			const reference = await this.reference({ productId, partition: partitionId, harmonise: false });
-			if (!reference.ok) return reference;
-			references.push(reference);
+		const inputs: { productId: string; measurementId?: string }[] =
+			request.references ?? request.productIds.map((productId) => ({ productId }));
+		if (inputs.length < 2 || inputs.length > 4) throw new RangeError('Use 2–4 references');
+		const k = topK(request.topK);
+		treblePenalty(request.treblePenalty);
+		if (request.sort !== undefined && !['mean', 'minimax'].includes(request.sort))
+			throw new RangeError('Sort must be mean or minimax');
+		// Establish identity and shared-rig support without ever replacing an explicit variant.
+		const support = new Map<string, number>();
+		for (const input of inputs) {
+			const located = await this.locateProduct(input.productId);
+			if (!located) return failure('unknown-product', `Unknown reference product: ${input.productId}`);
+			if (
+				input.measurementId &&
+				!located.catalog.measurements.some(
+					(m) => m.id === input.measurementId && m.productId === input.productId
+				)
+			)
+				return failure(
+					'unknown-measurement',
+					`Measurement does not belong to reference ${input.productId}: ${input.measurementId}`
+				);
+			for (const partition of located.catalog.partitions) {
+				const index = await this.index(located.catalog, partition);
+				const row = input.measurementId
+					? index.measurements.get(input.measurementId)
+					: index.products.get(input.productId);
+				if (row && responseDistance(row.values, row.values, { frequencies: RANK_GRID }))
+					support.set(partition.id, (support.get(partition.id) ?? 0) + 1);
+			}
 		}
+		const partitions = [...support]
+			.filter(([, count]) => count === inputs.length)
+			.map(([id]) => id)
+			.sort();
+		const partitionId = await this.bestPartition(inputs, request.partition);
+		if (!partitionId)
+			return {
+				...failure(
+					'not-measured-on-rig',
+					`No usable measurements for references: ${inputs.map((r) => r.measurementId ?? r.productId).join(', ')}`
+				),
+				partitions
+			};
+		const references: ResolvedReference[] = [];
+		const missing: string[] = [];
+		for (const input of inputs) {
+			const reference = await this.reference({
+				...input,
+				partition: partitionId,
+				...(request.harmonise !== undefined ? { harmonise: request.harmonise } : {})
+			});
+			if (!reference.ok) {
+				if (reference.error !== 'not-measured-on-rig') return reference;
+				missing.push(`${input.productId}${input.measurementId ? ` (${input.measurementId})` : ''}`);
+			} else references.push(reference);
+		}
+		if (missing.length)
+			return {
+				...failure(
+					'not-measured-on-rig',
+					`No usable measurement on ${partitionId} for references: ${missing.join(', ')}`
+				),
+				partitions
+			};
 		const index = references[0]?.index;
 		if (!index) return failure('insufficient-data', 'No references.');
-		// Keep the reference products as trade-off endpoints; only similar/taste exclude their inputs.
-		const selected = this.selection(index);
-		const comparisons = compareReferences(
-			selected.candidates.map((c) => c.values),
-			references.map((r) => r.values),
-			this.distanceOptions(index, request.focus)
+		const selected = this.selection(index, request.filters, new Set(inputs.map((r) => r.productId)));
+		const curves = selected.candidates.map((_, i) =>
+			selected.matrix.subarray(i * RANK_SIZE, (i + 1) * RANK_SIZE)
 		);
+		const options = this.distanceOptions(index, request);
+		const comparisons = compareReferences(
+			curves,
+			references.map((r) => r.values),
+			options
+		);
+		const sort = request.sort ?? 'mean';
+		const ordered = comparisons
+			.map((tradeoff, i) => ({ tradeoff, i }))
+			.filter(({ tradeoff }) => !request.paretoOnly || tradeoff.pareto)
+			.sort((a, b) => (a.tradeoff[sort] ?? Infinity) - (b.tradeoff[sort] ?? Infinity) || a.i - b.i)
+			.slice(0, k);
 		return {
 			ok: true,
 			partition: partitionId,
-			references: references.map((r) => r.info),
-			results: selected.candidates.flatMap((c, i) => {
-				const tradeoff = comparisons[i];
-				return tradeoff ? [{ candidate: c.info, tradeoff }] : [];
+			harmonised: index.harmonised,
+			rankFrequencies: RANK_GRID.slice(),
+			rankWeights: options.weights.slice(),
+			treblePenalty: options.treblePenalty,
+			references: references.map((r) => ({ ...r.info, rankCurve: r.values.slice() })),
+			results: ordered.flatMap(({ tradeoff, i }) => {
+				const candidate = selected.candidates[i],
+					curve = curves[i],
+					reference = references[0];
+				if (!candidate || !curve || !reference) return [];
+				const offsetDb = responseDistance(curve, reference.values, options)?.offset ?? 0;
+				return [{ candidate: candidate.info, tradeoff, rankCurve: alignedCurve(curve, offsetDb), offsetDb }];
 			}),
+			counts: { candidates: comparisons.length, pareto: comparisons.filter((r) => r.pareto).length },
 			caveats: this.caveats(index)
 		};
 	}
@@ -920,7 +1044,7 @@ export class AtlasService {
 		if (!parsed.ok) return parsed;
 		const values = resample(parsed.points),
 			smooth = smoothOctave(values, 12);
-		const rankValues = Float64Array.from(RANK_GRID, (_, i) => smooth[i * RANK_STEP] ?? NaN);
+		const rankValues = scoredCurve(Float64Array.from(RANK_GRID, (_, i) => smooth[i * RANK_STEP] ?? NaN));
 		const uploadId = `upload-${++this.nextUpload}`;
 		this.uploads.set(uploadId, { values: values.slice(), rankValues: rankValues.slice() });
 		return {
