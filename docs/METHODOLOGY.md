@@ -69,7 +69,9 @@ Charts can display this basis rather than a different detail curve. Taste `centr
 corrected rank-basis centre; candidates align to their `tasteId` with ordinary `rankWeights`. Returned
 `rankWeights`, per-taste `fitWeights` and effective `treblePenalty` (similar/compare) reproduce D by
 the LS formula below, refitting the offset for each weighting/reference. Compare overlays align to
-reference 0 (offset 0 if inadequate overlap); other objectives refit independently. NaNs remain gaps.
+the first reference with adequate query-weight overlap, named by each row's `alignedTo` index;
+other objectives refit independently. If none overlaps adequately, `alignedTo` is null, `offsetDb`
+is zero and `rankCurve` is unaligned: the UI must not overlay it as aligned. NaNs remain gaps.
 Each taste winner also returns `nearestLiked` with the exact scored liked-member curve and an offset
 aligning the **already returned candidate rankCurve** to that member. Its ordinary `rankWeights`
 reproduce `fit.nearestLiked.distanceDb`, even after centre corrections; member curves are not corrected.

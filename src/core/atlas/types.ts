@@ -211,9 +211,12 @@ export interface CompareResult {
 	results: {
 		candidate: CandidateInfo;
 		tradeoff: MultiReferenceResult;
-		/** Scored packed values aligned to references[0]; each objective refits its own LS offset. */
+		/** Scored packed values aligned to references[alignedTo]; unaligned when alignedTo is null. Each objective refits its own LS offset. */
 		rankCurve: Float64Array;
+		/** Zero when alignedTo is null; this does not claim that the raw curve is aligned. */
 		offsetDb: number;
+		/** Index into references; null means rankCurve is unaligned and must not be overlaid as aligned. */
+		alignedTo: number | null;
 	}[];
 	/** Counts before paretoOnly/topK, after candidate filters and reference-product exclusion. */
 	counts: { candidates: number; pareto: number };

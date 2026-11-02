@@ -1,5 +1,5 @@
 /** Pure query preparation/selection shared by ranking orchestration, independent of dataset loading. */
-import type { Curve } from '../analysis/common.ts';
+import { BANDS, type Curve } from '../analysis/common.ts';
 import type { DistanceOptions } from '../analysis/distance.ts';
 import { makeWeights } from '../analysis/weights.ts';
 import { RANK_GRID, RANK_SIZE } from '../grid.ts';
@@ -50,6 +50,19 @@ export function rankingCaveats(
 		notes.push(
 			'Cross-source statistics are absent; reliability uses the conservative default spread, not measured uncertainty.'
 		);
+	else {
+		const spread = index.statistics.spread;
+		const fallbackBands = BANDS.filter((band) =>
+			RANK_GRID.some((hz, i) => {
+				const value = spread[i];
+				return hz >= band.low && hz < band.high && (value == null || !Number.isFinite(value) || value < 0);
+			})
+		).map((band) => band.id);
+		if (fallbackBands.length)
+			notes.push(
+				`Cross-source spread is missing or invalid in ${fallbackBands.join(', ')}; reliability uses the conservative default spread there, not measured uncertainty.`
+			);
+	}
 	if (index.harmonised)
 		notes.push('Available estimated source offsets were subtracted; this is not physical rig calibration.');
 	if (index.sourceIds) {

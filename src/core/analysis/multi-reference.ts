@@ -47,12 +47,12 @@ export function paretoMembership(objectives: readonly (readonly (number | null)[
 	const ys = unique(points.map((p) => p.values[1] ?? 0));
 	const minima = new Float64Array(ys.length + 1).fill(Infinity);
 	// In four dimensions each y node holds a compressed z-prefix minimum of objective four.
-	const coordinates = Array.from({ length: ys.length + 1 }, () => [] as number[]);
-	if (dimensions === 4)
+	const coordinates = dimensions === 4 ? Array.from({ length: ys.length + 1 }, () => [] as number[]) : null;
+	if (coordinates)
 		for (const point of points)
 			for (let y = upperBound(ys, point.values[1] ?? 0); y < coordinates.length; y += y & -y)
 				coordinates[y]?.push(point.values[2] ?? 0);
-	const nodes = coordinates.map((values) => {
+	const nodes = coordinates?.map((values) => {
 		const z = unique(values);
 		return { z, minima: new Float64Array(z.length + 1).fill(Infinity) };
 	});
@@ -72,7 +72,7 @@ export function paretoMembership(objectives: readonly (readonly (number | null)[
 			for (let y = yRank; y > 0; y -= y & -y) {
 				if (dimensions === 3) best = Math.min(best, minima[y] ?? Infinity);
 				else {
-					const node = nodes[y];
+					const node = nodes?.[y];
 					if (!node) continue;
 					for (let z = upperBound(node.z, point.values[2] ?? 0); z > 0; z -= z & -z)
 						best = Math.min(best, node.minima[z] ?? Infinity);
@@ -87,7 +87,7 @@ export function paretoMembership(objectives: readonly (readonly (number | null)[
 		for (let y = yRank; y < minima.length; y += y & -y) {
 			if (dimensions === 3) minima[y] = Math.min(minima[y] ?? Infinity, point.values[2] ?? Infinity);
 			if (dimensions === 4) {
-				const node = nodes[y];
+				const node = nodes?.[y];
 				if (!node) continue;
 				for (let z = upperBound(node.z, point.values[2] ?? 0); z < node.minima.length; z += z & -z)
 					node.minima[z] = Math.min(node.minima[z] ?? Infinity, point.values[3] ?? Infinity);

@@ -789,11 +789,27 @@ export class AtlasService {
 			references: references.map((r) => ({ ...r.info, rankCurve: r.values.slice() })),
 			results: ordered.flatMap(({ tradeoff, i }) => {
 				const candidate = selected.candidates[i],
-					curve = curves[i],
-					reference = references[0];
-				if (!candidate || !curve || !reference) return [];
-				const offsetDb = distanceSummary(curve, reference.values, options)?.offset ?? 0;
-				return [{ candidate: candidate.info, tradeoff, rankCurve: alignedCurve(curve, offsetDb), offsetDb }];
+					curve = curves[i];
+				if (!candidate || !curve) return [];
+				let alignedTo: number | null = null,
+					offsetDb = 0;
+				for (const [referenceIndex, reference] of references.entries()) {
+					const distance = distanceSummary(curve, reference.values, options);
+					if (distance) {
+						alignedTo = referenceIndex;
+						offsetDb = distance.offset;
+						break;
+					}
+				}
+				return [
+					{
+						candidate: candidate.info,
+						tradeoff,
+						rankCurve: alignedCurve(curve, offsetDb),
+						offsetDb,
+						alignedTo
+					}
+				];
 			}),
 			counts: { candidates: comparisons.length, pareto: comparisons.filter((r) => r.pareto).length },
 			caveats: rankingCaveats(

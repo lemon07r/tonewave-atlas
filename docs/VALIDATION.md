@@ -67,8 +67,9 @@ Measured 2026-11-02, Linux, AMD Ryzen 7 9800X3D, Node v26.12.1:
 
 Both phases use prefix-min Pareto sweeps and the same expanded workloads. Phase 2 replaces per-pair
 full band-explanation construction with scalar distance/alignment (`distanceSummary`); Pareto
-membership is unchanged. Checksums match: **7479.111729**, including both all-nondominated fronts and
-all catalog-like front counts. Packed single-reference/taste scans construct full explanations only
+membership is unchanged. The recorded phase-2 checksum is **7479.111729**, including both
+all-nondominated fronts and all catalog-like front counts; no phase-1 checksum comparison is claimed.
+Packed single-reference/taste scans construct full explanations only
 for top-K winners; multi-reference computes all scalar objectives before sorting/top-K, and the
 service constructs only returned overlays. No 30,000-candidate multi-reference latency bound is claimed.
 PEQ fitting is unchanged. The single/taste differences in these one-pass observations are not a
@@ -93,13 +94,24 @@ indexes. A failing assertion of scale-linear rebuilt fit gave **1.452719688**, n
 after doubling deviations; the permanent analytic counterexample also checks fixed-weight linearity
 and scaling-induced clustering changes. The methodology claim is qualified accordingly.
 
-Follow-up `pnpm verify`: **537 tests in 54 files**, plus format, lint, types and knip; `pnpm bench`
+`a6b001e` follow-up `pnpm verify`: **537 tests in 54 files**, plus format, lint, types and knip; `pnpm bench`
 passes with unchanged checksum **7479.111729**. On the same dataset/machine and harness scope below,
 `node benchmarks/atlas.ts` measured cold / warm median / warm max ms: similar **1177.68 / 8.38 / 9.63**,
 taste **1245.66 / 12.39 / 14.81**, compare 2 **1276.44 / 30.60 / 32.94**, compare 3
 **1254.58 / 40.94 / 44.09**, compare 4 **1314.39 / 67.91 / 68.26**. This separate local run is not a
-controlled before/after comparison; it confirms no observed warm call above 150 ms. Logs:
-`$HOME/.local/tmp/tw/engine-lane/{verify,bench,catalog}-pr9.log`.
+controlled before/after comparison; it confirms no observed warm call above 150 ms. The committed
+harnesses are `benchmarks/run.ts` and `benchmarks/atlas.ts`; timings vary between runs.
+
+Bot-review follow-up `pnpm verify`: **542 tests in 54 files**, plus format, lint, types and knip.
+The automatic-rig regressions now also assert propagation of focus, custom bands and treble penalty
+through every weighting call; missing-reference errors assert the complete list. New failing-first
+cases cover compare alignment to a later adequate reference or explicitly no alignment, and named-band
+spread-fallback caveats in similar/taste/compare (including valid zero spread). Existing seeded Pareto
+and consensus tests pass after removing unnecessary allocations. Both committed audit commands below
+reproduce their recorded outputs byte-for-byte on the named dataset. `pnpm bench` retains checksum
+**7479.111729**. Another `node benchmarks/atlas.ts` run measured warm maxima of **10.09 / 16.12 /
+32.14 / 43.39 / 69.22 ms** for similar, taste and compare 2/3/4 respectively, under the scope below;
+these remain local observations, not a controlled comparison or a latency guarantee.
 
 `consensus.test.ts` retains the old first-anchor algorithm as a regression oracle: the same full-range
 outlier, two clean curves and a partial clean curve produce **10 dB versus 0 dB** at the first bin
@@ -126,9 +138,9 @@ The largest common-finite-bin shape RMS is **0.132422719 dB** (Venture Electroni
 No finite-bin support or availability changes occurred. Without removing arbitrary level, **1,409
 product/partition consensuses exceed 0.5 dB raw RMS**; this is not a 1,409-product shape change.
 Uniform LS alignment removes the mean old-minus-new difference before calculating shape RMS.
-The local reproducible script and full partition/largest-change output are retained at
-`$HOME/.local/tmp/tw/engine-lane/consensus-audit.mjs` and `consensus-audit.log`; run the script from the
-engine worktree with Node. This audit checks rank consensuses, not every detail shard or dataset
+The reproducible script is `benchmarks/consensus-audit.ts`, with full partition/largest-change output
+in `benchmarks/consensus-audit.txt`. From the checkout with that dataset in `static/data`, run
+`node benchmarks/atlas.ts --audit-consensus`. This audit checks rank consensuses, not every detail shard or dataset
 classification, and does not change the published statistics-estimation algorithm.
 
 ### Taste correlates, bounds and scale
@@ -162,8 +174,9 @@ zero violating candidates under every ranking; adding the reason does **not** ch
 top-20 membership in these profiles. Thus these are directional tail-ranking checks, not evidence
 of improved top recommendations. The script asserts real candidates reach each penalty path and
 lose group rank; it does not tune to product/form classification defects. Fixed product ids and full
-output are in `$HOME/.local/tmp/tw/engine-lane/taste-sanity.mjs` and `taste-sanity.log` (run from this
-worktree). These profiles are invented. **No user-labelled preference dataset or listener study is
+output are in `benchmarks/taste-sanity.ts` and `benchmarks/taste-sanity.txt`. From the checkout with
+that dataset in `static/data`, run `node benchmarks/atlas.ts --audit-taste`.
+These profiles are invented. **No user-labelled preference dataset or listener study is
 available; no recommendation accuracy claim is made.**
 
 ### Real-catalog cold/warm performance
@@ -190,9 +203,8 @@ unrelated pack/index work on successful explicit-rig compares. Every observed af
 below 150 ms. Four-reference cold time still exceeds two seconds in this run; resident indexes do
 not solve first-load latency. The **4× column is only a scaled planning budget**, not a measured
 phone or a defensible universal device ratio. Three/four-reference estimates exceed 150 ms, so no
-mobile latency guarantee follows. Logs are retained under `$HOME/.local/tmp/tw/engine-lane/` as
-`catalog-before.log`, `catalog-after.log` and `bench-phase2.log`; these short local runs are not a
-controlled performance study.
+mobile latency guarantee follows. The committed timing harness is `benchmarks/atlas.ts`; these short
+local runs are not a controlled performance study.
 
 ## Atlas service validation (2026-11-02)
 
