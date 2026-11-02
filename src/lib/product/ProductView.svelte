@@ -52,6 +52,7 @@
 			const spread = await channelSpread(product, rig, ch);
 			const curves = await (await analysis()).curves(ids, { channel: ch });
 			const output: FrSeries[] = [];
+			const warnings: string[] = [];
 			if (spread)
 				output.push({
 					id: product.product.id,
@@ -65,8 +66,10 @@
 				});
 			for (const curve of curves) {
 				const row = product.measurements.find((r) => r.measurement.id === curve.measurementId);
-				if (!curve.values)
-					throw new Error(`${row?.source.name ?? curve.measurementId}: ${ch} channel unavailable.`);
+				if (!curve.values) {
+					warnings.push(`${row?.source.name ?? curve.measurementId}: ${ch} channel unavailable.`);
+					continue;
+				}
 				if (row)
 					output.push({
 						id: curve.measurementId,
@@ -75,7 +78,10 @@
 						attribution: row.measurement.provenance.databaseUrl
 					});
 			}
-			if (!abort.signal.aborted) series = output;
+			if (!abort.signal.aborted) {
+				series = output;
+				error = warnings.join(' ');
+			}
 		})()
 			.catch((e: unknown) => {
 				if (!abort.signal.aborted) error = String(e);

@@ -11,23 +11,43 @@
 	let summary = $state.raw<AtlasSummary | null>(null);
 	let error = $state('');
 	let targets = $state.raw<ReferenceTarget[]>([]);
+	let targetError = $state('');
+	let targetsLoading = $state(true);
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let sources = $derived(summary?.sources.filter((s) => s.form === form) ?? []);
 	$effect(() => {
 		let active = true;
-		const selectedForm = form;
 		error = '';
 		summary = null;
-		targets = [];
 		void analysis()
-			.then((service) => Promise.all([service.summary(), service.targets(selectedForm)]))
-			.then(([data, references]) => {
+			.then((service) => service.summary())
+			.then((data) => {
 				if (!active) return;
 				summary = data;
-				targets = references;
 			})
 			.catch((e: unknown) => {
 				if (active) error = String(e);
+			});
+		return () => {
+			active = false;
+		};
+	});
+	$effect(() => {
+		const selectedForm = form;
+		let active = true;
+		targets = [];
+		targetError = '';
+		targetsLoading = true;
+		void analysis()
+			.then((service) => service.targets(selectedForm))
+			.then((data) => {
+				if (active) targets = data;
+			})
+			.catch((cause: unknown) => {
+				if (active) targetError = cause instanceof Error ? cause.message : String(cause);
+			})
+			.finally(() => {
+				if (active) targetsLoading = false;
 			});
 		return () => {
 			active = false;
@@ -184,11 +204,15 @@
 					</div>
 				{/if}
 				<h3>Reference targets</h3>
+				{#if targetError}<Notice kind="caution" title="Reference targets unavailable">{targetError}</Notice
+					>{/if}
 				{#each targets as target (target.id)}<div>
 						<h4>{target.name}</h4>
 						<p>{target.description} Compatible partitions: {target.partitions.join(', ')}.</p>
 						<p>{target.attribution} <a href={target.provenance.upstream} rel="external">Target source</a></p>
-					</div>{:else}{#if summary}<p>No published reference targets for this form factor.</p>{/if}{/each}
+					</div>{:else}{#if !targetsLoading && !targetError}<p>
+							No published reference targets for this form factor.
+						</p>{/if}{/each}
 				<p>
 					Full definitions: <a href="https://github.com/lemon07r/tonewave-atlas/blob/main/docs/METHODOLOGY.md"
 						>methodology and maths</a

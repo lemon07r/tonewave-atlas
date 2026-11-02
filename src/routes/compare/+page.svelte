@@ -38,7 +38,8 @@
 		sources: Source[];
 		measurements: Measurement[];
 		variant: string;
-		series: FrSeries;
+		series?: FrSeries;
+		warning: string | undefined;
 	}
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let selectionState = $derived(parseCompare(new URLSearchParams(browser ? page.url.search : '')));
@@ -48,6 +49,7 @@
 	let uploads = $state.raw<FrSeries[]>([]);
 	let loading = $state(false);
 	let error = $state('');
+	let uploadError = $state('');
 	let uploadMessages = $state<string[]>([]);
 	let query = $state('');
 	let mode = $state<'response' | 'difference'>('response');
@@ -70,9 +72,9 @@
 			}))
 	);
 	let count = $derived(selectionState.products.length + selectionState.measurements.length + uploads.length);
-	let partitions = $derived([...new Set(selections.map((s) => s.partition))]);
+	let partitions = $derived([...new Set(selections.filter((s) => s.series).map((s) => s.partition))]);
 	let series = $derived.by(() => {
-		const raw = [...selections.map((s) => s.series), ...uploads];
+		const raw = [...selections.flatMap((s) => (s.series ? [s.series] : [])), ...uploads];
 		const anchor = raw[0];
 		return raw.map((s) => {
 			const offset =
@@ -104,7 +106,7 @@
 		const abort = new AbortController();
 		products = [];
 		summary = null;
-		uploads = [];
+		error = '';
 		void Promise.all([productList(selectedForm), analysis().then((service) => service.summary())])
 			.then(([list, data]) => {
 				if (!abort.signal.aborted) {
@@ -137,10 +139,11 @@
 			data = summary,
 			list = products;
 		const abort = new AbortController();
+		selections = [];
+		loading = false;
 		if (!data) return;
 		loading = true;
 		error = '';
-		selections = [];
 		void (async () => {
 			const service = await analysis();
 			const measurements = new Map(
@@ -162,10 +165,9 @@
 				const spread = measurement ? null : await channelSpread(result, partition, settings.channel);
 				const curve = measurement ? (await service.curves([id], { channel: settings.channel }))[0] : null;
 				const values = curve?.values ?? spread?.centre;
-				if (!values)
-					throw new Error(
-						`${product.brand} ${product.model}: no ${settings.channel} curve is available. Choose another channel or measurement.`
-					);
+				const warning = !values
+					? `${product.brand} ${product.model}: no ${settings.channel} ${measurement ? 'curve' : 'default consensus'} is available. Choose another channel or measurement.`
+					: undefined;
 				const contributing = measurement
 					? [measurement]
 					: result.measurements
@@ -184,15 +186,20 @@
 					sources,
 					measurements: result.measurements.map((r) => r.measurement),
 					variant,
-					series: {
-						id,
-						label: `${label} · ${rigLabel(partition, data.sources)} · ${measurement ? variant : 'consensus'} · ${settings.channel}`,
-						values,
-						...(spread && spread.sourceCount >= 2 ? { lo: spread.min, hi: spread.max } : {}),
-						attribution:
-							sources.map((s) => `${s.name} ${s.url}`).join('; ') +
-							` · ${variant} · ${rigLabel(partition, data.sources)}`
-					}
+					warning,
+					...(values
+						? {
+								series: {
+									id,
+									label: `${label} · ${rigLabel(partition, data.sources)} · ${measurement ? variant : 'consensus'} · ${settings.channel}`,
+									values,
+									...(spread && spread.sourceCount >= 2 ? { lo: spread.min, hi: spread.max } : {}),
+									attribution:
+										sources.map((s) => `${s.name} ${s.url}`).join('; ') +
+										` · ${variant} · ${rigLabel(partition, data.sources)}`
+								}
+							}
+						: {})
 				});
 			}
 			if (!abort.signal.aborted) selections = rows;
@@ -207,9 +214,10 @@
 			abort.abort();
 		};
 	});
+	let urlDifference = $derived(selectionState.difference);
 	$effect(() => {
-		mode = selectionState.difference ? 'difference' : 'response';
-		baseline = selectionState.difference;
+		mode = urlDifference ? 'difference' : 'response';
+		baseline = urlDifference;
 	});
 	$effect(() => {
 		const difference = mode === 'difference' ? baseline || series[0]?.id || '' : '';
@@ -240,15 +248,22 @@
 		});
 	}
 	async function upload(event: Event) {
-		const file = (event.currentTarget as HTMLInputElement).files?.[0];
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
 		if (!file || count >= 6) return;
 		try {
 			const result = await (await analysis()).parseUpload(await file.text(), file.name);
 			uploadMessages = result.warnings;
 			if (!result.ok) {
-				error = result.error;
+				uploadError = result.error;
 				return;
 			}
+			if (count >= 6) {
+				uploadError = 'Six curves selected. Remove one before adding this upload.';
+				return;
+			}
+			uploadError = '';
 			uploads = [
 				...uploads,
 				{
@@ -259,7 +274,7 @@
 				}
 			];
 		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
+			uploadError = e instanceof Error ? e.message : String(e);
 		}
 	}
 </script>
@@ -311,6 +326,7 @@
 					<div class="legend-row" data-testid="comparison-row">
 						<h3>{row.label}</h3>
 						<p class="small">{rigLabel(row.partition, summary?.sources)} · {row.variant}</p>
+						{#if row.warning}<Notice kind="caution">{row.warning}</Notice>{/if}
 						<details class="sources small muted">
 							<summary>{row.sources.length} {row.sources.length === 1 ? 'reviewer' : 'reviewers'}</summary>
 							<div class="source-links">
@@ -397,6 +413,8 @@
 					</p>
 				</div>
 				{#each uploadMessages as warning (warning)}<Notice kind="caution">{warning}</Notice>{/each}
+				{#if uploadError}<Notice kind="caution" title="Could not add upload"><p>{uploadError}</p></Notice
+					>{/if}
 			</section>
 			<div class="chart stack">
 				{#if partitions.length > 1}<Notice kind="caution"

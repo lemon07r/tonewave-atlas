@@ -41,6 +41,9 @@
 	);
 	let visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
 	$effect(() => {
+		if (form === 'iem' || form === 'headphone') query = '';
+	});
+	$effect(() => {
 		const selectedForm = form,
 			id = productId;
 		const abort = new AbortController();
