@@ -277,6 +277,27 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 }
 
 describe('atlas service', () => {
+	it('keeps an exact redirected measurement parent even if the former parent still exists', async () => {
+		const { service, catalog, files } = fixture();
+		files.set(
+			'v1/catalog-iem.json.gz',
+			new TextEncoder().encode(
+				JSON.stringify({ ...catalog, redirects: { products: {}, measurements: { 'old-b-tune': 'a-tune' } } })
+			)
+		);
+		expect(await service.similar({ productId: 'b', measurementId: 'old-b-tune' })).toMatchObject({
+			ok: true,
+			reference: { productId: 'a', measurementIds: ['a-tune'] },
+			resolvedIds: [
+				{
+					productId: 'b',
+					measurementId: 'old-b-tune',
+					canonicalProductId: 'a',
+					canonicalMeasurementId: 'a-tune'
+				}
+			]
+		});
+	});
 	it('resolves a saved profile measurement across a fold and reports canonical ids', async () => {
 		const { service, catalog, files } = fixture();
 		files.set(
@@ -351,7 +372,7 @@ describe('atlas service', () => {
 		});
 		if (!similar.ok) throw new Error(similar.message);
 		expect(similar.results.some((r) => r.candidate.measurementIds.includes('a-tune'))).toBe(false);
-		expect(await service.similar({ productId: 'b', measurementId: 'old-tune' })).toMatchObject({
+		expect(await service.similar({ productId: 'b', measurementId: 'a-tune' })).toMatchObject({
 			ok: false,
 			error: 'unknown-measurement'
 		});
