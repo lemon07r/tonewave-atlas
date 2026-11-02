@@ -7,7 +7,7 @@ import { normalise } from './transform.ts';
 /** Audited maker/model families. Anchored to BOTH maker and model, never fuzzy identity merges. */
 const headphoneModels: Record<string, RegExp> = {
 	// Established full-size models in the indexes; K319/K391/Q350 are not headphones.
-	akg: /^(?:K\s*(?:52|72|92|140|182|240|245|267|271|275|290|340|361|371|400|402|501|553|612|701|702|712|7XX|812|872|1000)(?!\d)|Q701(?!\d)|N9\b|N700NC\b)/i,
+	akg: /^(?:K\s*(?:52|72|92|140|182|240|245|267|271|275|290|340|361|371|400|402|501|553|612|701|702|712|7XX|812|872|1000)(?!\d)|Q701(?!\d)|N9(?:0Q)?\b|N700NC\b)/i,
 	audeze: /^(?:LCD(?![- ]?i[34])|MM[- ]?\d|EL[- ]|Maxwell|Mobius|Penrose)/i,
 	audiotechnica: /^ATH[- ]?(?:AD|A\d|AV|M\d|W|R\d)/i,
 	beyerdynamic: /^DT\s*\d+(?!.*\bie\b)/i,
@@ -80,7 +80,9 @@ export function entryForm(phone: Phone): { form: Form | null; reason: string | n
 	);
 	if (
 		headphoneMakers.has(brand) ||
-		(headphoneModels[brand]?.test(model) && !(brand === 'beyerdynamic' && /\d\s*ie\b/i.test(model)))
+		(Object.hasOwn(headphoneModels, brand) &&
+			headphoneModels[brand]?.test(model) &&
+			!(brand === 'beyerdynamic' && /\d\s*ie\b/i.test(model)))
 	)
 		return { form: 'headphone', reason: 'audited maker/model headphone family' };
 	if (
@@ -130,7 +132,7 @@ export function identityProblem(brand: string, model: string): string | null {
 	return null;
 }
 
-/** Do not collapse separately labelled fits, samples or tunings, even when their curves coincide. */
+/** Shape comparison only: callers must first require equivalent configuration descriptors. */
 export function duplicateDefault(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
 	if (Array.from(a).some((v, i) => Number.isFinite(v) !== Number.isFinite(b[i] ?? NaN))) return false;
 	const d = responseDistance(a, b, { frequencies: RANK_GRID });
@@ -153,7 +155,9 @@ export function partitionFor(source: Source, form: Form): string {
 export function modification(phone: Phone, index: number): Phone {
 	const marker = /\b(?:mod(?:ded|ification)?|DIY|prototype|reshell)\b/i;
 	if (marker.test(phone.name)) return phone;
-	const descriptor = phone.suffix[index] || phone.file[index] || '';
+	const suffix = phone.suffix[index] || '';
+	const file = phone.file[index] || '';
+	const descriptor = marker.test(suffix) ? suffix : `${file} ${suffix}`.trim();
 	return marker.test(descriptor) ? { ...phone, name: `${phone.name} [modified: ${descriptor}]` } : phone;
 }
 

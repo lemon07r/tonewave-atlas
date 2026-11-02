@@ -82,6 +82,8 @@ describe('deterministic catalog quality rules', () => {
 	);
 	it.each([
 		['AKG', 'K371', 'headphone'],
+		['AKG', 'N90Q', 'headphone'],
+		['constructor', 'Model', null],
 		['Audeze', 'LCD-2', 'headphone'],
 		['Focal', 'Utopia', 'headphone'],
 		['Hifiman', 'HE400SE', 'headphone'],
@@ -133,6 +135,12 @@ describe('deterministic catalog quality rules', () => {
 			brand: 'Kiwi Ears',
 			name: 'KE4'
 		});
+	});
+	it('does not let a non-mod suffix hide a file modification marker', () => {
+		const p = phone('Maker', 'Model', ['Model Stock', 'Model Grill Mod']);
+		p.suffix = ['Stock', 'foam tips'];
+		expect(modification(p, 1).name).toContain('Model Grill Mod');
+		expect(modification(p, 1).name).not.toBe('Model');
 	});
 	it.each([
 		['KZ', 'Unknown'],

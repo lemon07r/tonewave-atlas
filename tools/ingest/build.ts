@@ -42,6 +42,7 @@ import {
 } from './common.ts';
 import {
 	collisionGroups,
+	configurationDescriptor,
 	DisplayNames,
 	defaultVariantIndex,
 	identity,
@@ -71,6 +72,7 @@ import { finaliseDefaults } from './default-coverage.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
+	configuration?: string;
 	sourceOrder?: number;
 	channels: PackedCurve[];
 	rank: PackedCurve;
@@ -488,9 +490,12 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const rank = Float64Array.from({ length: RANK_SIZE }, (_, i) => smooth[i * RANK_STEP] ?? NaN);
 				const selectedVariant = variant(phone, index, id, shortSamples.has(rawPhone));
 				const defaultKey = `${source.id}:${product.id}`;
+				const configuration = configurationDescriptor(phone, index);
 				if (
 					selectedVariant.kind === 'default' &&
-					defaults.get(defaultKey)?.some((c) => duplicateDefault(rank, c.rank.values))
+					defaults
+						.get(defaultKey)
+						?.some((c) => c.configuration === configuration && duplicateDefault(rank, c.rank.values))
 				) {
 					quarantine('near-identical duplicate default from same source/normalised identity', true);
 					continue;
@@ -618,6 +623,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const group = partitions.get(measurement.partition) ?? [];
 				const row = {
 					measurement,
+					configuration,
 					sourceOrder: counts.variants,
 					channels: curves,
 					rank: { measurementId: id, channel: 'avg', values: rank }

@@ -112,6 +112,29 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('retains separately labelled same-response fits and every channel before default reconciliation', async () => {
+		const phones = [
+			{ name: 'Model', file: ['Model stock tips'], suffix: ['stock tips'] },
+			{ name: 'Model', file: ['Model foam tips'], suffix: ['foam tips'] }
+		];
+		const { paths } = await fixture(config, [
+			[bookUrl, JSON.stringify([{ name: 'Brand', phones }])],
+			...phones.flatMap((p) =>
+				p.file.flatMap((f) =>
+					['L', 'R'].map((c): [string, string] => [
+						`${base}data/${encodeURIComponent(f + ' ' + c + '.txt')}`,
+						curve(80)
+					])
+				)
+			)
+		]);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.measurements).toHaveLength(2);
+		expect(catalog.measurements.map((m) => m.provenance.originalUrls.length)).toEqual([2, 2]);
+		expect(catalog.measurements.filter((m) => m.variant.isDefault)).toHaveLength(1);
+		expect(catalog.measurements.map((m) => m.variant.label).sort()).toEqual(['foam tips', 'stock tips']);
+	});
 	it('uses strict plurality of former defaults for split products, leaving ties unmapped across forms', async () => {
 		const { paths } = await fixture();
 		await build(paths);

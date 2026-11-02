@@ -131,6 +131,27 @@ function descriptor(phone: Phone, index: number): string {
 	return firstDescriptor;
 }
 
+/** Retain both file and suffix configuration evidence before considering shape deduplication. */
+export function configurationDescriptor(phone: Phone, index: number): string {
+	const file = descriptor({ ...phone, suffix: [] }, index);
+	const declaredFile =
+		tipDescriptor(file) ||
+		tuningDescriptor(file) ||
+		cableDescriptor(file) ||
+		factoryMode(file) ||
+		classifyEq(file) !== 'none' ||
+		/\b(?:sample|unit|batch|revision)\b/i.test(file);
+	return [
+		...new Set(
+			[phone.suffix[index]?.trim() ? descriptor(phone, index) : '', declaredFile ? file : ''].map((text) =>
+				text.trim().replace(/\s+/g, ' ').toLowerCase()
+			)
+		)
+	]
+		.filter(Boolean)
+		.join(' | ');
+}
+
 function sampleDescriptor(phone: Phone, index: number, shortSamples: boolean): string {
 	// B&W's Pi7/Px7/Px8 S2/S3 labels denote product generations, not replacement samples.
 	const name = phone.name.replace(/\b(?:Pi7|Px[78])\s+S[23]\b|^s\d+$/gi, '');
