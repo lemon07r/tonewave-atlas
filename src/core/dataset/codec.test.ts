@@ -98,6 +98,43 @@ describe('TWFR v1', () => {
 	])('rejects statistics the decoder cannot read', (statistics) => {
 		expect(() => encodePack({ ...pack, statistics })).toThrow('Invalid pack statistics');
 	});
+	it.each([
+		{ status: ['sufficient'] },
+		{ status: ['low'] },
+		{ status: null },
+		{ status: 1 },
+		{ status: { toString: () => 'sufficient' } }
+	])('rejects a non-string support status: %j', ({ status }) => {
+		const statistics = {
+			...pack.statistics,
+			support: {
+				status,
+				reason: null,
+				minimumProducts: 20,
+				multiSourceProducts: 20,
+				sources: 2,
+				spread: [20, 20, 20],
+				sourceProducts: {},
+				sourceBins: {}
+			}
+		} as unknown as CurvePack['statistics'];
+		expect(() => encodePack({ ...pack, statistics })).toThrow('Invalid pack statistics');
+		const encoded = encodePack(pack);
+		const oldLength = new DataView(encoded.buffer).getUint32(16, true);
+		const metadata = new TextEncoder().encode(
+			JSON.stringify({
+				partition: pack.partition,
+				curves: pack.curves.map(({ measurementId, channel }) => ({ measurementId, channel })),
+				statistics
+			})
+		);
+		const malformed = new Uint8Array(24 + metadata.length + 2 * pack.points * pack.curves.length);
+		malformed.set(encoded.subarray(0, 24));
+		new DataView(malformed.buffer).setUint32(16, metadata.length, true);
+		malformed.set(metadata, 24);
+		malformed.set(encoded.subarray(24 + oldLength), 24 + metadata.length);
+		expect(() => decodePack(malformed)).toThrow('Invalid pack metadata');
+	});
 	it('stores the same quantisation step in the header and decoded values', () => {
 		const bytes = encodePack(pack);
 		expect(new DataView(bytes.buffer).getUint16(10, true)).toBe(DB_STEP * 1000);

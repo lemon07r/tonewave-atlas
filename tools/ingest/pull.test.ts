@@ -29,6 +29,14 @@ async function output(): Promise<string> {
 }
 
 describe('dataset pull', () => {
+	it('accepts a content-verified targets artifact', () => {
+		const target = { ...file, path: 'targets.json.gz' };
+		const version = datasetVersion([target], []);
+		expect(
+			validateManifest({ ...manifest, version, files: [{ ...target, path: `${version}/${target.path}` }] })
+				.files[0]?.path
+		).toBe(`${version}/targets.json.gz`);
+	});
 	it('downloads a manifest-driven dataset and verifies bytes before publication', async () => {
 		const dir = await output();
 		vi.stubGlobal(

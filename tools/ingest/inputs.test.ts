@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { readInputs, validateAliases, validateExclusions, validateSources } from './common.ts';
+import {
+	readInputs,
+	validateAliases,
+	validateExclusions,
+	validateSources,
+	validateProducts
+} from './common.ts';
 
 describe('hand-maintained input validation', () => {
 	it('accepts the checked-in inputs and optional notes', async () => {
 		const inputs = await readInputs();
 		expect(inputs.excluded.sources).toContain('crinacle');
 		expect(inputs.brands.CrinEars).toBe('CrinEar');
+		expect(
+			validateProducts({ aliases: { _note: 'Verified against the catalog', 'Brand|Old': 'Brand|New' } })
+		).toEqual({ 'brand|old': 'Brand|New' });
 		expect(
 			validateSources({
 				_note: 'sources',
@@ -23,6 +32,20 @@ describe('hand-maintained input validation', () => {
 		).toEqual({
 			reviewer: { form: 'iem', partition: 'iem-711', rig: '711', permission: 'permission granted' }
 		});
+	});
+	it.each([
+		{},
+		{ aliases: [] },
+		{ aliases: {}, extra: true },
+		{ aliases: { 'Brand|Model': 1 } },
+		{ aliases: { _note: 42 } },
+		{ aliases: { Brand: 'Brand|Model' } },
+		{ aliases: { 'Brand|': 'Brand|Model' } },
+		{ aliases: { 'Brand|Model': 'Brand|Model|extra' } },
+		{ aliases: { 'Brand|A': 'Brand|B', 'Brand|B': 'Brand|A' } },
+		{ aliases: { 'Brand|A': 'Brand|B', 'brand|a': 'Brand|C' } }
+	])('rejects malformed or ambiguous product aliases: %j', (value) => {
+		expect(() => validateProducts(value)).toThrow('Invalid');
 	});
 	it.each([
 		{ files: [], products: [] },

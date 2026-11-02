@@ -9,10 +9,20 @@ import {
 	measurementUrl,
 	parseOptOuts,
 	phoneBook,
+	readInputs,
+	validateProducts,
 	supportedChannels,
 	unwanted
 } from './common.ts';
-import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
+import {
+	collisionGroups,
+	identity,
+	normalise,
+	sourceFor,
+	suspiciousNames,
+	usdPrice,
+	variant
+} from './transform.ts';
 import { compressPack, computePartitionStatistics } from './build.ts';
 import { decodePack, decompressGzip } from '#core/dataset/codec.ts';
 
@@ -73,6 +83,9 @@ describe('source transforms', () => {
 		expect(calibrationUrl(dir, 'https://reviewer.squig.link/cal/')).toBe(
 			'https://reviewer.squig.link/cal/calibration.txt'
 		);
+		expect(calibrationUrl(dir, 'folder/Offset #1?.txt')).toBe(
+			'https://reviewer.squig.link/measurements/folder/Offset%20%231%3F.txt'
+		);
 	});
 	it('discovers root/subdomain/lab URLs but never altDomain/crinacle', () => {
 		const entries = ['root', 'subdomain', 'labFolder', 'altDomain'].map((urlType) => ({
@@ -104,6 +117,49 @@ describe('source transforms', () => {
 		expect(variant(phone, 2, 'm-789').kind).toBe('tuning');
 		expect(book.warnings).toHaveLength(1);
 	});
+	it('groups near-name audit candidates without changing their separate identities', () => {
+		const products = [
+			{ id: 'a', brand: 'Brand', model: 'Reference' },
+			{ id: 'b', brand: 'Brand', model: 'Referenc' },
+			{ id: 'c', brand: 'Other', model: 'Reference' }
+		];
+		expect(collisionGroups(products)).toEqual([['Brand Referenc', 'Brand Reference']]);
+		expect(products).toHaveLength(3);
+	});
+	it('keeps audit candidates separate by form and labels known forms in groups', () => {
+		const iem = { id: 'i-a', brand: 'Brand', model: 'Reference', form: 'iem' as const };
+		const headphone = { id: 'h-a', brand: 'Brand', model: 'Reference', form: 'headphone' as const };
+		const products = [
+			iem,
+			{ ...iem, id: 'i-b', model: 'Referenc' },
+			headphone,
+			{ ...headphone, id: 'h-b', model: 'Referenc' }
+		];
+		expect(suspiciousNames([iem, headphone])).toEqual([]);
+		expect(suspiciousNames(products)).toEqual([
+			{ left: 'i-b', right: 'i-a' },
+			{ left: 'h-b', right: 'h-a' }
+		]);
+		expect(collisionGroups(products)).toEqual([
+			['[headphone] Brand Referenc', '[headphone] Brand Reference'],
+			['[iem] Brand Referenc', '[iem] Brand Reference']
+		]);
+	});
+	it('unions two existing audit components through a bridge into one disjoint group', () => {
+		// Repeated vertices across pair-generating brand buckets exercise a bridge after A-B and C-D.
+		const products = [
+			{ id: 'a', brand: 'First', model: 'Reference A' },
+			{ id: 'b', brand: 'First', model: 'Reference B' },
+			{ id: 'c', brand: 'Second', model: 'Reference C' },
+			{ id: 'd', brand: 'Second', model: 'Reference D' },
+			{ id: 'b', brand: 'Bridge', model: 'Reference B' },
+			{ id: 'c', brand: 'Bridge', model: 'Reference C' }
+		];
+		expect(collisionGroups(products)).toEqual([
+			['Bridge Reference B', 'Bridge Reference C', 'First Reference A', 'Second Reference D']
+		]);
+		expect(collisionGroups([...products.slice(4), ...products.slice(0, 4)])).toHaveLength(1);
+	});
 	it('normalises spelling only, and reports rather than merges near names', () => {
 		expect(normalise('SÓFT Ears')).toBe('softears');
 		expect(identity('CRINEARS', 'Reference', 'iem', { crinears: 'CrinEar' }).id).toBe(
@@ -117,6 +173,56 @@ describe('source transforms', () => {
 			])
 		).toEqual([{ left: 'b', right: 'a' }]);
 	});
+	it.each([
+		['Moondrop', 'moondrop Moondrop Kato', 'Kato'],
+		['Moondrop', ' MOON DROP   Kato ', 'Kato'],
+		['64 Audio', '64Audio U12t', 'U12t'],
+		['Moondrop', 'Moondrop', 'Moondrop'],
+		['KZ', 'KZfoo', 'KZfoo']
+	])('strips only a complete repeated leading brand: %s / %s', (brand, model, expected) => {
+		expect(identity(brand, model, 'iem', {}).model).toBe(expected);
+	});
+	it('strips punctuation-equivalent and registered raw brand prefixes without splitting identities', () => {
+		const aliases = { audiotechnica: 'Audio-Technica', crinears: 'CrinEar', crinear: 'CrinEar' };
+		const expected = identity('Audio-Technica', 'ATH-M50x', 'headphone', aliases);
+		for (const brand of ['AudioTechnica', 'Audio-Technica']) {
+			for (const model of ['AudioTechnica ATH-M50x', 'Audio-Technica ATH-M50x', 'Audio Technica ATH-M50x']) {
+				expect(identity(brand, model, 'headphone', aliases)).toMatchObject({
+					id: expected.id,
+					model: 'ATH-M50x'
+				});
+			}
+		}
+		expect(identity('CrinEars', 'CrinEars CrinEar Reference', 'iem', aliases)).toMatchObject({
+			id: identity('CrinEar', 'Reference', 'iem', aliases).id,
+			model: 'Reference'
+		});
+		expect(identity('AudioTechnica', 'AudioTechnicaX ATH-M50x', 'headphone', aliases).model).toBe(
+			'AudioTechnicaX ATH-M50x'
+		);
+		expect(identity('!!!', 'Model Name', 'iem', {}).model).toBe('Model Name');
+	});
+	it('applies explicit product aliases without merging variants or crossing forms', () => {
+		const aliases = validateProducts({ aliases: { 'MOONDROP|Aria II': 'MOONDROP|Aria 2' } });
+		const a = identity('MOONDROP', 'Aria II', 'iem', {}, aliases);
+		expect(a.id).toBe(identity('MOONDROP', 'Aria 2', 'iem', {}, aliases).id);
+		expect(a.id).not.toBe(identity('MOONDROP', 'Aria II DSP', 'iem', {}, aliases).id);
+		expect(a.id).not.toBe(identity('MOONDROP', 'Aria II', 'headphone', {}, aliases).id);
+	});
+	it.each([
+		['QKZ', 'QKZ x HBB', 'QKZxHBB'],
+		['BLON', 'Blon x HBB Z300', 'BLONxHBB Z300']
+	])(
+		'joins only the audited %s collaboration spellings through checked-in explicit aliases',
+		async (brand, spaced, compact) => {
+			const { productAliases } = await readInputs();
+			const canonical = identity(brand, spaced, 'iem', {}, productAliases);
+			expect(identity(brand, compact, 'iem', {}, productAliases).id).toBe(canonical.id);
+			expect(identity(brand, `${compact} DSP`, 'iem', {}, productAliases).id).not.toBe(canonical.id);
+			expect(identity(brand, compact, 'headphone', {}, productAliases).id).not.toBe(canonical.id);
+			expect(identity(brand, compact, 'iem', {}).id).not.toBe(canonical.id);
+		}
+	);
 	it.each([
 		['Balanced cable', 'setup'],
 		['sample 2', 'unit'],
@@ -173,7 +279,10 @@ describe('source transforms', () => {
 		expect(['Harman Target', 'EQ sandbox', '∆ Reference', 'IEF Calibration'].every(unwanted)).toBe(true);
 		expect(unwanted('CrinEar Reference')).toBe(false);
 		expect(unwanted('Brainwavz Delta')).toBe(false);
-		expect(computePartitionStatistics([])).toBeNull();
+		expect(computePartitionStatistics([])).toMatchObject({
+			support: { status: 'low', multiSourceProducts: 0 },
+			harmonisation: { pairs: 0, meanImprovement: null }
+		});
 	});
 	it.each([
 		['unknown coupler', true],

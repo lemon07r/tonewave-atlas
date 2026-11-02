@@ -1,3 +1,5 @@
+import type { HarmonisationValidation } from '../analysis/statistics.ts';
+
 export type Form = 'iem' | 'headphone';
 export type VariantKind = 'default' | 'tuning' | 'fit' | 'setup' | 'unit' | 'unknown';
 
@@ -62,11 +64,26 @@ export interface Measurement {
 	warnings: string[];
 }
 
-/** Statistics are absent until the analysis lane supplies them; never fabricated as zero spread. */
+/** Rank-grid estimates; null bins are unsupported, never invented zero spread/offsets. */
 export interface PartitionStatistics {
-	spread: number[];
-	populationMedian: number[];
-	sourceOffsets: Record<string, number[]>;
+	spread: (number | null)[];
+	populationMedian: (number | null)[];
+	sourceOffsets: Record<string, (number | null)[]>;
+	/** Optional for compatibility with earlier TWFR v1 JSON metadata. */
+	support?: {
+		status: 'sufficient' | 'low';
+		reason: string | null;
+		minimumProducts: number;
+		multiSourceProducts: number;
+		sources: number;
+		spread: number[];
+		sourceProducts: Record<string, number>;
+		sourceBins: Record<string, number[]>;
+	};
+	harmonisation?: HarmonisationValidation & {
+		/** Pooled uncorrected held-out pair-distance median; optional for earlier TWFR v1 metadata. */
+		medianBefore?: number | null;
+	};
 }
 
 export interface Partition {
@@ -91,6 +108,25 @@ export interface DatasetFile {
 	path: string;
 	sha256: string;
 	bytes: number;
+}
+
+export interface ReferenceTarget {
+	id: string;
+	name: string;
+	partitions: string[];
+	form: Form;
+	description: string;
+	attribution: string;
+	/** Relative dB on the canonical GRID, with no smoothing or level normalization. */
+	values: number[];
+	provenance: {
+		file: string;
+		sha256: string;
+		upstream: string;
+		revision: string;
+		processing: string[];
+		warnings: string[];
+	};
 }
 
 export interface Manifest {

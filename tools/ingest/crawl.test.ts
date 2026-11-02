@@ -23,6 +23,7 @@ async function fixture(config = '') {
 	for (const [name, value] of Object.entries({
 		exclusions: { sources: [], files: [], products: [] },
 		aliases: { brands: {} },
+		products: { aliases: {} },
 		sources: { overrides: {} }
 	}))
 		await writeFile(resolve(root, `data/${name}.json`), JSON.stringify(value));
@@ -86,7 +87,23 @@ describe('crawl preflight', () => {
 		bodies.delete(url);
 		await crawl(['--sites', 'reviewer'], paths);
 		expect(request.mock.calls.some(([url]) => href(url).includes('Model%20L.txt'))).toBe(true);
-		expect((await snapshot()).errors[0]?.error).toContain('Using last-good calibration');
+		expect((await snapshot()).errors[0]?.error).toContain('Using last-good');
+		expect((await snapshot()).retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
+	});
+	it('reports retained measurement failures in the snapshot and stdout summary', async () => {
+		const { paths, bodies, snapshot } = await fixture();
+		const url = 'https://reviewer.squig.link/data/Model%20L.txt';
+		bodies.set(url, '20 70\n20000 80');
+		await new HttpCache(paths.cache).fetch(url);
+		bodies.delete(url);
+		const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+		try {
+			await crawl(['--sites', 'reviewer'], paths);
+			expect((await snapshot()).retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
+			expect(log).toHaveBeenCalledWith(expect.stringContaining('1 retained failures'));
+		} finally {
+			log.mockRestore();
+		}
 	});
 	it('trims comma-separated site selectors', async () => {
 		const { paths, snapshot } = await fixture();

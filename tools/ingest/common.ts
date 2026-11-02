@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
@@ -57,8 +57,17 @@ export function datasetVersion(files: DatasetFile[], sources: Source[]): string 
 export async function atomicWrite(path: string, value: string | Uint8Array): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temp = `${path}.${randomUUID()}.partial`;
-	await writeFile(temp, value);
-	await rename(temp, path);
+	try {
+		await writeFile(temp, value);
+		await rename(temp, path);
+	} catch (error) {
+		try {
+			await rm(temp, { force: true });
+		} catch (cleanup) {
+			console.warn(`Could not remove ${temp}: ${errorMessage(cleanup)}`);
+		}
+		throw error;
+	}
 }
 
 export async function readJson(path: string): Promise<unknown> {
@@ -96,6 +105,7 @@ export interface CrawlSnapshot {
 	sources: Database[];
 	excluded: { id: string; reason: string }[];
 	errors: { id: string; error: string }[];
+	retainedFailures?: { id: string; url: string; status: number | null; at: string; error: string }[];
 }
 
 export interface Exclusions {
@@ -146,6 +156,45 @@ export function validateAliases(value: unknown): Record<string, string> {
 	return brands;
 }
 
+export function productAliasKey(brand: string, model: string): string {
+	return [brand, model]
+		.map((part) =>
+			part
+				.normalize('NFKD')
+				.replace(/\p{M}/gu, '')
+				.toLowerCase()
+				.replace(/[^\p{L}\p{N}]/gu, '')
+		)
+		.join('|');
+}
+
+export function validateProducts(value: unknown): Record<string, string> {
+	const v = keys(value, ['aliases'], ['aliases'], 'products.json');
+	if (!record(v.aliases)) throw new Error('Invalid products.aliases: expected a string map');
+	const aliases: Record<string, string> = Object.create(null) as Record<string, string>;
+	const pair = (value: string): string[] => {
+		const parts = value.split('|');
+		if (parts.length !== 2 || parts.some((p) => !p.trim() || !/[\p{L}\p{N}]/u.test(p)))
+			throw new Error(`Invalid product alias pair: ${value}`);
+		return parts;
+	};
+	for (const [from, to] of Object.entries(v.aliases)) {
+		if (typeof to !== 'string') throw new Error(`Invalid product alias: ${from}`);
+		if (from === '_note') continue;
+		const [brand = '', model = ''] = pair(from);
+		pair(to);
+		const key = productAliasKey(brand, model);
+		if (Object.hasOwn(aliases, key)) throw new Error(`Invalid duplicate product alias: ${from}`);
+		aliases[key] = to;
+	}
+	for (const to of Object.values(aliases)) {
+		const [brand = '', model = ''] = pair(to);
+		if (Object.hasOwn(aliases, productAliasKey(brand, model)))
+			throw new Error('Invalid product alias chain/cycle/redundant mapping');
+	}
+	return aliases;
+}
+
 export interface SourceOverride {
 	form?: Form;
 	partition?: string;
@@ -191,14 +240,18 @@ export function validateSources(value: unknown): Record<string, SourceOverride> 
 export async function readInputs(root = ROOT): Promise<{
 	excluded: Exclusions;
 	brands: Record<string, string>;
+	productAliases: Record<string, string>;
 	overrides: Record<string, SourceOverride>;
 }> {
-	const [excluded, brands, overrides] = await Promise.all(
-		['exclusions', 'aliases', 'sources'].map((name) => readJson(resolve(root, `data/${name}.json`)))
+	const [excluded, brands, overrides, products] = await Promise.all(
+		['exclusions', 'aliases', 'sources', 'products'].map((name) =>
+			readJson(resolve(root, `data/${name}.json`))
+		)
 	);
 	return {
 		excluded: validateExclusions(excluded),
 		brands: validateAliases(brands),
+		productAliases: validateProducts(products),
 		overrides: validateSources(overrides)
 	};
 }
@@ -290,7 +343,15 @@ export function measurementUrl(dir: string, file: string, channel: string): stri
 }
 
 export function calibrationUrl(dir: string, stem: string): string {
-	const url = sameOriginUrl(stem, dir);
+	// Relative values are filenames/paths, not query strings or fragments. Leave actual URLs to
+	// sameOriginUrl so protocol-relative and non-HTTP(S) values cannot evade origin validation.
+	const path = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(stem)
+		? stem
+		: stem
+				.split('/')
+				.map((part) => encodeURIComponent(part))
+				.join('/');
+	const url = sameOriginUrl(path, dir);
 	if (!/\.txt$/i.test(url.pathname)) url.pathname += url.pathname.endsWith('/') ? 'calibration.txt' : '.txt';
 	return url.href;
 }
