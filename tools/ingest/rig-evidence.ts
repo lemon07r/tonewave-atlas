@@ -26,6 +26,9 @@ interface RigScore {
 	family: '711' | '5128' | null;
 }
 
+const MINIMUM_OVERLAP = 4;
+const MINIMUM_SCORED_CONTROLS = 30;
+
 function random(key: string): () => number {
 	let seed = parseInt(sha256(key).slice(0, 8), 16) || 1;
 	return () => {
@@ -170,7 +173,14 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 	const details = sources.map((source) =>
 		scoreSource(source, family.has(source.id) ? directionFor(source.id) : direction, '')
 	);
-	const controls = details.filter((d) => d.score.control && d.score.interval);
+	const controls = details.filter((d) => d.score.control && d.score.sharedProducts >= MINIMUM_OVERLAP);
+	const insufficientSupport = details
+		.filter((d) => d.score.control && d.score.sharedProducts < MINIMUM_OVERLAP)
+		.map((d) => ({
+			source: d.score.source,
+			sharedProducts: d.score.sharedProducts,
+			status: 'insufficient support' as const
+		}));
 	const fitThreshold = (training: typeof controls) => {
 		const a = training.filter((d) => d.score.control === '711'),
 			b = training.filter((d) => d.score.control === '5128');
@@ -186,7 +196,7 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		const threshold = separated ? (upper711 + lower5128) / 2 : null;
 		return { threshold, separated, separation: { upper711, lower5128, scoreGap, typicalWidth } };
 	};
-	const { threshold, separated, separation } = fitThreshold(controls);
+	const { threshold, separated, separation } = fitThreshold(controls.filter((d) => d.score.interval));
 	// Each outer fold fits ALL learned quantities solely on the other controls. The training
 	// scores share that fold's direction; their reference still excludes their own source.
 	const locoDetails = controls.map((held) => {
@@ -195,7 +205,7 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		const training = sources
 			.filter((s) => family.has(s.id) && s.id !== exclude)
 			.map((s) => scoreSource(s, vector, exclude))
-			.filter((d) => d.score.interval);
+			.filter((d) => d.score.control && d.score.sharedProducts >= MINIMUM_OVERLAP && d.score.interval);
 		const fit = fitThreshold(training);
 		const interval = held.score.interval;
 		const prediction =
@@ -214,6 +224,7 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 				expected: held.score.control,
 				predicted: prediction,
 				correct: prediction === held.score.control,
+				status: prediction === held.score.control ? 'correct' : 'wrong',
 				threshold: fit.threshold,
 				separated: fit.separated,
 				separation: fit.separation,
@@ -227,10 +238,8 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		};
 	});
 	const locoPasses =
-		details.every((d) => !d.score.control || d.score.interval !== null) &&
-		locoDetails.length > 0 &&
-		locoDetails.every((d) => d.result.correct);
-	// Fixed candidate sizes with independently seeded samples. Validate EVERY verified control.
+		locoDetails.length >= MINIMUM_SCORED_CONTROLS && locoDetails.every((d) => d.result.correct);
+	// Fixed candidate sizes with independently seeded samples. Validate EVERY supported control.
 	const stability = [4, 8, 12, 16, 20, 24, 32].map((n) => {
 		const eligible = locoDetails.filter((d) => d.held.residuals.length >= n);
 		const results = eligible.map(({ held: d, threshold }) => {
@@ -257,7 +266,7 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 			passes:
 				separated &&
 				locoPasses &&
-				eligible.length === details.filter((d) => d.score.control).length &&
+				eligible.length === controls.length &&
 				eligible.filter((d) => d.held.score.control === '711').length >= 3 &&
 				eligible.filter((d) => d.held.score.control === '5128').length >= 2 &&
 				results.every((r) => r.correct >= 198)
@@ -291,6 +300,12 @@ export function rigEvidence(sources: Source[], curves: IndexedCurve[], iteration
 		separation,
 		loco: {
 			passes: locoPasses,
+			minimumScoredControls: MINIMUM_SCORED_CONTROLS,
+			minimumOverlap: MINIMUM_OVERLAP,
+			scored: locoDetails.length,
+			insufficient: insufficientSupport.length,
+			wrong: locoDetails.filter((d) => !d.result.correct).length,
+			insufficientSupport,
 			correct: locoDetails.filter((d) => d.result.correct).length,
 			controls: locoDetails.map((d) => d.result),
 			unscored: details.filter((d) => d.score.control && !d.score.interval).map((d) => d.score.source)

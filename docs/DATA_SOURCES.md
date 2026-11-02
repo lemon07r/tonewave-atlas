@@ -93,11 +93,14 @@ The threshold bisects the nearest control interval bounds. Controls must have di
 a score gap exceeding three times their median interval width (at least three 711 and two 5128 controls).
 Validation is nested leave-one-control-out: each fold refits direction, reference and threshold with
 the held-out source absent, then classifies its interval. Training controls share that fold's direction
-and each excludes itself from its reference. Every scored held-out control must classify correctly;
-any failure keeps all unverified sources unknown. Unscorable controls are reported, not called correct.
+and each excludes itself from its reference. Controls with fewer than four comparable products are
+reported as **insufficient support**, neither correct nor wrong. At least **30 controls** must be scored,
+and every supported held-out control must classify correctly; any failure keeps all unverified sources
+unknown. A supported control without a usable classification fails rather than being dropped.
 Minimum overlap is selected from 4/8/12/16/20/24/32 products: 200 subsamples without replacement must
-classify correctly against that control's held-out threshold in at least 99% of trials for **every** eligible control, including at least two
-5128 controls. An unverified source needs that overlap and an interval wholly on one side of the
+classify correctly against that control's held-out threshold in at least 99% of trials for **every**
+supported control. All scored controls must have the candidate overlap, including at least three 711
+and two 5128 controls. An unverified source needs that overlap and an interval wholly on one side of the
 threshold; otherwise it stays unknown. Insufficiently separated/stable controls stop the real build.
 The report records the direction, bin support, control scores, intervals, LOCO training/held-out results, stability trials and every
 source decision. No unverified source trains this test; evidenced sources do not certify hardware.

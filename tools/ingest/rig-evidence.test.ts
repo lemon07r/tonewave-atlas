@@ -5,9 +5,23 @@ import { RANK_GRID } from '#core/grid.ts';
 import type { IndexedCurve } from '#core/atlas/index.ts';
 import type { Source } from '#core/dataset/types.ts';
 
-function fixture() {
+function fixture(controlCount = 31) {
 	// Five 711 controls allow >=3 OTHER 711 references even inside each training fold.
-	const names = ['a', 'b', 'c', 'd', 'e', 'x', 'y', 'z', 'u711', 'u5128', 'middle', 'small'];
+	const names = [
+		'a',
+		'b',
+		'c',
+		'd',
+		'e',
+		'x',
+		'y',
+		'z',
+		'u711',
+		'u5128',
+		'middle',
+		'small',
+		...Array.from({ length: controlCount - 8 }, (_, i) => `extra${i}`)
+	];
 	const sources: Source[] = names.map((id, i) =>
 		sourceFor(
 			{
@@ -17,7 +31,7 @@ function fixture() {
 				url: `https://${id}.invalid/`,
 				dbType: i >= 5 && i < 8 ? '5128' : 'IEMs'
 			},
-			i < 5 ? 'rig_description="clone 711"' : '',
+			i < 5 || id.startsWith('extra') ? 'rig_description="clone 711"' : '',
 			'date',
 			{}
 		)
@@ -64,18 +78,21 @@ function fixture() {
 	return { sources, rows };
 }
 
-describe('signed rig evidence', () => {
-	it('requires a score from every verified control before admitting unknown rigs', () => {
+// The admission policy requires 30+ real control fits; retain all bootstrap/assertion coverage.
+describe('signed rig evidence', { timeout: 60000 }, () => {
+	it('reports unsupported controls without counting them as correct or wrong', () => {
 		const { sources, rows } = fixture();
 		const template = sources[0];
 		if (!template) throw new Error('Missing fixture source');
 		const r = rigEvidence([...sources, { ...template, id: 'unscored' }], rows, 40);
 		expect(r.loco.unscored).toEqual(['unscored']);
-		expect(r.loco.passes).toBe(false);
-		expect(r.minimumProducts).toBeNull();
-		expect(r.sources.filter((s) => !s.control).every((s) => s.class === 'unknown')).toBe(true);
+		expect(r.loco).toMatchObject({ passes: true, scored: 31, insufficient: 1, wrong: 0, correct: 31 });
+		expect(r.loco.insufficientSupport).toEqual([
+			{ source: 'unscored', sharedProducts: 0, status: 'insufficient support' }
+		]);
+		expect(r.minimumProducts).toBe(4);
 	});
-	it('does not skip a sparse control when validating any candidate overlap size', () => {
+	it('reports a one-product control as insufficient support, not wrong', () => {
 		const { sources, rows } = fixture();
 		const r = rigEvidence(
 			sources,
@@ -84,8 +101,23 @@ describe('signed rig evidence', () => {
 		);
 		expect(r.loco.passes).toBe(true);
 		expect(r.sources.find((s) => s.source === 'a')?.sharedProducts).toBe(1);
-		expect(r.stability.every((s) => !s.passes)).toBe(true);
-		expect(r.minimumProducts).toBeNull();
+		expect(r.loco).toMatchObject({ passes: true, scored: 30, insufficient: 1, wrong: 0, correct: 30 });
+		expect(r.loco.insufficientSupport).toEqual([
+			{ source: 'a', sharedProducts: 1, status: 'insufficient support' }
+		]);
+		expect(r.minimumProducts).toBe(4);
+	});
+	it.each([29, 30])('requires at least 30 scored controls, with %s available', (count) => {
+		const { sources, rows } = fixture(count);
+		const r = rigEvidence(sources, rows, 40);
+		expect(r.loco).toMatchObject({
+			scored: count,
+			correct: count,
+			wrong: 0,
+			insufficient: 0,
+			passes: count >= 30
+		});
+		expect(r.sources.find((s) => s.source === 'u711')?.class).toBe(count >= 30 ? 'evidenced' : 'unknown');
 	});
 	it('does not admit unknown rigs when a held-out control fails a threshold trained without it', () => {
 		const { sources, rows } = fixture();
@@ -104,6 +136,7 @@ describe('signed rig evidence', () => {
 			correct: false
 		});
 		expect(report.loco.passes).toBe(false);
+		expect(report.loco).toMatchObject({ scored: 31, insufficient: 0, wrong: 1, correct: 30 });
 		expect(report.loco.controls.find((c) => c.source === 'a')?.threshold).toBeCloseTo(0.5, 10);
 		for (const control of report.loco.controls.find((c) => c.source === 'a')?.training ?? [])
 			expect(control.projection).toBeCloseTo(control.control === '711' ? 0 : 1, 10);
@@ -114,7 +147,7 @@ describe('signed rig evidence', () => {
 		expect(r.separated).toBe(true);
 		expect(r.threshold).toBeCloseTo(0.5, 10);
 		expect(r.minimumProducts).toBe(4);
-		expect(r.loco).toMatchObject({ passes: true, correct: 8 });
+		expect(r.loco).toMatchObject({ passes: true, correct: 31, scored: 31, insufficient: 0, wrong: 0 });
 		for (const fold of r.loco.controls) {
 			expect(fold.threshold).toBeCloseTo(0.5, 10);
 			expect(fold.training.some((c) => c.source === fold.source)).toBe(false);
