@@ -101,7 +101,7 @@ export function withoutAttribution(text: string): string {
 /** S<n> is a sample shorthand only with explicit source evidence or sibling sample numbers. */
 export function sampleContext(phones: readonly Phone[]): ReadonlySet<Phone> {
 	const text = (p: Phone) => [p.name, ...p.file, ...p.suffix].map(withoutAttribution).join(' ');
-	const explicit = phones.some((p) => /\b(?:sample|unit)\s*[:#-]?\s*\d+\b/i.test(text(p)));
+	const explicit = phones.some((p) => /\b(?:sample|unit)(?:s?\b|\d)/i.test(text(p)));
 	const key = (p: Phone) => `${normalise(p.brand)}:${normalise(p.name.replace(/\bs[1-9]\b/gi, ''))}`;
 	const groups = Map.groupBy(phones, key);
 	return new Set(

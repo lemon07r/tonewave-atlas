@@ -210,6 +210,8 @@ describe('deterministic catalog quality rules', () => {
 		expect(variant(p, 0, 'm-paired', true).kind).toBe('unit');
 		const explicit = phone('Other', 'Model', ['Model Sample 3']);
 		expect(sampleContext([p, explicit]).has(p)).toBe(true);
+		const unnumbered = phone('Other', 'Model', ['Model (sample)']);
+		expect(sampleContext([p, unnumbered]).has(p)).toBe(true);
 		expect(variant(p, 0, 'm-source', sampleContext([p, explicit]).has(p)).kind).toBe('unit');
 		const within = phone('Maker', 'Model', ['Model S2', 'Model S1']);
 		expect(variant(within, 0, 'm-within').kind).toBe('unit');
