@@ -51,8 +51,9 @@ describe('dataset pull', () => {
 		delete legacy.partitions;
 		for (const field of ['rigEvidence', 'forms', 'partitions'] as const) {
 			const bearing = { ...s };
-			for (const other of ['rigEvidence', 'forms', 'partitions'] as const)
-				if (other !== field) delete bearing[other];
+			if (field !== 'rigEvidence') delete bearing.rigEvidence;
+			if (field !== 'forms') delete bearing.forms;
+			if (field !== 'partitions') delete bearing.partitions;
 			expect(datasetVersion([file], [bearing])).not.toBe(datasetVersion([file], [legacy]));
 		}
 		const v = datasetVersion([file], [s]);

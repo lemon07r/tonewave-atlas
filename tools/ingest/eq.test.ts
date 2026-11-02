@@ -16,11 +16,15 @@ const phone = (name: string, file: string[], suffix: string[] = []): Phone => ({
 describe('real source EQ labels', () => {
 	it.each(['User EQ 0 dB', 'Custom EQ: 0 dB', 'EQ Custom (0 dB)'])(
 		'retains explicitly zero-gain user slots: %s',
-		(text) => expect(classifyEq(text)).toBe('neutral')
+		(text) => {
+			expect(classifyEq(text)).toBe('neutral');
+		}
 	);
 	it.each(['EQ +3 dB, -2 dB, +1 dB', 'EQ: 3 dB, 2 dB, 1 dB'])(
 		'excludes declared per-band dB lists: %s',
-		(text) => expect(classifyEq(text)).toBe('post-hoc')
+		(text) => {
+			expect(classifyEq(text)).toBe('post-hoc');
+		}
 	);
 	// Exact cached filename/suffix pairs: the suffix, not the abbreviated filename, triggered the bug.
 	it.each([
