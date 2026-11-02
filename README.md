@@ -11,7 +11,7 @@ Pick an IEM you know and get its closest measured matches, each with a plain des
 differs: more bass, a recessed upper midrange, extra treble energy. Rate a few more and the ranking
 follows your taste instead of a single reference.
 
-As of November 2026 the catalog covers **9,614 products** and **40,821 measurements** from
+As of November 2026 the catalog covers **9,610 products** and **40,802 measurements** from
 **138 databases** published by **118 reviewers** in the squig.link network.
 
 ## What you can do

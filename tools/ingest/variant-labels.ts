@@ -39,7 +39,7 @@ export function tuningDescriptor(text: string): boolean {
 }
 
 export function tipDescriptor(text: string): boolean {
-	return /tip|insert|shallow|deep|foam|pad|seal|position|\bcp\d{2,3}\b|\b(?:wide|narrow|shorter|standard)\s+bore\b|\b(?:spinfit|sedna|azla|divinus|baroque)\b|\babp-t\b|\bjvc\s+spiral\s+dot\b|\bmoondrop\s+spring\b/i.test(
+	return /tip|insert|shallow|deep|\bdepth\b|foam|pad|seal|position|\bcp\d{2,3}\b|\b(?:wide|narrow|shorter|standard)\s+bore\b|\b(?:spinfit|sedna|azla|divinus|baroque)\b|\babp-t\b|\bjvc\s+spiral\s+dot\b|\bmoondrop\s+spring\b/i.test(
 		text
 	);
 }
@@ -88,6 +88,10 @@ export function cableSuffixes(model: string): { parent: string; label: string }[
 
 /** Tip-only descriptors are fit; leftover settings are tuning, not guessed neutral metadata. */
 export function tipSuffixes(model: string): { parent: string; label: string; unknown?: string[] }[] {
+	// An explicit insertion-depth experiment is fit metadata, not a product generation.
+	// Preserve any declared filter in the label; the merger still requires an exact accepted parent.
+	const depth = model.match(/^(.*?)\s+\(((?:[\p{L}-]+\s+filter\s+)?(?:insertion\s+)?depth\s+test)\)$/iu);
+	if (depth?.[1] && depth[2]) return [{ parent: depth[1].trim(), label: depth[2] }];
 	return [...model.matchAll(/\s+/g)]
 		.flatMap((boundary) => {
 			const parent = model.slice(0, boundary.index).trim();
