@@ -94,22 +94,55 @@ export class DisplayNames {
 export function variant(phone: Phone, index: number, measurementId: string): Variant {
 	const file = phone.file[index] ?? '';
 	const label = phone.suffix[index] ?? (index === 0 ? '' : file);
-	const text = `${label} ${file}`;
-	const kind =
-		index === 0
+	// Descriptors, not the product's own name: e.g. a sample of Tangzu ON must not become tuning.
+	let firstDescriptor = file;
+	for (const prefix of [`${phone.brand} ${phone.name}`, phone.name]) {
+		if (
+			firstDescriptor.toLowerCase().startsWith(prefix.toLowerCase()) &&
+			!/[\p{L}\p{N}]/u.test(firstDescriptor[prefix.length] ?? '')
+		) {
+			firstDescriptor = firstDescriptor.slice(prefix.length);
+			break;
+		}
+	}
+	const modelPattern = new RegExp(
+		`(?<![\\p{L}\\p{N}])${phone.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`,
+		'iu'
+	);
+	const descriptor =
+		phone.suffix[index]?.trim() ||
+		(index === 0 ? firstDescriptor : file.slice(commonPrefix(phone.file[0] ?? '', file))).replace(
+			modelPattern,
+			''
+		);
+	const text = `${descriptor} ${phone.name.match(/\b(?:sample|unit)\s*\d+|\(s[1-9]\)|\s+s[1-9]\s*$|\bprototype\b/gi)?.join(' ') ?? ''}`;
+	const unitText = index === 0 ? text.replace(/\b(?:sample|unit)\s*[:#-]?\s*1\b|\bs1\b/gi, '') : text;
+	const kind = /\b(?:sample|unit)\s*[:#-]?\s*\d+\b|\bs[1-9]\b|\(by\s+[^)]+\)|\bprototype\b|\bdefect/i.test(
+		unitText
+	)
+		? 'unit'
+		: index === 0
 			? 'default'
-			: /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
-						text
-				  )
-				? 'tuning'
-				: /tip|insert|shallow|deep|foam|pad|seal|position/i.test(text)
-					? 'fit'
+			: /tip|insert|shallow|deep|foam|pad|seal|position/i.test(text)
+				? 'fit'
+				: /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
+							text
+					  )
+					? 'tuning'
 					: /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
 						? 'setup'
 						: /sample|unit|proto|defect|\bs\d\b/i.test(text)
 							? 'unit'
 							: 'unknown';
-	return { id: `v-${measurementId.slice(2)}`, file, label, kind, isDefault: index === 0 };
+	return { id: `v-${measurementId.slice(2)}`, file, label, kind, isDefault: kind === 'default' };
+}
+
+function commonPrefix(a: string, b: string): number {
+	if (a === b) return 0;
+	let i = 0;
+	while (i < a.length && a[i]?.toLowerCase() === b[i]?.toLowerCase()) i++;
+	while (i > 0 && i < a.length && /[\p{L}\p{N}]/u.test(b[i - 1] ?? '')) i--;
+	return i;
 }
 
 /** Dollar sign alone follows the source index's USD convention; no bare numbers or conversions. */
@@ -126,10 +159,18 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 	const o = record(override) ? override : {};
 	const form = o.form === 'iem' || o.form === 'headphone' ? o.form : formFor(db);
 	const rig = typeof o.rig === 'string' ? o.rig : configString(config, 'rig_description');
+	const family =
+		db.dbType === '5128' ||
+		/5128/.test(rig ?? '') ||
+		(typeof o.partition === 'string' && /-5128$/.test(o.partition))
+			? '5128'
+			: /\b(?:711|60711)\b|60318[\s-]*4/i.test(rig ?? '') || o.partition === 'iem-711'
+				? '711'
+				: null;
 	let partition: string;
 	if (typeof o.partition === 'string') partition = o.partition;
 	else if (db.dbType === '5128' || /5128/.test(rig ?? '')) partition = `${form}-5128`;
-	else if (form === 'iem') partition = 'iem-711';
+	else if (form === 'iem') partition = family === '711' ? 'iem-711' : `iem-source-${db.id}`;
 	else if (/mini.?dsp\s+ears\s+pro/i.test(rig ?? '')) partition = 'headphone-minidsp-ears-pro';
 	else if (/mini.?dsp\s+ears/i.test(rig ?? '')) partition = 'headphone-minidsp-ears';
 	else if (/\b4128\b/.test(rig ?? '')) partition = 'headphone-4128';
@@ -140,12 +181,20 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 		form,
 		partition,
 		rig: rig || null,
-		rigInferred:
-			!rig ||
-			(form === 'iem' &&
-				partition === 'iem-711' &&
-				typeof o.partition !== 'string' &&
-				!/\b(?:711|60711)\b|60318[\s-]*4/i.test(rig)),
+		rigEvidence: {
+			configRig: configString(config, 'rig_description'),
+			class: family || (form === 'headphone' && rig) ? 'verified' : 'unknown',
+			family,
+			rationale:
+				typeof o.rationale === 'string'
+					? o.rationale
+					: db.dbType === '5128'
+						? 'squigsites.json database type 5128'
+						: family
+							? `config rig_description: ${rig}`
+							: 'No recognised IEM rig family in config or curated override'
+		},
+		rigInferred: !family && !(form === 'headphone' && rig),
 		permission:
 			o.permission === 'permission granted' ? 'permission granted' : 'public, not explicitly licensed',
 		crawledAt,

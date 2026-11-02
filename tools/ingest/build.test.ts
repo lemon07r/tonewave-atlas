@@ -16,7 +16,8 @@ const bookUrl = `${base}data/phone_book.json`;
 const configUrl = `${base}config.js`;
 const book = JSON.stringify([{ name: 'Brand', phones: [{ name: 'Model', file: 'Model' }] }]);
 const config = 'const DIR = "data/", rig_description = "B&K 5128", measurement_calibration_file = "offset";';
-const curve = (offset: number) => [...GRID].map((hz, i) => `${hz} ${offset + Math.sin(i / 20)}`).join('\n');
+const curve = (offset: number, shape = 0) =>
+	[...GRID].map((hz, i) => `${hz} ${offset + Math.sin(i / 20) + shape * Math.cos(i / 15)}`).join('\n');
 
 afterEach(async () => {
 	vi.unstubAllGlobals();
@@ -84,12 +85,112 @@ async function result(paths: { cache: string; output: string }) {
 			groups: { productId: string; originalKeys: string[]; merged: number }[];
 		};
 		statistics: { partition: string; statistics: unknown }[];
+		quality: {
+			quarantine: { reason: string; file: string }[];
+			forms: { file: string; before: string; after: string }[];
+		};
 		targets: ({ id: string } & ReferenceTarget['provenance'])[];
 	};
 	return { manifest, catalog, report };
 }
 
 describe('cached dataset build safety', () => {
+	it('stops before publication when legitimate duplicate removal exceeds 3% of a 200-measurement partition', async () => {
+		const phones = Array.from({ length: 200 }, (_, i) => ({ name: 'Model', file: `copy-${i}` }));
+		const bodies: [string, string][] = phones.map((p) => [`${base}data/${p.file}%20L.txt`, curve(80)]);
+		const { paths } = await fixture('rig_description="B&K 5128"', [
+			[bookUrl, JSON.stringify([{ name: 'Maker', phones }])],
+			...bodies
+		]);
+		await expect(build(paths)).rejects.toThrow('more than 3% legitimate duplicate defaults');
+		await expect(stat(resolve(paths.output, 'manifest.json'))).rejects.toThrow('ENOENT');
+		const blocked = JSON.parse(await readFile(resolve(paths.cache, 'quality-blocked.json'), 'utf8')) as {
+			quarantineSummary: {
+				legitimateDuplicateDefaults: number;
+				legitimateDenominator: number;
+				smallPartitionExempt: boolean;
+			}[];
+		};
+		expect(blocked.quarantineSummary).toEqual([
+			expect.objectContaining({
+				legitimateDuplicateDefaults: 199,
+				legitimateDenominator: 200,
+				smallPartitionExempt: false
+			})
+		]);
+	});
+	it('publishes both forms from a mixed database, quarantines non-products and retains distinctly named mods', async () => {
+		const entries = [
+			{ name: 'AKG', phones: [{ name: 'K371', file: 'headphone' }] },
+			{ name: 'Truthear', phones: [{ name: 'Hexa', file: 'iem' }] },
+			{
+				name: '*',
+				phones: [
+					{ name: 'FDX-SR (JVC HA-FDX1 mod)', file: 'mod' },
+					{ name: 'Fake IE900', file: 'fake' }
+				]
+			},
+			{ name: 'KZ', phones: [{ name: 'Unknown', file: 'unknown' }] },
+			{ name: 'Average', phones: [{ name: 'IEM', file: 'average' }] },
+			{ name: 'Ecoustic', phones: [{ name: 'EQ-100', file: 'Ecoustic EQ-100' }] },
+			{
+				name: 'Maker',
+				phones: [
+					{ name: 'Model', file: 'original' },
+					{ name: 'Maker Model', file: 'copy' },
+					{ name: 'Model + EQ', file: 'equalized' }
+				]
+			}
+		];
+		const bodies: [string, string][] = entries.flatMap((b) =>
+			b.phones.flatMap((p) => [
+				[`${base}data/${encodeURIComponent(p.file + ' L.txt')}`, curve(80)] as [string, string]
+			])
+		);
+		const { paths } = await fixture('rig_description="B&K 5128"', [
+			[bookUrl, JSON.stringify(entries)],
+			...bodies
+		]);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, manifest, report } = await result(paths);
+		const hp = JSON.parse(
+			gunzipSync(
+				await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
+			).toString()
+		) as Catalog;
+		expect(request).not.toHaveBeenCalled();
+		expect(hp.products.map((p) => p.model)).toEqual(['K371']);
+		expect(hp.measurements[0]?.partition).toBe('headphone-5128');
+		expect(catalog.products.map((p) => p.model).sort()).toEqual([
+			'EQ-100',
+			'FDX-SR (JVC HA-FDX1 mod)',
+			'Hexa',
+			'Model'
+		]);
+		expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual([
+			'average',
+			'copy',
+			'equalized',
+			'fake',
+			'unknown'
+		]);
+		expect(report.quality.forms).toEqual([
+			expect.objectContaining({ file: 'headphone', before: 'iem', after: 'headphone' })
+		]);
+		expect(catalog.sources[0]?.forms).toEqual(['headphone', 'iem']);
+		expect(hp.sources[0]).toEqual(catalog.sources[0]);
+		expect(manifest.sources[0]?.rigEvidence?.class).toBe('verified');
+	});
+	it('keeps an unknown rig visible in a source-specific partition', async () => {
+		const { paths } = await fixture('rig_description="unidentified coupler"');
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.measurements).toHaveLength(1);
+		expect(catalog.partitions[0]?.id).toBe(`iem-source-${catalog.sources[0]?.id}`);
+		expect(catalog.sources[0]?.rigEvidence).toMatchObject({ class: 'unknown', family: null });
+	});
 	it('builds from the cached page config after root config.js returns 404', async () => {
 		const pageConfigUrl = `${base}assets/js/config.js`;
 		const { paths, http } = await fixture(null, [
@@ -190,7 +291,7 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
 			[`${base}data/Model3%20L.txt`, curve(80)],
 			[`${base}data/Model4%20L.txt`, curve(80)]
 		]);
@@ -224,7 +325,7 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
 			[`${base}data/Model3%20L.txt`, curve(80)]
 		]);
 		await build(paths);
@@ -297,8 +398,8 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
-			[`${base}data/Model3%20L.txt`, curve(80)]
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
+			[`${base}data/Model3%20L.txt`, curve(80, 2)]
 		]);
 		await writeFile(
 			resolve(paths.root, 'data/products.json'),
@@ -325,8 +426,8 @@ describe('cached dataset build safety', () => {
 					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)],
-			[`${base}data/Model3%20L.txt`, curve(80)]
+			[`${base}data/Model2%20L.txt`, curve(80, 1)],
+			[`${base}data/Model3%20L.txt`, curve(80, 2)]
 		]);
 		await writeFile(
 			resolve(paths.root, 'data/products.json'),
@@ -473,7 +574,9 @@ describe('cached dataset build safety', () => {
 		const { paths } = await fixture();
 		await writeFile(
 			resolve(paths.root, 'data/sources.json'),
-			JSON.stringify({ overrides: { reviewer: { partition: 'custom-rig' } } })
+			JSON.stringify({
+				overrides: { reviewer: { partition: 'custom-rig', rationale: 'Test custom partition' } }
+			})
 		);
 		await build(paths);
 		const { catalog } = await result(paths);

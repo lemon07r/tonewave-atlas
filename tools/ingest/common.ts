@@ -33,7 +33,10 @@ export function datasetVersion(files: DatasetFile[], sources: Source[]): string 
 					rigInferred,
 					permission,
 					crawledAt,
-					calibration
+					calibration,
+					rigEvidence,
+					forms,
+					partitions
 				}) => ({
 					id,
 					username,
@@ -46,7 +49,10 @@ export function datasetVersion(files: DatasetFile[], sources: Source[]): string 
 					rigInferred,
 					permission,
 					crawledAt,
-					calibration
+					calibration,
+					...(rigEvidence === undefined ? {} : { rigEvidence }),
+					...(forms === undefined ? {} : { forms }),
+					...(partitions === undefined ? {} : { partitions })
 				})
 			)
 		})
@@ -241,6 +247,7 @@ export interface SourceOverride {
 	form?: Form;
 	partition?: string;
 	rig?: string;
+	rationale?: string;
 	permission?: Source['permission'];
 }
 
@@ -253,8 +260,20 @@ export function validateSources(value: unknown): Record<string, SourceOverride> 
 			if (typeof override !== 'string') throw new Error('Invalid sources.overrides._note');
 			continue;
 		}
-		const o = keys(override, ['form', 'partition', 'rig', 'permission'], [], `sources.overrides.${name}`);
+		const o = keys(
+			override,
+			['form', 'partition', 'rig', 'rationale', 'permission'],
+			[],
+			`sources.overrides.${name}`
+		);
 		const parsed: SourceOverride = {};
+		if (Object.hasOwn(o, 'rationale')) {
+			if (typeof o.rationale !== 'string' || !o.rationale.trim())
+				throw new Error(`Invalid source rationale: ${name}`);
+			parsed.rationale = o.rationale;
+		}
+		if ((Object.hasOwn(o, 'rig') || Object.hasOwn(o, 'partition')) && !parsed.rationale)
+			throw new Error(`Invalid source rig/partition override without rationale: ${name}`);
 		if (Object.hasOwn(o, 'form')) {
 			if (o.form !== 'iem' && o.form !== 'headphone') throw new Error(`Invalid source form: ${name}`);
 			parsed.form = o.form;
@@ -509,7 +528,37 @@ export function formFor(db: Database): Form {
 }
 
 export function unwanted(name: string): boolean {
-	return /target|eq[\s_-]*sandbox|[∆Δ]|\b(?:compensation|calibration)\b/i.test(name);
+	return nonProductName(name) !== null;
+}
+
+export function nonProductName(name: string): string | null {
+	if (/\b(?:fake|replica|counterfeit)\b/i.test(name))
+		return 'explicit fake/replica/counterfeit product or file';
+	if (/target|eq[\s_-]*sandbox|[∆Δ]|\b(?:compensation|calibration)\b/i.test(name))
+		return 'target/calibration/delta/sandbox curve';
+	return derivedName(name);
+}
+
+/** Match EQ operations, not embedded maker/model text; neutral/no-EQ states are not excluded. */
+export function derivedName(name: string): string | null {
+	if (/\baverage\s+(?:iem|headphone)s?\b/i.test(name)) return 'derived population average';
+	if (/\bp?eq\s*[:=-]?\s*(?:neutral|flat|normal|default|standard)\s*\+/i.test(name))
+		return 'derived EQ curve';
+	const clean = name
+		// Ecoustic EQ-100 is an actual model, not an equalizer instruction.
+		.replace(/\bEcoustic\s+EQ-100\b/gi, 'Ecoustic model')
+		.replace(/\b(?:p?eq\s*:\s*)?p?eq\s*[:-]?\s*(?:no|zero)\s+gain\b/gi, '')
+		.replace(
+			/\b(?:no|null|none|blank|empty|zero|default|standard|stock|pure|flat)[\s_:-]*p?eq\b|\bp?eq[\s_:=-]*(?:none|off|blank|empty|zero|default|standard|stock|original|flat|neutral|normal|0)\b|\b(?:user|custom)\s+eq\s+(?:all\s*0|all\s+zero|\(0 gain\))/gi,
+			''
+		);
+	if (
+		/\b(?:auto[\s_-]*eq|eq(?:ed|d)|p?eq|equaliz(?:ed|ation)|equalis(?:ed|ation))\b|\b(?:basshead|heavy)eq\b|\beq(?:harman|mine)\b|\bp?eq\d+\b/i.test(
+			clean
+		)
+	)
+		return 'derived EQ curve';
+	return null;
 }
 
 export function errorMessage(error: unknown): string {

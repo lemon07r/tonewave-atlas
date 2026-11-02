@@ -59,6 +59,55 @@ export function validateManifest(value: unknown): Manifest {
 			!(s.calibration === null || typeof s.calibration === 'string')
 		)
 			throw new Error('Invalid source attribution');
+		const evidence = s.rigEvidence;
+		if (
+			evidence !== undefined &&
+			(!record(evidence) ||
+				!['verified', 'evidenced', 'unknown'].includes(String(evidence.class)) ||
+				![null, '711', '5128'].includes(evidence.family as string | null) ||
+				typeof evidence.rationale !== 'string' ||
+				!evidence.rationale.trim())
+		)
+			throw new Error('Invalid rig evidence');
+		if (record(evidence)) {
+			if (
+				evidence.configRig !== undefined &&
+				evidence.configRig !== null &&
+				typeof evidence.configRig !== 'string'
+			)
+				throw new Error('Invalid config rig text');
+			for (const key of ['sharedProducts', 'projection', 'threshold', 'minimumProducts']) {
+				const v = evidence[key];
+				if (
+					key === 'sharedProducts' &&
+					v !== undefined &&
+					(typeof v !== 'number' || !Number.isInteger(v) || v < 0)
+				)
+					throw new Error('Invalid rig evidence product support');
+				if (v !== undefined && v !== null && (typeof v !== 'number' || !Number.isFinite(v)))
+					throw new Error('Invalid rig evidence statistic');
+			}
+			if (
+				evidence.interval !== undefined &&
+				evidence.interval !== null &&
+				(!Array.isArray(evidence.interval) ||
+					evidence.interval.length !== 2 ||
+					!evidence.interval.every((v: unknown) => typeof v === 'number' && Number.isFinite(v)) ||
+					evidence.interval[0] > evidence.interval[1])
+			)
+				throw new Error('Invalid rig evidence interval');
+		}
+		if (
+			s.forms !== undefined &&
+			(!Array.isArray(s.forms) || !s.forms.every((f: unknown) => f === 'iem' || f === 'headphone'))
+		)
+			throw new Error('Invalid source forms');
+		if (
+			s.partitions !== undefined &&
+			(!Array.isArray(s.partitions) ||
+				!s.partitions.every((p: unknown) => typeof p === 'string' && /^[a-z0-9-]+$/.test(p)))
+		)
+			throw new Error('Invalid source partitions');
 		return {
 			id: s.id,
 			username: s.username,
@@ -71,7 +120,10 @@ export function validateManifest(value: unknown): Manifest {
 			rigInferred: s.rigInferred,
 			permission: s.permission,
 			crawledAt: s.crawledAt,
-			calibration: s.calibration
+			calibration: s.calibration,
+			...(evidence === undefined ? {} : { rigEvidence: evidence as NonNullable<Source['rigEvidence']> }),
+			...(s.forms === undefined ? {} : { forms: s.forms }),
+			...(s.partitions === undefined ? {} : { partitions: s.partitions.map((p: unknown) => String(p)) })
 		};
 	});
 	if (

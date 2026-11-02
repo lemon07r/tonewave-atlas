@@ -25,12 +25,19 @@ describe('hand-maintained input validation', () => {
 						form: 'iem',
 						partition: 'iem-711',
 						rig: '711',
+						rationale: 'Curated hardware record',
 						permission: 'permission granted'
 					}
 				}
 			})
 		).toEqual({
-			reviewer: { form: 'iem', partition: 'iem-711', rig: '711', permission: 'permission granted' }
+			reviewer: {
+				form: 'iem',
+				partition: 'iem-711',
+				rig: '711',
+				rationale: 'Curated hardware record',
+				permission: 'permission granted'
+			}
 		});
 	});
 	it.each([
@@ -105,6 +112,8 @@ describe('hand-maintained input validation', () => {
 		{ overrides: { reviewer: { rigs: '711' } } },
 		{ overrides: { reviewer: { form: 'earbud' } } },
 		{ overrides: { reviewer: { rig: 711 } } },
+		{ overrides: { reviewer: { rig: '711' } } },
+		{ overrides: { reviewer: { partition: 'iem-711', rationale: '  ' } } },
 		{ overrides: { reviewer: { partition: '../outside' } } },
 		{ overrides: { reviewer: { permission: 'assumed' } } },
 		{ overrides: { reviewer: null } }

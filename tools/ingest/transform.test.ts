@@ -382,7 +382,7 @@ describe('source transforms', () => {
 		expect(usdPrice(raw)).toBe(expected);
 	});
 	it('never mixes IEM and headphone 5128, and isolates unknown headphone rigs', () => {
-		expect(sourceFor(db, '', 'date', {}).partition).toBe('iem-711');
+		expect(sourceFor(db, '', 'date', {}).partition).toBe('iem-source-source-123');
 		expect(sourceFor({ ...db, dbType: '5128' }, '', 'date', {}).partition).toBe('iem-5128');
 		expect(
 			sourceFor({ ...db, dbType: '5128', url: 'https://reviewer.squig.link/headphones/' }, '', 'date', {})
@@ -407,9 +407,10 @@ describe('source transforms', () => {
 		['IEC 60318-4', false],
 		['IEC 60711', false],
 		['clone 711', false]
-	])('qualifies the default 711 partition for %s', (rig, rigInferred) => {
+	])('qualifies the rig evidence and isolates unrecognised hardware for %s', (rig, rigInferred) => {
 		expect(sourceFor(db, `rig_description = "${rig}";`, 'date', {})).toMatchObject({
-			partition: 'iem-711',
+			partition: rigInferred ? 'iem-source-source-123' : 'iem-711',
+			rigEvidence: { class: rigInferred ? 'unknown' : 'verified' },
 			rigInferred
 		});
 	});

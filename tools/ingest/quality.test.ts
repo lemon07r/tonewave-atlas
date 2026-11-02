@@ -1,0 +1,233 @@
+import { describe, expect, it } from 'vitest';
+import type { Phone } from './common.ts';
+import { derivedName, nonProductName } from './common.ts';
+import {
+	cleanEntry,
+	curveProblem,
+	duplicateDefault,
+	entryForm,
+	identityProblem,
+	modification,
+	partitionFor
+} from './quality.ts';
+import { identity, sourceFor, variant } from './transform.ts';
+import { RANK_GRID } from '#core/grid.ts';
+
+const db = {
+	id: 'fixture',
+	username: 'fixture',
+	name: 'Fixture',
+	url: 'https://fixture.invalid/',
+	dbType: 'IEMs'
+};
+const source = sourceFor(db, '', '2026-11-02', {});
+const phone = (brand = 'Maker', name = 'Model', file = ['Model']): Phone => ({
+	brand,
+	name,
+	file,
+	suffix: [],
+	price: null,
+	reviewLink: null
+});
+
+describe('deterministic catalog quality rules', () => {
+	it.each([
+		'Average IEM',
+		'Average Headphone',
+		'IE900 + EQ',
+		'Moondrop May (User EQ)',
+		'Sennheiser IE400 Pro (h0llow EQ)',
+		'EQed AKG N400',
+		'S12 BassheadEQ',
+		'illu eqharman',
+		'QCU Aware + EQ (-4,0,-4)',
+		'Aeolus EQ applied',
+		'Moondrop May (EQ: No bass)',
+		'Sennheiser Momentum TW5 (EQ: Neutral + Bass Boost)',
+		'Qudelix QX Over (Sunrise Neutral EQ)'
+	])('excludes non-stock curve %s', (name) => {
+		expect(derivedName(name)).not.toBeNull();
+	});
+	it.each([
+		'Fatfreq Deuce',
+		'Oriveti bleqk Dynabird',
+		'Fearless Tequila',
+		'SuperEQ Q2 Pro',
+		'Ecoustic EQ-100',
+		'Neodots No EQ',
+		'Moondrop Rays EQ Default',
+		'EQ blank',
+		'Custom EQ All 0',
+		'QCU Quiet No EQ',
+		'Bose QC Ultra 2 (Codec: APTX Adaptive, EQ: None, ANC: Quiet)',
+		'Denon Perl Pro (EQ: Flat, ANC: On)',
+		'Tanchjim Bunny DSP (EQ: Default)',
+		'Sennheiser Momentum TW5 (EQ: Neutral)',
+		'Samsung Galaxy Buds 3 Pro (EQ: Normal)',
+		'Edifier Stax Spirit S10 (EQ: Original)',
+		'Moondrop May (EQ: PEQ - no gain)',
+		'Brainwavz Delta'
+	])('retains genuine names and neutral EQ states: %s', (name) => {
+		expect(derivedName(name)).toBeNull();
+	});
+	it('rejects numbered EQ presets rather than reading them as embedded words', () => {
+		expect(derivedName('Sony Linkbuds S (ANC OFF, EQ1)')).toBe('derived EQ curve');
+		expect(derivedName('Sony Linkbuds S (ANC ON, EQ2)')).toBe('derived EQ curve');
+	});
+	it.each(['Target', '∆ difference', 'Calibration file', 'EQ Sandbox'])(
+		'reports target/delta/calibration/sandbox %s',
+		(name) => {
+			expect(nonProductName(name)).not.toBeNull();
+		}
+	);
+	it.each([
+		['AKG', 'K371', 'headphone'],
+		['Audeze', 'LCD-2', 'headphone'],
+		['Focal', 'Utopia', 'headphone'],
+		['Hifiman', 'HE400SE', 'headphone'],
+		['Beyerdynamic', 'DT770 Pro', 'headphone'],
+		['Beyerdynamic', 'DT30ie', null],
+		['Beyerdynamic', 'DT 70 IE', null],
+		['Audeze', 'LCD-i3', null],
+		['Audiosense', 'DT200', null],
+		['AKG', 'K3003', null],
+		['Yamaha', 'TW-E3', null],
+		['Goldplanar', 'GL20', null],
+		['Goldplanar', 'GL12', 'iem'],
+		['Sendy', 'Peacock', 'headphone'],
+		['Tago Studio', 'T3-01', 'headphone'],
+		['Ashidavox', 'ST-31-02', 'headphone'],
+		['Moondrop', 'Joker', 'headphone'],
+		['Haylou', 'S30', 'headphone'],
+		['QCY', 'H3 Pro', 'headphone'],
+		['Bang & Olufsen', 'Beoplay H95', 'headphone'],
+		['Sennheiser', 'HD-650', 'headphone'],
+		['Hifiman', 'HE-400SE', 'headphone'],
+		['Audeze', 'MM100', 'headphone'],
+		['Moondrop', 'Venus', 'headphone'],
+		['SGOR', 'Venus', null],
+		['7TH ACOUSTICS', 'RYUSEI BAROQUE', null],
+		['Sony', 'WF1000-XM4', 'iem'],
+		['[IEMs]', 'CrinEar Daybreak', 'iem'],
+		['EPZ', 'Q5', 'iem']
+	])('classifies by maker AND model, not substrings: %s %s', (brand, model, expected) => {
+		expect(entryForm(phone(brand, model)).form).toBe(expected);
+	});
+	it('preserves named custom products without merging them into stock identity', () => {
+		const custom = cleanEntry(phone('*', '*FDX-SR (JVC HA-FDX1 mod)'), source, []);
+		expect(identityProblem(custom.brand, custom.name)).toBeNull();
+		expect(identity(custom.brand, custom.name, 'iem', {}).id).not.toBe(
+			identity('JVC', 'HA-FDX1', 'iem', {}).id
+		);
+		const grouped = phone('JVC', 'HA-FDX1', ['stock', 'HA-FDX1 DIY mod']);
+		expect(modification(grouped, 1).name).toBe('HA-FDX1 [modified: HA-FDX1 DIY mod]');
+		expect(modification(grouped, 0)).toBe(grouped);
+		expect(cleanEntry(phone('[IEMs]', 'Kiwi Ears KE4'), source, ['Kiwi', 'Kiwi Ears'])).toMatchObject({
+			brand: 'Kiwi Ears',
+			name: 'KE4'
+		});
+	});
+	it.each([
+		['KZ', 'Unknown'],
+		['Maker', ''],
+		['Unknown', 'Test 2'],
+		['---', '---'],
+		['123', '456'],
+		['Custom (fixture)', 'M'],
+		['Maker', '* unresolved'],
+		['Sennheiser', 'IE900 Replica'],
+		['Maker', 'Counterfeit model'],
+		['Sennheiser', 'IE900 Clone'],
+		['Sweet Audio', 'Verite Closed Copy']
+	])('quarantines unresolved identities: %s %s', (brand, model) => {
+		expect(identityProblem(brand, model)).not.toBeNull();
+	});
+	it.each([
+		['Binary', '1900'],
+		['64 Audio', 'U6t'],
+		['Custom (fixture)', 'klEar works Prototype'],
+		['Custom (fixture)', 'GRID-SR (Final GRID01 mod)']
+	])('keeps identifiable products: %s %s', (brand, model) => {
+		expect(identityProblem(brand, model)).toBeNull();
+	});
+	it('rejects an explicitly fake file, not clone accessories on a genuine product', () => {
+		expect(nonProductName('Sony MH755 Sony MH755 clone (fake)')).not.toBeNull();
+		expect(nonProductName('Truthear Pure Pure AET08 (Clone AET08 Tips)')).toBeNull();
+		expect(nonProductName('Focal Utopia Utopia (aftermarket clone pads)')).toBeNull();
+	});
+	it.each([
+		['S2', 'unit'],
+		['sample 2', 'unit'],
+		['(by 냥냐냥)', 'unit'],
+		['unit 2', 'unit'],
+		['S2 ANC on', 'unit'],
+		['foam tips', 'fit'],
+		['deep insertion', 'fit'],
+		['treble tips', 'fit'],
+		['switch 01', 'tuning'],
+		['red filter', 'tuning'],
+		['75 Ohm', 'tuning'],
+		['balanced nozzle', 'tuning'],
+		['balanced cable', 'setup']
+	])('classifies descriptors without model-name contamination: %s', (label, kind) => {
+		const p = phone('Maker', 'Bass On', ['Bass On', `Bass On ${label}`]);
+		p.suffix = ['', label];
+		expect(variant(p, 1, 'm-fixture').kind).toBe(kind);
+	});
+	it('does not call a named S2 stock model a unit, but identifies an explicitly sampled first file', () => {
+		expect(variant(phone('Maker', 'S2', ['S2']), 0, 'm-a').kind).toBe('default');
+		expect(variant(phone('Maker', 'Model', ['Model (sample 2)']), 0, 'm-b')).toMatchObject({
+			kind: 'unit',
+			isDefault: false
+		});
+		expect(variant(phone('Maker', 'Model', ['Model (sample 1)']), 0, 'm-c')).toMatchObject({
+			kind: 'default',
+			isDefault: true
+		});
+	});
+	it('keeps genuine S-series model tokens out of descriptors despite differing maker spellings', () => {
+		for (const [brand, model, file] of [
+			['LETSHUOER', 'S12', 'SHUOER S12'],
+			['LETSHUOER', 'S08', 'SHUOER S08'],
+			['LYEPERTEK', 'S10', 'LYPERTEK S10'],
+			['634 Ears', 'ROXA-S100', '634Ears ROXA-S100'],
+			['Grado', 'Signature S550', 'Grado Signature S550'],
+			['LETSHUOER', 'S12 2024 Edition', 'LETSHUOER S12-2024'],
+			['LetShuoer', 'S12 ULTRA', 'Let S12 Ult']
+		])
+			expect(variant(phone(brand, model, [file ?? '']), 0, 'm-model').kind).toBe('default');
+		expect(variant(phone('LETSHUOER', 'S12 PRO S2', ['SHUOER S12 PRO S2']), 0, 'm-sample').kind).toBe('unit');
+	});
+	it('detects duplicate shapes at quantization tolerance but retains distinct shape or coverage', () => {
+		const a = Float64Array.from(RANK_GRID, (_, i) => 70 + i / 20);
+		expect(
+			duplicateDefault(
+				a,
+				Float64Array.from(a, (v) => v + 9)
+			)
+		).toBe(true);
+		expect(
+			duplicateDefault(
+				a,
+				Float64Array.from(a, (v, i) => v + (i % 2 ? 0.1 : -0.1))
+			)
+		).toBe(false);
+		const missing = Float64Array.from(a);
+		missing[0] = NaN;
+		expect(duplicateDefault(a, missing)).toBe(false);
+	});
+	it('audits flat, absurd, out-of-range and unsupported curves without rejecting a flat calibrated result', () => {
+		expect(curveProblem(new Float64Array(240).fill(80), false)).toBe('flat line');
+		expect(curveProblem(new Float64Array(240).fill(80), true)).toBeNull();
+		expect(curveProblem([0, 101], false)).toBe('absurd dynamic range');
+		expect(curveProblem(new Float64Array(240).fill(201), true)).toBe('invalid calibrated range');
+		expect(curveProblem([70, 71], true)).toBe('invalid calibrated range');
+	});
+	it('isolates both unknown hardware and reclassified headphones while preserving known 5128 family', () => {
+		expect(partitionFor(source, 'iem')).toBe('iem-source-fixture');
+		expect(partitionFor(source, 'headphone')).toBe('headphone-source-fixture');
+		expect(partitionFor(sourceFor({ ...db, dbType: '5128' }, '', 'date', {}), 'headphone')).toBe(
+			'headphone-5128'
+		);
+	});
+});

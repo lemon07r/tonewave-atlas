@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { pull, validateManifest } from './pull.ts';
 import { datasetVersion, sha256 } from './common.ts';
+import { sourceFor } from './transform.ts';
 
 const bytes = new TextEncoder().encode('test payload');
 const file = { path: 'catalog-iem.json.gz', bytes: bytes.length, sha256: sha256(bytes) };
@@ -29,6 +30,32 @@ async function output(): Promise<string> {
 }
 
 describe('dataset pull', () => {
+	it('hashes and preserves additive rig evidence and mixed-form metadata without changing older versions', () => {
+		const s = sourceFor(
+			{
+				id: 'fixture',
+				username: 'fixture',
+				name: 'Fixture',
+				url: 'https://fixture.invalid/',
+				dbType: '5128'
+			},
+			'',
+			'date',
+			{}
+		);
+		s.forms = ['iem', 'headphone'];
+		s.partitions = ['iem-5128', 'headphone-5128'];
+		const v = datasetVersion([file], [s]);
+		const m = { ...manifest, version: v, sources: [s], files: [{ ...file, path: `${v}/${file.path}` }] };
+		expect(validateManifest(m).sources).toEqual([s]);
+		expect(() =>
+			validateManifest({ ...m, sources: [{ ...s, rigEvidence: { ...s.rigEvidence, projection: 'bad' } }] })
+		).toThrow('rig evidence statistic');
+		expect(() => validateManifest({ ...m, sources: [{ ...s, forms: ['earbud'] }] })).toThrow('source forms');
+		expect(() => validateManifest({ ...m, sources: [{ ...s, partitions: ['../bad'] }] })).toThrow(
+			'source partitions'
+		);
+	});
 	it('accepts a content-verified targets artifact', () => {
 		const target = { ...file, path: 'targets.json.gz' };
 		const version = datasetVersion([target], []);
