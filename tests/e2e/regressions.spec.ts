@@ -120,16 +120,26 @@ test('a chart selection below the first page survives reload and sharing', async
 
 test('form switches retain shared workspaces and clear Compare selections', async ({ page }) => {
 	await page.goto(shared([like(reference)]));
-	const forms = page.getByRole('group', { name: 'Form factor', exact: true });
+	async function switchForm(name: 'Headphones' | 'IEMs') {
+		const desktop = page.getByRole('group', { name: 'Form factor', exact: true });
+		const menu = page.getByRole('button', { name: 'Open navigation', exact: true });
+		// Tablet has a navigation menu but keeps the desktop form controls visible.
+		const mobile = !(await desktop.isVisible());
+		if (mobile && (await menu.isVisible())) await menu.click();
+		await page
+			.getByRole('group', { name: mobile ? 'Mobile form factor' : 'Form factor', exact: true })
+			.getByRole('radio', { name, exact: true })
+			.check();
+	}
 	await expect(page.locator('.result-row')).toHaveCount(20);
-	await forms.getByRole('radio', { name: 'Headphones', exact: true }).check();
+	await switchForm('Headphones');
 	await expect(page.locator('.profile-row')).toHaveCount(0);
-	await forms.getByRole('radio', { name: 'IEMs', exact: true }).check();
+	await switchForm('IEMs');
 	await expect(page.locator('.profile-row')).toContainText('CrinEar Reference');
 	await expect(page.locator('.result-row')).toHaveCount(20);
 	await page.goto(`/compare?p=${reference},${volume}`);
 	await expect(page.getByTestId('comparison-row')).toHaveCount(2);
-	await forms.getByRole('radio', { name: 'Headphones', exact: true }).check();
+	await switchForm('Headphones');
 	await expect(page.getByTestId('comparison-row')).toHaveCount(0);
 	await expect(page).not.toHaveURL(/[?&]p=/);
 });

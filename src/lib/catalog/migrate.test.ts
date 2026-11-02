@@ -202,6 +202,19 @@ test('ratings URLs use the same strict collision policy and invalid evidence rem
 	expect(migrateUrl(url, catalog).url.searchParams.get('ratings')).toBe('[invalid');
 });
 
+test('unchanged identities do not re-encode a query or navigate over a concurrent workspace edit', () => {
+	for (const query of [
+		'ratings=[]',
+		'ref=current&chart=current,variant&unknown=keep%20space',
+		'ratings=[]&p=current,split-current'
+	]) {
+		const url = new URL(`https://example.org/?${query}#workspace`);
+		const result = migrateUrl(url, catalog);
+		expect(result.changed).toBe(false);
+		expect(result.url.href).toBe(url.href);
+	}
+});
+
 test('legacy catalogs without redirects still resolve current ids, never inherited object keys', () => {
 	const legacy = new CatalogIdentity({ products: fixture.products, measurements: fixture.measurements });
 	expect(legacy.productId('current')).toBe('current');

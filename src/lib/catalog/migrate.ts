@@ -101,6 +101,10 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity) {
 	const params = next.searchParams;
 	const messages: string[] = [];
 	let droppedRating = false;
+	// Even setting the same value re-encodes the whole query and can trigger a stale navigation.
+	function setChanged(key: string, value: string) {
+		if (params.get(key) !== value) params.set(key, value);
+	}
 	function resolve(id: string, kind: 'product' | 'measurement' | 'either'): string {
 		const current =
 			kind === 'product'
@@ -119,7 +123,7 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity) {
 		if (!id) continue;
 		const measurement = params.get(key === 'ref' ? 'm' : 'measurement');
 		const owner = measurement ? catalog.measurementProduct(measurement) : undefined;
-		params.set(key, !catalog.productId(id) && owner ? owner : resolve(id, 'product'));
+		setChanged(key, !catalog.productId(id) && owner ? owner : resolve(id, 'product'));
 	}
 	for (const [key, kind] of [
 		['refs', 'product'],
@@ -130,7 +134,7 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity) {
 		['diff', 'either']
 	] as const) {
 		const ids = params.get(key);
-		if (ids) params.set(key, [...new Set(ids.split(',').map((id) => resolve(id, kind)))].join(','));
+		if (ids) setChanged(key, [...new Set(ids.split(',').map((id) => resolve(id, kind)))].join(','));
 	}
 	if (params.has('ratings')) {
 		try {
@@ -141,7 +145,7 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity) {
 				})
 			);
 			const migrated = migrateItems(parsed.profiles.iem, catalog);
-			params.set('ratings', JSON.stringify(migrated.items));
+			setChanged('ratings', JSON.stringify(migrated.items));
 			messages.push(...migrated.messages);
 			droppedRating = migrated.droppedRating;
 		} catch {
