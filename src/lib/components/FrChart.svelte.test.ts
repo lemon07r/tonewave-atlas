@@ -75,6 +75,7 @@ test('supports keyboard frequency inspection and focusable region descriptions',
 	await userEvent.keyboard('{Home}');
 	await expect.element(scrubber).toHaveAttribute('aria-valuetext', '20 hertz');
 	const treble = screen.getByRole('button', { name: 'Treble, 5000 to 10000 Hz', exact: true });
+	await expect.element(treble).not.toHaveAttribute('aria-pressed');
 	await treble.click();
 	await expect
 		.element(screen.getByText(/Insertion depth can strongly change measurements here/))
@@ -92,4 +93,40 @@ test('keeps missing samples missing and rejects the wrong grid', async () => {
 	await expect
 		.element(screen.getByText(/every curve and uncertainty bound must use the 240-point/))
 		.toBeVisible();
+	const summary = screen.container.querySelector('.fr-chart')?.getAttribute('aria-describedby');
+	if (!summary) throw new Error('Chart summary missing');
+	expect(document.getElementById(summary)?.textContent).not.toContain('A data table is available');
+	expect(document.getElementById(summary)?.textContent).toContain('unavailable');
+});
+
+test.each(['lo', 'hi'] as const)(
+	'rejects a one-sided %s envelope instead of silently dropping it',
+	async (side) => {
+		const screen = await render(FrChart, {
+			series: [
+				{
+					id: 'partial',
+					label: 'Partial',
+					values: new Float64Array(GRID_SIZE),
+					[side]: new Float64Array(GRID_SIZE)
+				}
+			]
+		});
+		await expect
+			.element(screen.getByText(/lower and upper uncertainty bounds must be supplied together/i))
+			.toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Export chart as PNG' })).toBeDisabled();
+	}
+);
+
+test('readout distinguishes neighbouring grid samples that share an axis label', async () => {
+	const screen = await render(FrChart, { series });
+	const scrubber = screen.container.querySelector<HTMLInputElement>('.frequency-scrubber');
+	if (!scrubber) throw new Error('Frequency scrubber missing');
+	scrubber.value = '144';
+	scrubber.dispatchEvent(new Event('input', { bubbles: true }));
+	await expect.element(screen.getByText('1280 Hz', { exact: true })).toBeVisible();
+	scrubber.value = '145';
+	scrubber.dispatchEvent(new Event('input', { bubbles: true }));
+	await expect.element(screen.getByText('1318 Hz', { exact: true })).toBeVisible();
 });

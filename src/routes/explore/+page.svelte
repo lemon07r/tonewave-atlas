@@ -235,7 +235,7 @@
 	@media (max-width: 700px) {
 		.explore-grid {
 			display: flex;
-			flex-direction: column-reverse;
+			flex-direction: column;
 			gap: 32px;
 		}
 		.explore-grid > * {

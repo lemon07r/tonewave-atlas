@@ -5,14 +5,15 @@
 		$props();
 </script>
 
-<div class="toast">
-	<p role="status">{message}</p>
-	{#if onundo}<Button variant="quiet" onclick={onundo}>Undo</Button>{/if}<Button
-		variant="icon"
-		aria-label="Dismiss notification"
-		onclick={ondismiss}><Icon name="close" size={16} /></Button
-	>
-</div>
+<p role="status" class="sr-only">{message}</p>
+{#if message}<div class="toast">
+		<p aria-hidden="true">{message}</p>
+		{#if onundo}<Button variant="quiet" onclick={onundo}>Undo</Button>{/if}<Button
+			variant="icon"
+			aria-label="Dismiss notification"
+			onclick={ondismiss}><Icon name="close" size={16} /></Button
+		>
+	</div>{/if}
 
 <style>
 	.toast {
