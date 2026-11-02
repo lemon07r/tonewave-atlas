@@ -16,11 +16,11 @@
 </script>
 
 <div class="profile-rows">
-	{#each items as item (item.productId)}
+	{#each items as item, index (item.productId)}
 		{@const product = products.find((p) => p.id === item.productId)}
 		<ProfileRow
 			{item}
-			name={product ? `${product.brand} ${product.model}` : 'Unavailable product'}
+			name={product ? `${product.brand} ${product.model}` : `Unavailable product ${index + 1}`}
 			{partition}
 			onchange={(next: WorkspaceItem) => {
 				onchange(

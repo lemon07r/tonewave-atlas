@@ -41,6 +41,8 @@ account area.
 
 1. _Start a workspace_: search → add an unrated product → choose Like/Love (and variant if it matters)
    → measured response matches with differences → compare, chart or rate a result with Undo.
+   Compact reference rows keep ratings visible; Details opens on the first Like/Love/Dislike and holds
+   optional sound notes, comfort and variant selection.
 2. _Refine preferences_: add products as unrated, then explicitly love / like / neutral / dislike, with optional reasons → the model
    summarises what the likes share, shows separate tastes if they differ, applies dislike reasons as
    directional constraints → personalised ranking with per-result explanations → user can correct the
@@ -49,7 +51,8 @@ account area.
 4. _Several references_: two to four sound-related likes default to trade-offs (mean/minimax and Pareto
    filtering), with an optional taste view. Dislikes or five rated items use the taste model.
    Fit/comfort-only evidence stays out of sound ranking. A local measurement can be a single reference
-   after choosing its rig; its contents never enter storage or the URL.
+   after choosing its rig; matching stays locked to that declared rig until the local reference is removed.
+   Its contents never enter storage or the URL.
 5. _EQ path_: how close a cheaper IEM gets to a reference with a few PEQ filters; export filters.
 
 ## Competitive landscape (Nov 2026)

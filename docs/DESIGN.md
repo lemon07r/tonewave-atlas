@@ -56,6 +56,10 @@ reference automatically. Examples are deterministic, ordered by source/measureme
 the active form and default rig, not popularity or quality. Search normalises punctuation, accents
 and joined model numbers and tolerates bounded typing errors without an added dependency.
 
+References use compact name/rating rows. A single per-item Details disclosure contains aspects,
+dislike reasons, comfort and measurement selection; the first explicit Like/Love/Dislike opens it.
+Loaded references remain collapsed, with native keyboard-operable rating groups and disclosures.
+
 - One sound-related Like/Love uses similar-response ranking.
 - Two to four likes use independent reference trade-offs, with mean/minimax sorts, Pareto counts and
   an optional taste-model view.
@@ -68,10 +72,14 @@ selected-reviewer-only reference/candidate consensus. Engine caveats disclose lo
 no selected measurements means a reference is unavailable, not silently replaced. Settings auto-apply
 with an updating notice; generation guards reject
 older successes and errors. Show more increases the engine topK beyond 20.
+Source-only mode requires at least one reviewer; emptying the selection resets coverage atomically.
+Changing rig or reviewers clears serialised corrections for the previous model. Pending results keep
+the references and sort of their response until the replacement arrives.
 
 Rows lead with rank, product and dB distance, or an explicitly labelled taste ranking score (not dB
 or percent). The summary keeps at most two important band differences. One historical USD listing
-stays visible with source and date; additional listings and band evidence are expandable. Unknown
+stays visible with its reviewer and observation date, explicitly not a listing date; observations
+older than twelve months are flagged as potentially out of date. Additional listings and band evidence are expandable. Unknown
 prices are explicit. Rate this product permits a rating, optional reasons and comfort-only flag
 before saving, without navigation. Remove, clear and rating changes offer keyboard-reachable Undo.
 
@@ -80,19 +88,25 @@ before saving, without navigation. Remove, clear and rating changes offer keyboa
 Discover defaults to **As ranked: smoothed, level-aligned**, adding “reviewer offsets corrected” when
 the engine reports harmonisation. It passes returned rank curves directly on rankFrequencies: no
 interpolation, extra smoothing or second alignment. Taste candidates show the centre named by their
-tasteId. Multi-reference charts retain every reference; each objective's distance independently fits
-its own level offset. Expandable band tables explain each reference separately.
+tasteId. Multi-reference charts group candidates with the returned alignment reference, keeping every
+reference in its own panel. Null-aligned candidates are omitted from both ranked response and Difference
+views with a note; no new level alignment is applied. Each objective's distance independently fits
+its own offset. Expandable band tables explain each reference separately.
 
 Detail measurements are an explicit alternate view, labelled uncorrected and display-aligned.
 Compare, product charts and EQ use their own uncorrected detail measurements. Missing bins remain
 gaps. The chart has a log-frequency axis, keyboard frequency inspection, response/difference views,
 visibility controls, an accessible sampled data table and attributed PNG export. Difference mode
 subtracts the selected baseline without another alignment.
+Inspection starts at the nearest 1 kHz bin and retains the selected frequency across series/grid changes.
+Blue, orange and teal lead the shared series palette, paired with distinct dash patterns (primary
+reference solid). The plot, SVG legend and PNG export share those identities; colour is not the only cue.
 
 Missing-rig diagnostics identify each reference's default or explicitly selected measurement support,
 then offer engine-provided common partitions. They never substitute a variant or silently mix rigs.
 A local reference requires an explicit rig choice; file data stays in the browser session and is
 excluded from URLs and saved profiles.
+Its declared rig is retained with the session-local reference and locks the independent rig control.
 
 ## Persistence and compatibility
 
