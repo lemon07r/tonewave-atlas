@@ -29,6 +29,7 @@ export async function queryDiscovery(
 		topK,
 		filters: {
 			includeTunings: state.tunings,
+			sourceMode: state.sourceMode,
 			...(state.max === undefined ? {} : { maxPriceUsd: state.max }),
 			...(state.sources.length ? { sources: state.sources } : {})
 		}

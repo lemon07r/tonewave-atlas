@@ -67,7 +67,7 @@
 		gap: 6px;
 		padding: 7px 12px;
 		min-height: 36px;
-		border: var(--hairline) solid var(--line);
+		border: var(--hairline) solid var(--strong-line);
 		border-radius: var(--radius);
 		font-size: var(--text-sm);
 		cursor: pointer;

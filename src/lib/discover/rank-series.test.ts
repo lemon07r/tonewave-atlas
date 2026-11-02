@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 import type { SimilarResult, TasteResult } from '#core/atlas/types.ts';
 import { rankedSeries } from './rank-series.ts';
+import { nearestLikedEvidence } from './evidence.ts';
+import { RANK_GRID } from '#core/grid.ts';
 
 const candidate = {
 	id: 'match',
@@ -20,6 +22,7 @@ test('plotted reference and candidate values equal returned rank values, includi
 		ok: true,
 		partition: 'iem-711',
 		harmonised: true,
+		sourceMode: 'coverage',
 		rankFrequencies: grid,
 		rankWeights: new Float64Array([1, 1, 0]),
 		treblePenalty: 2,
@@ -54,6 +57,7 @@ test('taste overlay uses the centre named by the result tasteId, not the first t
 		ok: true,
 		partition: 'iem-711',
 		harmonised: false,
+		sourceMode: 'coverage',
 		rankFrequencies: grid,
 		rankWeights: new Float64Array([1, 1, 1]),
 		model: {
@@ -73,6 +77,7 @@ test('taste overlay uses the centre named by the result tasteId, not the first t
 		tasteId: 1,
 		rankCurve: scored,
 		offsetDb: 0,
+		nearestLiked: null,
 		fit: {
 			score: 1,
 			taste: 1,
@@ -93,4 +98,18 @@ test('taste overlay uses the centre named by the result tasteId, not the first t
 	expect(series[0]?.id).toBe('taste-1');
 	expect(series[0]?.values).toBe(scored);
 	expect(series[1]?.values).toBe(scored);
+	const near = { id: 'liked-variant', rankCurve: new Float64Array(RANK_GRID.length).fill(10), offsetDb: 3 };
+	const row = {
+		...selected,
+		rankCurve: Float64Array.from(RANK_GRID, (_, i) => (i % 2 ? 14 : 12)),
+		nearestLiked: near
+	};
+	const ranked = {
+		...result,
+		rankFrequencies: RANK_GRID,
+		rankWeights: new Float64Array(RANK_GRID.length).fill(1),
+		results: [row]
+	};
+	expect(nearestLikedEvidence(ranked, row)).toEqual({ id: 'liked-variant', distanceDb: 1 });
+	expect(nearestLikedEvidence(ranked, { ...row, nearestLiked: null })).toBeNull();
 });

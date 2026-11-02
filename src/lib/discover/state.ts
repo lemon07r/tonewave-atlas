@@ -1,5 +1,5 @@
 import type { Focus } from '#core/analysis/weights.ts';
-import type { TasteRequest } from '#core/atlas/types.ts';
+import type { SourceMode, TasteRequest } from '#core/atlas/types.ts';
 import { parseProfile, soundItems, type WorkspaceItem } from '#lib/profile/profile.ts';
 
 export interface DiscoveryState {
@@ -9,6 +9,7 @@ export interface DiscoveryState {
 	max?: number;
 	tunings: boolean;
 	sources: string[];
+	sourceMode: SourceMode;
 	overlays: string[];
 	sort: 'mean' | 'minimax';
 	pareto: boolean;
@@ -79,6 +80,7 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 		...(params.has('max') && Number.isFinite(max) && max >= 0 ? { max } : {}),
 		tunings: params.get('tunings') === '1',
 		sources: ids(params.get('sources')),
+		sourceMode: params.get('sourceMode') === 'only' ? 'only' : 'coverage',
 		overlays: ids(params.get('chart')).slice(0, 5),
 		sort: params.get('sort') === 'minimax' ? 'minimax' : 'mean',
 		pareto: params.get('pareto') === '1',

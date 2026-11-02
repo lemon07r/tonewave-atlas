@@ -19,6 +19,7 @@
 		bands,
 		match,
 		fit,
+		nearestLiked,
 		referenceProductId,
 		selected = false,
 		limitReached = false,
@@ -36,6 +37,7 @@
 		bands: BandDistance[];
 		match?: SimilarMatch;
 		fit?: TasteFit;
+		nearestLiked?: { id: string; distanceDb: number } | null;
 		referenceProductId?: string;
 		selected?: boolean;
 		limitReached?: boolean;
@@ -175,14 +177,15 @@
 					Taste {fit.taste + 1}: ordinary response distance {fit.plainDistanceDb.toFixed(1)} dB; tolerance-weighted
 					fit {fit.fit.toFixed(1)} dB. Ranking also considers dislike constraints.
 				</p>
-				{#if fit.nearestLiked}<p>
-						Closest liked product: {nameFor(fit.nearestLiked.id)} · {fit.nearestLiked.distanceDb.toFixed(1)} dB.
+				{#if nearestLiked}<p>
+						Closest liked product: {nameFor(nearestLiked.id)} · {nearestLiked.distanceDb.toFixed(1)} dB (as ranked).
 					</p>{/if}
 				<p>Matched bands (mean difference below 0.75 dB): {matched.join(', ') || 'none where measured'}.</p>
 				{#each fit.constraints as constraint (`${constraint.disliked}:${constraint.reason}`)}<p>
 						{nameFor(constraint.disliked)} — {constraint.reason === 'near-duplicate'
 							? 'near-duplicate avoidance'
 							: reasonLabels[constraint.reason]}: <strong>{constraint.status}</strong>.
+						{constraint.statement.replaceAll(constraint.disliked, nameFor(constraint.disliked))}
 					</p>{/each}
 				{#each fit.uncertainRegions as region (`${region.low}:${region.high}`)}<p class="muted">
 						{region.low}–{region.high} Hz: {region.reason}

@@ -8,7 +8,7 @@
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, productList } from '#lib/atlas.ts';
 	import type { Form } from '#core/dataset/types.ts';
-	import type { AtlasError, AtlasSummary, ProductListItem } from '#core/atlas/types.ts';
+	import type { AtlasError, AtlasSummary, ProductListItem, SourceMode } from '#core/atlas/types.ts';
 	import { BANDS, type Band } from '#core/analysis/common.ts';
 	import { productSearch } from '#lib/product-search.ts';
 	import {
@@ -36,7 +36,7 @@
 	import TasteSummary from './TasteSummary.svelte';
 	import ResultRow from './ResultRow.svelte';
 	import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
-	import { compareEvidence } from './evidence.ts';
+	import { compareEvidence, nearestLikedEvidence } from './evidence.ts';
 
 	let { form }: { form: Form } = $props();
 	let settings = $derived(parseDiscovery(page.url.searchParams));
@@ -110,7 +110,15 @@
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
 			.map(({ productId, measurementId }) => ({ productId, ...(measurementId ? { measurementId } : {}) }))
 	);
-	let modelKey = $derived(JSON.stringify({ form, rig: settings.rig, items }));
+	let modelKey = $derived(
+		JSON.stringify({
+			form,
+			rig: settings.rig,
+			sources: settings.sources,
+			sourceMode: settings.sourceMode,
+			items
+		})
+	);
 	let scopedEdits = $state<Record<string, NonNullable<QuerySpec['state']['corrections']>>>({});
 	let corrections = $derived(scopedEdits[modelKey] ?? settings.corrections);
 	let queryKey = $derived(
@@ -477,6 +485,11 @@
 							(s) => s.form === form && (!activePartition || s.partition === activePartition)
 						) ?? []}
 						selected={settings.sources}
+						mode={settings.sourceMode}
+						onmodechange={(mode: SourceMode) => {
+							topK = 20;
+							change({ sourceMode: mode === 'only' ? 'only' : undefined });
+						}}
 						onchange={(ids: string[]) => {
 							topK = 20;
 							change({ sources: ids.join(',') });
@@ -647,6 +660,17 @@
 						level-aligns to its own reference.
 					</p>{/if}
 				{#if result?.kind === 'taste'}<TasteSummary taste={result.data} {form} {nameFor} />{/if}
+				{#if result}<p class="distance-note">
+						{result.data.sourceMode === 'only'
+							? 'Scored using selected reviewers’ measurements only.'
+							: 'Reviewer coverage filter · scored using all eligible sources.'}
+					</p>
+					{#if settings.sources.length && result.data.caveats.length}<aside
+							class="source-caveats"
+							aria-label="Reviewer selection caveats"
+						>
+							{#each result.data.caveats as caveat (caveat)}<p>{caveat}</p>{/each}
+						</aside>{/if}{/if}
 				{#if result}<ol class="result-list">
 						{#if result.kind === 'similar'}{#each result.data.results as match, index (match.candidate.id)}<ResultRow
 									candidate={match.candidate}
@@ -668,9 +692,10 @@
 									distance={row.fit.plainDistanceDb}
 									bands={row.fit.bands}
 									fit={row.fit}
+									nearestLiked={nearestLikedEvidence(result.data, row)}
 									{nameFor}
 									referenceProductId={items.find(
-										(i) => (i.measurementId ?? i.productId) === row.fit.nearestLiked?.id
+										(i) => (i.measurementId ?? i.productId) === row.nearestLiked?.id
 									)?.productId ?? ''}
 									selected={overlays.includes(row.candidate.id)}
 									limitReached={overlays.length >= 5}

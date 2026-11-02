@@ -52,6 +52,7 @@ test('calculates per-reference band evidence from rank values with independent l
 		ok: true,
 		partition: 'rig-a',
 		harmonised: false,
+		sourceMode: 'coverage',
 		rankFrequencies: RANK_GRID,
 		rankWeights: new Float64Array(RANK_GRID.length).fill(1),
 		treblePenalty: 1,

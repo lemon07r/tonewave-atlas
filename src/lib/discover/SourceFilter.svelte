@@ -1,11 +1,19 @@
 <script lang="ts">
-	import type { AtlasSummary } from '#core/atlas/types.ts';
+	import type { AtlasSummary, SourceMode } from '#core/atlas/types.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	let {
 		sources,
 		selected,
-		onchange
-	}: { sources: AtlasSummary['sources']; selected: string[]; onchange: (ids: string[]) => void } = $props();
+		mode,
+		onchange,
+		onmodechange
+	}: {
+		sources: AtlasSummary['sources'];
+		selected: string[];
+		mode: SourceMode;
+		onchange: (ids: string[]) => void;
+		onmodechange: (mode: SourceMode) => void;
+	} = $props();
 	let query = $state('');
 	let visible = $derived(
 		sources.filter((source) => source.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -14,10 +22,22 @@
 </script>
 
 <section class="source-filter" aria-label="Reviewer filter">
-	<h3>Products measured by these reviewers</h3>
+	<h3>Reviewer measurements</h3>
+	<label class="field-label"
+		>Reviewer scoring mode<select
+			value={mode}
+			onchange={(event) => {
+				onmodechange(event.currentTarget.value === 'only' ? 'only' : 'coverage');
+			}}
+		>
+			<option value="coverage">Products measured by selected reviewers · score all sources</option>
+			<option value="only">Score selected reviewers’ measurements only</option>
+		</select></label
+	>
 	<p>
-		{selected.length ? `${selected.length} selected` : 'All reviewers'} · rankings still use all eligible measurements
-		of each product.
+		{selected.length ? `${selected.length} selected` : 'All reviewers'} · {mode === 'only'
+			? 'reference and candidate curves use only selected reviewers. References without those measurements cannot be used.'
+			: 'products must be measured by a selected reviewer; reference and candidate curves use all eligible sources.'}
 	</p>
 	<div class="source-tools">
 		<label class="field-label"

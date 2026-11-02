@@ -1,22 +1,13 @@
 import type { TasteItem } from '#core/atlas/types.ts';
-import type { DislikeReason, RatedItem } from '#core/analysis/taste.ts';
+import { DISLIKE_REASON_LABELS, type DislikeReason, type RatedItem } from '#core/analysis/taste.ts';
 import type { Form } from '#core/dataset/types.ts';
 
 export const PROFILE_KEY = 'tonewave.profile.v1';
 export const PROFILE_LIMIT = 200;
 export const reasonLabels: Record<DislikeReason, string> = {
-	'too-much-bass': 'Too much bass',
-	'too-little-bass': 'Too little bass',
-	'bass-lacks-punch': 'Bass lacks punch',
-	'too-much-midbass-warmth': 'Too much mid-bass warmth',
-	'muddy-lower-mids': 'Muddy lower mids',
-	'thin-or-recessed-vocals': 'Thin or recessed vocals',
-	'shouty-upper-mids': 'Shouty upper mids',
-	'sharp-fatiguing-treble': 'Sharp or fatiguing treble',
-	sibilance: 'Sibilance',
-	'dull-treble': 'Dull treble',
-	'tonal-balance-wrong': 'Tonal balance just wrong',
-	other: 'Other'
+	...DISLIKE_REASON_LABELS,
+	'tonal-balance-wrong': `${DISLIKE_REASON_LABELS['tonal-balance-wrong']} (overall balance)`,
+	other: `${DISLIKE_REASON_LABELS.other} (other reason)`
 };
 export const aspectLabels = {
 	bass: 'Bass',

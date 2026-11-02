@@ -1,6 +1,21 @@
 import { responseDistance, type BandDistance } from '#core/analysis/distance.ts';
-import type { CompareResult, MeasurementInfo, ProductListItem } from '#core/atlas/types.ts';
+import type { CompareResult, MeasurementInfo, ProductListItem, TasteResult } from '#core/atlas/types.ts';
 import type { WorkspaceItem } from '#lib/profile/profile.ts';
+
+/** Nearest-member distance uses its returned curve and row-specific offset, not a detail consensus. */
+export function nearestLikedEvidence(
+	result: TasteResult,
+	row: TasteResult['results'][number]
+): { id: string; distanceDb: number } | null {
+	const liked = row.nearestLiked;
+	if (!liked) return null;
+	const aligned = Float64Array.from(row.rankCurve, (value) => value - liked.offsetDb);
+	const distance = responseDistance(aligned, liked.rankCurve, {
+		frequencies: result.rankFrequencies,
+		weights: result.rankWeights
+	});
+	return distance ? { id: liked.id, distanceDb: distance.distance } : null;
+}
 
 /** Use the engine's rank weights and independently align to each reference, never detail curves. */
 export function compareEvidence(

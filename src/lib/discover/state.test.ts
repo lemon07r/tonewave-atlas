@@ -21,6 +21,9 @@ test('migrates an explicit old reference and all advanced share settings without
 		rig: 'iem-711'
 	});
 	expect(parseDiscovery(new URLSearchParams()).items).toBeUndefined();
+	expect(state.sourceMode).toBe('coverage');
+	expect(parseDiscovery(new URLSearchParams('sourceMode=only')).sourceMode).toBe('only');
+	expect(parseDiscovery(new URLSearchParams('sourceMode=invalid')).sourceMode).toBe('coverage');
 });
 test('restores legacy taste URLs, ratings and corrections; explicit empty URL ratings beat storage', () => {
 	const params = new URLSearchParams({

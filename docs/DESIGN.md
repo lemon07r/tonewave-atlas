@@ -63,8 +63,10 @@ and joined model numbers and tolerates bounded typing errors without an added de
   and fit/comfort-only items never enter the sound model.
 
 Rig, budget, reviewer coverage, tunings, focus and treble controls live behind Refine matches.
-Reviewer filtering is labelled “products measured by these reviewers”: it does not claim that only
-their measurements contribute. Settings auto-apply with an updating notice; generation guards reject
+Reviewer scoring offers coverage (products measured by selected reviewers, scoring all sources) or
+selected-reviewer-only reference/candidate consensus. Engine caveats disclose lost source support;
+no selected measurements means a reference is unavailable, not silently replaced. Settings auto-apply
+with an updating notice; generation guards reject
 older successes and errors. Show more increases the engine topK beyond 20.
 
 Rows lead with rank, product and dB distance, or an explicitly labelled taste ranking score (not dB
