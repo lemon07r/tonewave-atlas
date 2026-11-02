@@ -592,18 +592,15 @@
 		min-width: 0;
 		min-height: 36px;
 		border: 0;
-		border-bottom: 2px solid var(--line);
 		background: none;
 		color: var(--muted);
 		font-size: 9px;
 		letter-spacing: -0.02em;
 	}
-	.regions button:nth-child(even) {
-		background: var(--subtle);
-	}
 	.regions button[aria-pressed='true'] {
-		border-color: var(--accent);
 		color: var(--accent);
+		text-decoration: underline;
+		text-underline-offset: 4px;
 	}
 	.region-description {
 		font-size: var(--text-xs);

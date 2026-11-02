@@ -112,7 +112,8 @@ not the surrounding layout. The fixture page has no production counterpart: use
   Legend buttons toggle visibility; hover/focus highlights a curve. The octave-spaced table retains
   every series, including hidden ones, and uses a dash for missing values.
 - Optional regions are approximately perceptual descriptions, not universal sound claims. Focus or
-  hover reveals the range and caveat; compact mobile labels have complete accessible names.
+  hover reveals the range and caveat; compact mobile labels have complete accessible names. The
+  span-aligned label strip has no filled cells or rules; alternating shading stays inside the plot.
 - PNG export preserves the displayed plot's aspect ratio, adds mode, units, numbered/dashed legend
   and supplied attribution, and wraps long labels/source text. The in-app footer links to Sources and
   limitations rather than displaying the plain-text export attribution. Theme changes redraw the canvas.
