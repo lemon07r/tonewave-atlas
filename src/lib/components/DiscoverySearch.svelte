@@ -30,6 +30,7 @@
 			/* Phase 2 connects the catalog and analysis worker. */
 		}}
 	/>
+	<p class="search-note">Matches use measurements from the same rig family.</p>
 {:else}
 	<section class="profile-panel" aria-label="Your taste profile">
 		<div>
@@ -49,6 +50,7 @@
 				/* Phase 2 adds a real catalog product to the profile. */
 			}}
 		/>
+		<p class="search-note">Matches use measurements from the same rig family.</p>
 		<p class="catalog-note">
 			The catalog is not connected yet. Ratings and reasons become available after adding a product.
 		</p>
@@ -81,6 +83,15 @@
 	.profile-panel {
 		display: grid;
 		gap: 20px;
+	}
+	.search-note {
+		font-size: var(--text-xs);
+		color: var(--muted);
+		margin-top: 12px;
+	}
+	.profile-panel .search-note {
+		font-size: var(--text-xs);
+		margin-top: -8px;
 	}
 	.profile-panel h2 {
 		font-size: var(--text-lg);

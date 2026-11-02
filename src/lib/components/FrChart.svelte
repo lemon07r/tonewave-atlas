@@ -22,6 +22,7 @@
 	let {
 		series = [],
 		title = 'Frequency response',
+		emptyText = 'No curve yet — pick an IEM to see its measured response.',
 		summary = 'Frequency-response curves show relative level across frequency, not how a product will sound in your ear.',
 		mode = $bindable('response'),
 		baselineId = $bindable(''),
@@ -31,6 +32,7 @@
 	}: {
 		series?: readonly FrSeries[];
 		title?: string;
+		emptyText?: string;
 		summary?: string;
 		mode?: 'response' | 'difference';
 		baselineId?: string;
@@ -363,7 +365,8 @@
 		{series.length}
 		{series.length === 1 ? 'curve' : 'curves'}. {mode === 'difference'
 			? `Values are subtracted from ${baseline?.label ?? 'the baseline'} at each frequency, with no additional alignment.`
-			: 'Missing measurements remain gaps.'} A data table is available below.
+			: 'Missing measurements remain gaps.'}
+		{series.length > 0 ? 'A data table is available below.' : 'No measurements selected.'}
 	</p>
 	{#if controls && series.length > 0}<div class="chart-controls">
 			<SegmentedControl
@@ -388,9 +391,7 @@
 		<div class="plot" bind:this={host} aria-hidden="true"></div>
 		{#if series.length === 0}<div class="plot-empty">
 				<div class="empty-label">
-					<Icon name="chart" size={32} />
-					<h3>Your listening, mapped.</h3>
-					<p>Add a measured product to see its response here.</p>
+					<p>{emptyText}</p>
 				</div>
 			</div>{/if}
 	</div>
@@ -574,13 +575,6 @@
 		gap: 12px;
 		padding: 16px;
 		background: var(--surface);
-	}
-	.plot-empty :global(svg) {
-		color: var(--strong-line);
-		margin-bottom: 4px;
-	}
-	.plot-empty h3 {
-		font-size: 16px;
 	}
 	.plot-empty p {
 		font-size: var(--text-xs);

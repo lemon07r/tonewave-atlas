@@ -6,6 +6,8 @@ A quiet publication around a precise instrument. Warm paper, deep ink, editorial
 hairlines establish hierarchy without a dashboard of cards. The chart is the one framed workspace.
 Product names, evidence and provenance take precedence over decoration. Empty states describe what is
 missing; they never simulate products, matches or measurements.
+Empty-chart instructions explain how to load a curve; search guidance states the rig-family constraint
+once, rather than repeating it under the chart or substituting slogans for instructions.
 
 **Typography:** self-hosted DM Sans Variable for interface and headings. Its open forms work at compact
 sizes, while moderate weight and tight title spacing give the publication its character without a

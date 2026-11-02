@@ -18,6 +18,16 @@ const series: FrSeries[] = [
 	{ id: 'ref', label: 'Reference', values: new Float64Array(GRID_SIZE).fill(2), reference: true }
 ];
 
+test('explains how to start without pretending a curve is loaded', async () => {
+	const screen = await render(FrChart);
+	await expect
+		.element(screen.getByText('No curve yet — pick an IEM to see its measured response.', { exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByRole('button', { name: 'Export chart as PNG' })).toBeDisabled();
+	await expect.element(screen.getByRole('link', { name: 'Sources and limitations' })).toBeVisible();
+	expect(screen.container.querySelectorAll('canvas')).toHaveLength(1);
+});
+
 test('renders all series and an accessible octave-resolution table', async () => {
 	const screen = await render(FrChart, { series });
 	await expect.element(screen.getByRole('figure', { name: 'Frequency response' })).toBeVisible();
