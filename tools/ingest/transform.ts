@@ -2,6 +2,7 @@ import type { Database, Phone } from './common.ts';
 import { configString, formFor, nonProductName, productAliasKey, record, sha256 } from './common.ts';
 import type { Form, Product, Source, Variant } from '#core/dataset/types.ts';
 import { classifyEq, factoryMode } from './eq.ts';
+import { cableDescriptor, tipDescriptor, tuningDescriptor } from './variant-labels.ts';
 
 export function normalise(value: string): string {
 	return value
@@ -172,16 +173,16 @@ export function variant(phone: Phone, index: number, measurementId: string): Var
 				? 'unit'
 				: index === preferred
 					? 'default'
-					: eq !== 'none' || /\bdsp\s*:/i.test(text)
+					: eq !== 'none' || /\bdsp\s*:/i.test(text) || tuningDescriptor(text)
 						? 'tuning'
-						: /tip|insert|shallow|deep|foam|pad|seal|position/i.test(text)
+						: tipDescriptor(text)
 							? 'fit'
 							: (factoryMode(text) && !/\b(?:balanced|single.ended)\s+(?:cable|adapter)\b/i.test(text)) ||
 								  /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
 										text
 								  )
 								? 'tuning'
-								: /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
+								: cableDescriptor(text) || /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
 									? 'setup'
 									: /sample|unit|proto|defect|\bs\d\b/i.test(text)
 										? 'unit'

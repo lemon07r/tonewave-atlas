@@ -64,12 +64,22 @@ describe('real source EQ labels', () => {
 		'Buds 3 Pro (ANC ON, EQ custom -3-125-6-6)',
 		'Blackshark V2 (2023) (EQ -5-5-5-3+5+3+3+2-4-5)',
 		'Galaxy Buds 3 Pro (noANC, EQ 00-1+1+2+20-4-5, stock silicone tips)',
-		'QuietComfort SE (EQ -2 +3 -3)',
-		'volume s k7 max values K7 EQ Max Values (+12 Bass, +6 Treble)',
-		'volume s k7 min values K7 EQ Min Values (-12 Bass, -6 Treble)'
+		'QuietComfort SE (EQ -2 +3 -3)'
 	])('excludes explicit post-hoc settings: %s', (text) => {
 		expect(classifyEq(text)).toBe('post-hoc');
 		expect(nonProductName(text)).toBe('derived EQ curve');
+	});
+	it.each([
+		'volume s k7 max values K7 EQ Max Values (+12 Bass, +6 Treble)',
+		'volume s k7 min values K7 EQ Min Values (-12 Bass, -6 Treble)',
+		'vsk6+6 K7 EQ (0 Bass, +6 Treble)',
+		'vsk6-6 K7 EQ (0 Bass, -6 Treble)',
+		'vsk12+12 K7 EQ (+12 Bass, 0 Treble)',
+		'vsk12-12 K7 EQ (-12 Bass, 0 Treble)',
+		'Sony WH1000XM6 MRS V4 (EQ: custom - MRS)'
+	])('preserves unproven knob/named settings as ambiguous tuning: %s', (text) => {
+		expect(classifyEq(text)).toBe('ambiguous');
+		expect(nonProductName(text)).toBeNull();
 	});
 	it.each([
 		'Moondrop Rays PEQ0 (EQ: PEQ 0 Gain)',

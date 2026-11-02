@@ -11,7 +11,7 @@ export function classifyEq(text: string): 'none' | 'neutral' | 'factory' | 'ambi
 	// Signed/decimal gain lists, not numbered factory names such as 336xx, EQ1 or 3A Games.
 	if (
 		/\beq\s*[:=-]?\s*(?:custom\s*)?[+-]?\d+(?:\.\d+)?(?:\s*[, +-]\s*[+-]?\d+(?:\.\d+)?){2,}/i.test(clean) ||
-		(/[+-]\d+(?:\.\d+)?\s*(?:dB\b|bass\b|treble\b)/i.test(clean) && /\beq\b/i.test(clean))
+		(/[+-]\d+(?:\.\d+)?\s*dB\s*\/\s*oct\b/i.test(clean) && /\beq\b/i.test(clean))
 	)
 		return 'post-hoc';
 	// An explicitly unaltered user/PEQ slot is still the product as sold.
@@ -21,6 +21,12 @@ export function classifyEq(text: string): 'none' | 'neutral' | 'factory' | 'ambi
 		)
 	)
 		return 'neutral';
+	// Tone-control/knob values and named custom slots do not by themselves prove post-hoc EQ.
+	if (
+		/\beq\b/i.test(clean) &&
+		(/[+-]\d+(?:\.\d+)?\s*(?:bass|treble)\b/i.test(clean) || /\beq\s*:\s*custom\s*-\s*[\p{L}]/iu.test(clean))
+	)
+		return 'ambiguous';
 	if (/\b(?:user|custom)\s+p?eq\b|\beq\s*[:=-]?\s*(?:user|custom)\b|\bpeq\b/i.test(clean)) return 'post-hoc';
 	if (!/\beq\b|\beq\d+\b|\b(?:basshead|heavy)eq\b|\beqharman\b/i.test(clean)) return 'none';
 	// Named curves of uncertain origin must not inherit default status from a neutral-sounding name.

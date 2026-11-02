@@ -64,6 +64,7 @@ import {
 } from './quality.ts';
 import { rigEvidence } from './rig-evidence.ts';
 import { classifyEq, factoryMode } from './eq.ts';
+import { mergeSwitchIdentities, reconcileSwitchDefaults, reviewVariantStates } from './switches.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -631,6 +632,24 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	displayNames.apply(products.values());
 	const allCurves = [...partitions.values()].flat();
+	const switchIdentity = mergeSwitchIdentities(products, allCurves);
+	for (const move of switchIdentity.moves) {
+		for (const map of [identities, originalIdentities]) {
+			const names = map.get(move.to) ?? new Set<string>();
+			for (const name of map.get(move.from) ?? []) names.add(name);
+			map.set(move.to, names);
+			map.delete(move.from);
+		}
+	}
+	const switchDefaults = reconcileSwitchDefaults(products, allCurves);
+	const unknownVariants = allCurves
+		.filter((c) => c.measurement.variant.kind === 'unknown')
+		.map(({ measurement: m }) => ({
+			source: m.sourceId,
+			productId: m.productId,
+			file: m.variant.file,
+			label: m.variant.label
+		}));
 	const iemCurves = allCurves.filter((c) => products.get(c.measurement.productId)?.form === 'iem');
 	const rigReport = rigEvidence(
 		sources.filter((s) => iemCurves.some((c) => c.measurement.sourceId === s.id)),
@@ -886,6 +905,10 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		JSON.stringify(
 			{
 				...report,
+				switchIdentity,
+				switchDefaults,
+				variantReview: reviewVariantStates(products, allCurves),
+				unknownVariants,
 				rigEvidence: rigReport,
 				sourceEvidence: sources.map((s) => ({
 					...s,

@@ -80,6 +80,12 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		switchIdentity: { moves: { kind: string; before: string; parent: string }[] };
+		switchDefaults: {
+			products: number;
+			productSources: number;
+			decisions: { product: string; preferred: string | null }[];
+		};
 		groupwiseMerges: {
 			merged: number;
 			groups: { productId: string; originalKeys: string[]; merged: number }[];
@@ -98,6 +104,62 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('reconciles labelled switch defaults and split cable/state identities before statistics, without fetching', async () => {
+		const names = ['reviewer', 'second', 'third', 'store', 'joyce'];
+		const directory = names.map((username) => ({
+			username,
+			name: username,
+			urlType: 'subdomain',
+			dbs: [{ type: 'IEMs', folder: '/' }]
+		}));
+		const books = [
+			[{ name: 'Softears', phones: [{ name: 'Volume S', file: ['High Impedance', 'Low Impedance'] }] }],
+			[{ name: 'Softears', phones: [{ name: 'Volume S', file: ['Low Impedance', 'High Impedance'] }] }],
+			[{ name: 'Softears', phones: [{ name: 'Volume S', file: ['Low Impedance'] }] }],
+			[
+				{
+					name: 'Softears',
+					phones: [
+						{ name: 'Volume S High Imp', file: ['High Impedance'] },
+						{ name: 'Volume S Low Imp', file: ['Low Impedance'] }
+					]
+				}
+			],
+			[{ name: 'Softears', phones: [{ name: 'Volume S (Standard 4.4mm)', file: ['standard cable'] }] }]
+		];
+		const bodies: [string, string][] = [[DIRECTORY_URL, JSON.stringify(directory)]];
+		for (const [i, name] of names.entries()) {
+			const url = `https://${name}.squig.link/`;
+			const book = books[i];
+			if (!book) throw new Error('Missing book fixture');
+			bodies.push(
+				[`${url}config.js`, 'rig_description="IEC 60318-4 711"'],
+				[`${url}data/phone_book.json`, JSON.stringify(book)]
+			);
+			for (const file of book.flatMap((b) => b.phones.flatMap((p) => p.file)))
+				bodies.push([
+					`${url}data/${encodeURIComponent(file + ' L.txt')}`,
+					curve(80, file.includes('High') ? 2 : 0)
+				]);
+		}
+		const { paths } = await fixture('', bodies);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(request).not.toHaveBeenCalled();
+		expect(catalog.products.map((p) => p.model)).toEqual(['Volume S']);
+		expect(catalog.measurements).toHaveLength(8);
+		expect(report.switchIdentity.moves.map((m) => m.kind).sort()).toEqual(['cable', 'switch', 'switch']);
+		expect(report.switchDefaults.decisions[0]?.preferred).toBe('impedance:low');
+		for (const source of catalog.sources) {
+			const defaults = catalog.measurements.filter((m) => m.sourceId === source.id && m.variant.isDefault);
+			expect(defaults).toHaveLength(1);
+			expect(defaults[0]?.variant.file).toBe(
+				source.username === 'joyce' ? 'standard cable' : 'Low Impedance'
+			);
+		}
+	});
 	it('retains factory/uncertain EQ modes offline, selects stock defaults and reports uncertainty', async () => {
 		const groups = [
 			{
