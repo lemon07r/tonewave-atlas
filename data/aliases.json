@@ -1,0 +1,13 @@
+{
+	"_note": "Case/punctuation normalisation is automatic. Only verified brand spelling aliases belong here; ambiguous product merges are reported, not guessed.",
+	"brands": {
+		"CrinEars": "CrinEar",
+		"Soft Ears": "Softears",
+		"64Audio": "64 Audio",
+		"AudioTechnica": "Audio-Technica",
+		"KiwiEars": "Kiwi Ears",
+		"Moondrop": "MOONDROP",
+		"7hz": "7Hz",
+		"Sennheiser": "Sennheiser"
+	}
+}
