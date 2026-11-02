@@ -45,11 +45,15 @@ describe('dataset pull', () => {
 		);
 		s.forms = ['iem', 'headphone'];
 		s.partitions = ['iem-5128', 'headphone-5128'];
-		const legacy = { ...s, rigEvidence: undefined, forms: undefined, partitions: undefined };
+		const legacy = { ...s };
+		delete legacy.rigEvidence;
+		delete legacy.forms;
+		delete legacy.partitions;
 		for (const field of ['rigEvidence', 'forms', 'partitions'] as const) {
-			expect(datasetVersion([file], [{ ...legacy, [field]: s[field] }])).not.toBe(
-				datasetVersion([file], [legacy])
-			);
+			const bearing = { ...s };
+			for (const other of ['rigEvidence', 'forms', 'partitions'] as const)
+				if (other !== field) delete bearing[other];
+			expect(datasetVersion([file], [bearing])).not.toBe(datasetVersion([file], [legacy]));
 		}
 		const v = datasetVersion([file], [s]);
 		const m = { ...manifest, version: v, sources: [s], files: [{ ...file, path: `${v}/${file.path}` }] };
