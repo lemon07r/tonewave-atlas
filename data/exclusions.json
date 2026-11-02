@@ -1,0 +1,6 @@
+{
+	"_note": "Sources match username, database id or exact database URL. Files match exact filename stem or URL; products match verbatim 'brand model'. Upstream optedOut is enforced independently on every crawl and build. Takedowns: github.com/lemon07r/tonewave-atlas/issues.",
+	"sources": ["crinacle"],
+	"files": [],
+	"products": []
+}

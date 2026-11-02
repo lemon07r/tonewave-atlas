@@ -1,0 +1,15 @@
+{
+	"_note": "Overrides keyed by database URL or source username. Unknown headphone rigs stay source-specific. 5128 directory entries in /headphones/ are headphones, not IEMs. IEMs without a rig description are inferred 711-family, explicitly marked inferred.",
+	"overrides": {
+		"https://earphonesarchive.squig.link/headphones/": {
+			"form": "headphone",
+			"partition": "headphone-5128",
+			"rig": "B&K 5128 (directory type)"
+		},
+		"https://foxtoldmeso.squig.link/headphones/": {
+			"form": "headphone",
+			"partition": "headphone-5128",
+			"rig": "B&K 5128 (directory type)"
+		}
+	}
+}

@@ -45,4 +45,11 @@ describe('smoothOctave', () => {
 			)
 		);
 	});
+	it('treats non-finite values as missing instead of contaminating the neighbourhood', () => {
+		const curve = new Float64Array(240).fill(3);
+		curve[100] = Infinity;
+		const result = smoothOctave(curve, 3);
+		expect(Number.isNaN(result[100])).toBe(true);
+		expect(result[99]).toBeCloseTo(3, 12);
+	});
 });
