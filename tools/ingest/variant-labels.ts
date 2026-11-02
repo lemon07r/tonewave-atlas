@@ -8,7 +8,7 @@ export function switchState(text: string): string | null {
 	const code =
 		text.match(
 			/(?:\bswitch(?:es)?\s*[:=-]?\s*|\bs\.|^\s*[([]?)([du]{2,8}(?:\s+[du]{2,8})?|[01]{2,8}(?:\s+[01]{2,8})?)(?=$|[\s)\]])/i
-		) ?? text.match(/(?:\s|\()([du]{2,8}(?:\s+[du]{2,8})?|[01]{2,8}(?:\s+[01]{2,8})?)\s*[)\]]?\s*$/i);
+		) ?? text.match(/(?:\s|\()([du]{2,8}(?:\s+[du]{2,8})?)\s*[)\]]?\s*$/i);
 	if (code?.[1]) {
 		const value = code[1].replace(/\s+/g, '').toLowerCase();
 		return `switch:${/^[du]+$/.test(value) ? 'du' : 'bits'}:${value}`;
@@ -69,6 +69,9 @@ export function cableSuffixes(model: string): { parent: string; label: string }[
 			const label = model.slice(boundary.index + boundary[0].length).trim();
 			if (
 				!cableDescriptor(label) ||
+				(label.match(/[\p{L}\p{N}]+(?:[+.-][\p{L}\p{N}]+)*/gu) ?? []).some((token) =>
+					protectedModelToken.test(token)
+				) ||
 				/\b(?:tip|pad|foam|earphone|special edition|after burn|batch|sample|unit|s\d+)\b/i.test(label)
 			)
 				return [];
@@ -111,15 +114,11 @@ export function tipSuffixes(model: string): { parent: string; label: string; unk
 				);
 			const unknown = remainder.match(/[\p{L}\p{N}]+(?:[+.-][\p{L}\p{N}]+)*/gu) ?? [];
 			// Recognized tip codes were removed first; T4/X2, generations and product editions are not tips.
-			if (
-				unknown.some((token) =>
-					/^(?:pro|max|ultra|plus|s|i{1,3}|iv|v|vi{1,3}|ix|x|[1-9]|(?:19|20)\d{2}|(?:mk|rev(?:ision)?)[ivx\d]+|[\p{L}]+-?\d[\p{L}\p{N}-]*|sample|unit|mod|modded|diy|reshell)$/iu.test(
-						token
-					)
-				)
-			)
-				return [];
+			if (unknown.some((token) => protectedModelToken.test(token))) return [];
 			return [{ parent, label, ...(unknown.length ? { unknown } : {}) }];
 		})
 		.sort((a, b) => b.parent.length - a.parent.length);
 }
+
+const protectedModelToken =
+	/^(?:pro|max|ultra|plus|s|i{1,3}|iv|v|vi{1,3}|ix|x|[1-9]|(?:19|20)\d{2}|(?:mk|rev(?:ision)?)[ivx\d]+|[\p{L}]+-?\d[\p{L}\p{N}-]*|sample|unit|mod|modded|diy|reshell)$/iu;

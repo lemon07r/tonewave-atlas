@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import type { Phone } from './common.ts';
-import { mergeSwitchIdentities, reconcileSwitchDefaults } from './switches.ts';
-import { adapterState, stateSuffix, switchState, tipSuffixes } from './variant-labels.ts';
+import { labelledState, mergeSwitchIdentities, reconcileSwitchDefaults } from './switches.ts';
+import { adapterState, cableSuffixes, stateSuffix, switchState, tipSuffixes } from './variant-labels.ts';
 import { variant } from './transform.ts';
-import { assertDefaultCoverage, finaliseDefaults } from './default-coverage.ts';
+import { assertDefaultCoverage, finaliseDefaults, withProvisionalDefaults } from './default-coverage.ts';
 
 function row(
 	source: string,
@@ -50,19 +50,54 @@ const product = (id = 'parent', model = 'Volume S'): Product => ({
 
 describe('final partition-aware default coverage', () => {
 	const products = () => new Map([['parent', product()]]);
+	it('does not replace existing defaults with an earlier non-default while breaking a tie', () => {
+		const rows = [
+			{ ...row('a', 'first tuning', false), sourceOrder: 0 },
+			{ ...row('a', 'second default'), sourceOrder: 1 },
+			{ ...row('a', 'third default'), sourceOrder: 2 }
+		];
+		finaliseDefaults(products(), rows, []);
+		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['tuning', 'default', 'tuning']);
+	});
+	it('records previous kinds on every selected and demoted multiple-default row', () => {
+		const rows = [row('a', 'first'), row('a', 'second')];
+		finaliseDefaults(products(), rows, []);
+		for (const { measurement: m } of rows)
+			expect(m.provenance.processing.some((p) => p.includes('previous kind default'))).toBe(true);
+	});
+	it('finds stock fit markers in original filenames when labels omit them', () => {
+		const rows = [
+			row('a', 'Volume S foam tips', false, 'parent', 'fit'),
+			row('a', 'Volume S stock tips', false, 'parent', 'fit')
+		];
+		for (const r of rows) r.measurement.variant.label = 'tips';
+		finaliseDefaults(products(), rows, []);
+		expect(rows.map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
+	});
+	it('restores provisional labels and processing even when reading rig evidence fails', () => {
+		const rows = [row('a', 'first'), row('a', 'second')];
+		for (const r of rows) r.measurement.variant.label = '';
+		const before = structuredClone(rows);
+		expect(() =>
+			withProvisionalDefaults(products(), rows, [], () => {
+				throw new Error('reader failed');
+			})
+		).toThrow('reader failed');
+		expect(rows).toEqual(before);
+	});
 	it('rejects multiple published defaults in a product/source/partition', () => {
 		expect(() => {
 			assertDefaultCoverage(products(), [row('source', 'first'), row('source', 'second')], []);
 		}).toThrow('multiple defaults');
 	});
-	it('uses original source file order when no selected switch state is available', () => {
+	it('uses original source file order among existing defaults when no selected switch state is available', () => {
 		const rows = [
 			{ ...row('source', 'z-first', false), sourceOrder: 0 },
 			{ ...row('source', 'a-second'), sourceOrder: 1 },
 			{ ...row('source', 'b-third'), sourceOrder: 2 }
 		];
 		const result = finaliseDefaults(products(), rows, []);
-		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['default', 'tuning', 'tuning']);
+		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['tuning', 'default', 'tuning']);
 		expect(result.after.productSourcePartitions.multipleDefaults).toBe(0);
 	});
 	it('uses lowest stable id when original file order is unavailable', () => {
@@ -180,6 +215,32 @@ describe('final partition-aware default coverage', () => {
 });
 
 describe('switch-state identity and source-balanced defaults', () => {
+	it.each(['sample 10', 'Batch 01', 'unit 11'])(
+		'does not read a unit/batch number as switch bits: %s',
+		(text) => {
+			expect(switchState(text)).toBeNull();
+		}
+	);
+	it("does not let unrelated high/low fits inherit another row's impedance context", () => {
+		const rows = [
+			row('a', 'Volume S Low Impedance'),
+			row('a', 'Volume S high seal', false),
+			row('a', 'Volume S low insertion', false)
+		];
+		const state = labelledState(
+			product(),
+			rows.map((r) => r.measurement)
+		);
+		expect(rows.map((r) => state(r.measurement))).toEqual(['impedance:low', null, null]);
+	});
+	it.each(['II', 'Pro', 'Mk2', '2', 'X2'])(
+		'does not fold a %s model designator into an existing shorter cable parent',
+		(designator) => {
+			const candidates = cableSuffixes(`Model ${designator} with IMR Cable`);
+			expect(candidates.some((c) => c.parent === 'Model')).toBe(false);
+			expect(candidates).toContainEqual({ parent: `Model ${designator}`, label: 'with IMR Cable' });
+		}
+	);
 	it.each(['High Impedence', 'high imp', 'High Impedance', 'Impedance Dial: High'])(
 		'reads explicit impedance spelling: %s',
 		(text) => {

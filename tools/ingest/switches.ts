@@ -220,10 +220,9 @@ export function labelledState(
 	const impedanceContext = measurements.some((m) => explicitState(m)?.startsWith('impedance:'));
 	return (m) => {
 		const text = withoutModel(`${m.variant.file} ${m.variant.label}`);
-		const short = impedanceContext ? text.match(/\b(high|low)(?=\b|\+)|\(([lh])\)/i) : null;
+		const short = impedanceContext ? text.match(/\(([lh])\)/i) : null;
 		const primary =
-			explicitState(m) ??
-			(short ? `impedance:${/^(?:low|l)$/i.test(short[1] ?? short[2] ?? '') ? 'low' : 'high'}` : null);
+			explicitState(m) ?? (short ? `impedance:${/^l$/i.test(short[1] ?? '') ? 'low' : 'high'}` : null);
 		const adapter = adapterState(text);
 		return primary ? `${primary}${adapter ? `+${adapter}` : ''}` : adapter;
 	};

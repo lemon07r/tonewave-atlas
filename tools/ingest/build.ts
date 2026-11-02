@@ -68,7 +68,7 @@ import {
 import { rigEvidence } from './rig-evidence.ts';
 import { classifyEq, factoryMode } from './eq.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults, reviewVariantStates } from './switches.ts';
-import { finaliseDefaults } from './default-coverage.ts';
+import { finaliseDefaults, withProvisionalDefaults } from './default-coverage.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -656,23 +656,17 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const switchDefaults = reconcileSwitchDefaults(products, allCurves);
 	// Rig evidence must see the same default-kind contract as the engine. These provisional
 	// selections are restored so final choices use final partitions, not provisional isolation.
-	const beforeRigDefaults = allCurves.map(({ measurement: m }) => ({
-		measurement: m,
-		kind: m.variant.kind,
-		isDefault: m.variant.isDefault,
-		processingLength: m.provenance.processing.length
-	}));
-	const rigDefaultCoverage = finaliseDefaults(products, allCurves, switchDefaults.decisions);
 	const iemCurves = allCurves.filter((c) => products.get(c.measurement.productId)?.form === 'iem');
-	const rigReport = rigEvidence(
-		sources.filter((s) => iemCurves.some((c) => c.measurement.sourceId === s.id)),
-		iemCurves.map((c) => ({ measurement: c.measurement, values: c.rank.values }))
+	const { coverage: rigDefaultCoverage, value: rigReport } = withProvisionalDefaults(
+		products,
+		allCurves,
+		switchDefaults.decisions,
+		() =>
+			rigEvidence(
+				sources.filter((s) => iemCurves.some((c) => c.measurement.sourceId === s.id)),
+				iemCurves.map((c) => ({ measurement: c.measurement, values: c.rank.values }))
+			)
 	);
-	for (const { measurement: m, kind, isDefault, processingLength } of beforeRigDefaults) {
-		m.variant.kind = kind;
-		m.variant.isDefault = isDefault;
-		m.provenance.processing.length = processingLength;
-	}
 	const hasControls =
 		rigReport.sources.some((s) => s.control === '5128') && rigReport.sources.some((s) => s.control === '711');
 	if (hasControls && (!rigReport.separated || !rigReport.loco.passes || rigReport.minimumProducts === null)) {

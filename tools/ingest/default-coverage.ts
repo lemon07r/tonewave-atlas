@@ -13,6 +13,33 @@ interface Decision {
 	preferred: string | null;
 }
 
+/** Temporary engine-compatible choices for rig evidence; published choices use final partitions. */
+export function withProvisionalDefaults<T>(
+	products: ReadonlyMap<string, Product>,
+	rows: readonly Row[],
+	decisions: readonly Decision[],
+	read: () => T
+) {
+	const saved = rows.map(({ measurement: m }) => ({
+		m,
+		kind: m.variant.kind,
+		isDefault: m.variant.isDefault,
+		label: m.variant.label,
+		processingLength: m.provenance.processing.length
+	}));
+	try {
+		const coverage = finaliseDefaults(products, rows, decisions);
+		return { coverage, value: read() };
+	} finally {
+		for (const { m, kind, isDefault, label, processingLength } of saved) {
+			m.variant.kind = kind;
+			m.variant.isDefault = isDefault;
+			m.variant.label = label;
+			m.provenance.processing.length = processingLength;
+		}
+	}
+}
+
 function defaultCoverage(rows: readonly Row[]) {
 	const measurements = rows.map((r) => r.measurement);
 	const count = (key: (m: Measurement) => string) => {
@@ -49,7 +76,9 @@ function fallback(product: Product, ms: readonly Measurement[]): Measurement {
 	const selected = unitsOnly
 		? [...ms].sort((a, b) => sampleNumber(a) - sampleNumber(b))[0]
 		: fitOnly
-			? (ms.find((m) => /\b(?:stock|standard|default|original|neutral)\b/i.test(m.variant.label)) ?? ms[0])
+			? (ms.find((m) =>
+					/\b(?:stock|standard|default|original|neutral)\b/i.test(`${m.variant.file} ${m.variant.label}`)
+				) ?? ms[0])
 			: ms[defaultVariantIndex(phone) ?? 0];
 	if (!selected) throw new Error('Cannot choose a default from an empty group');
 	return selected;
@@ -152,7 +181,7 @@ export function finaliseDefaults(
 			if (defaults.length < 2) continue;
 			const selected = matches.length
 				? (matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches))
-				: [...ms].sort(
+				: [...defaults].sort(
 						(a, b) =>
 							(order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) || a.id.localeCompare(b.id, 'en')
 					)[0];
@@ -175,6 +204,9 @@ export function finaliseDefaults(
 			selected.variant.kind = 'default';
 			const demoted = defaults.filter((m) => m !== selected);
 			for (const m of demoted) {
+				m.provenance.processing.push(
+					`default coverage: demoted after ${reason}; previous kind ${m.variant.kind}; original label retained`
+				);
 				m.variant.isDefault = false;
 				if (m.variant.kind === 'default') m.variant.kind = 'tuning';
 			}
