@@ -99,6 +99,12 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			const cable = sourceRows.some((r) => cableMeasurements.has(r.measurement.id));
 			const tip = sourceRows.some((r) => tipMeasurements.has(r.measurement.id));
 			if (!cable && !tip) continue;
+			const sole = sourceRows.length === 1 ? sourceRows[0]?.measurement : undefined;
+			if (tip && sole && !sole.variant.isDefault && !['unit', 'tuning'].includes(cableKind(sole))) {
+				sole.variant.isDefault = true;
+				sole.variant.kind = 'default';
+				tipDefaultChanges.push({ source, productId, selected: sole.id, demoted: [] });
+			}
 			const defaults = sourceRows.map((r) => r.measurement).filter((m) => m.variant.isDefault);
 			if (defaults.length < 2) continue;
 			const selected =
@@ -156,7 +162,8 @@ export function reviewVariantStates(products: ReadonlyMap<string, Product>, rows
 			!group.some(
 				({ measurement: m }) =>
 					tuningDescriptor(`${m.variant.file} ${m.variant.label}`) ||
-					cableDescriptor(`${m.variant.file} ${m.variant.label}`)
+					cableDescriptor(`${m.variant.file} ${m.variant.label}`) ||
+					tipDescriptor(`${m.variant.file} ${m.variant.label}`)
 			)
 		)
 			return [];

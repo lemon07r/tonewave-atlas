@@ -89,9 +89,16 @@ export function tipSuffixes(model: string): { parent: string; label: string }[] 
 		.flatMap((boundary) => {
 			const parent = model.slice(0, boundary.index).trim();
 			const label = model.slice(boundary.index + boundary[0].length).trim();
-			const text = label.replace(/^[([]|[)\]]$/g, '').trim();
 			if (
-				/\b(?:sample|unit|s\d+|rev(?:ision)?\s*\d*|mod|modded|diy|reshell|cable|plug|dsp|switch)\b/i.test(
+				parent.split('(').length !== parent.split(')').length ||
+				parent.split('[').length !== parent.split(']').length
+			)
+				return [];
+			const wrapper = label.match(/^\((.*)\)$|^\[(.*)\]$/);
+			const text = (wrapper?.[1] ?? wrapper?.[2] ?? label).trim();
+			if (/[()[\]]/.test(text)) return [];
+			if (
+				/\b(?:sample|unit|s\d+|rev(?:ision)?\s*\d*|20\d{2}|v\d+|mk\d+|harman|balanced|bass|treble|high|low|steel|brass|titanium|copper|nozzle|filter|mod|modded|diy|reshell|cable|plug|dsp|switch)\b/i.test(
 					text
 				) ||
 				tuningDescriptor(text)

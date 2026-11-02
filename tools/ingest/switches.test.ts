@@ -220,8 +220,21 @@ describe('switch-state identity and source-balanced defaults', () => {
 			])
 		);
 		expect(mergeSwitchIdentities(products, []).moves).toHaveLength(0);
-		for (const text of ['Volume S S2 Foam', 'Volume S Rev2 Stock Tip', 'Volume S High Impedance tips'])
+		for (const text of [
+			'Volume S S2 Foam',
+			'Volume S Rev2 Stock Tip',
+			'Volume S 2025 Stock Tip',
+			'Volume S Harman Stock Tip',
+			'Volume S High Impedance tips'
+		])
 			expect(tipSuffixes(text).some((s) => s.parent === 'Volume S')).toBe(false);
+		expect(tipSuffixes('Volume S (Spring Tips)')).toEqual([{ parent: 'Volume S', label: '(Spring Tips)' }]);
+	});
+	it('promotes a sole accepted neutral tip measurement without promoting loads or units', () => {
+		const products = new Map([product(), product('tip', 'Volume S CP100')].map((p) => [p.id, p]));
+		const rows = [row('source', 'Volume S CP100', false, 'tip', 'fit')];
+		mergeSwitchIdentities(products, rows);
+		expect(rows[0]?.measurement.variant).toMatchObject({ kind: 'default', isDefault: true });
 	});
 	it('selects the most source-default state, not the most measured state; leaves unlabeled data intact', () => {
 		const products = new Map([['parent', product()]]);
