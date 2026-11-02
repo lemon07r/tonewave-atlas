@@ -100,7 +100,7 @@ body .page.discover .example-name strong {
 body .page.discover .example {
 	padding-block: 16px;
 }
-body .fr-chart {
+body .page .fr-chart {
 	border-top: 3px solid var(--detail);
 	padding: 22px;
 }
@@ -166,10 +166,10 @@ body .method .eyebrow {
 		font-size: 15px;
 	}
 	body .page.discover .start-guide {
-		padding-top: 16px;
-		margin-top: 16px;
+		padding-top: 0;
+		margin-top: 0;
 	}
-	body .fr-chart {
+	body .page .fr-chart {
 		padding: 16px 10px;
 	}
 	body .fr-chart .plot {
