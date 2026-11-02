@@ -4,6 +4,7 @@ import type { Phone } from './common.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults } from './switches.ts';
 import { adapterState, stateSuffix, switchState, tipSuffixes } from './variant-labels.ts';
 import { variant } from './transform.ts';
+import { assertDefaultCoverage, finaliseDefaults } from './default-coverage.ts';
 
 function row(
 	source: string,
@@ -45,6 +46,78 @@ const product = (id = 'parent', model = 'Volume S'): Product => ({
 	model,
 	form: 'iem',
 	measurementIds: []
+});
+
+describe('final partition-aware default coverage', () => {
+	const products = () => new Map([['parent', product()]]);
+	it.each(['unit', 'fit', 'unknown', 'tuning'] as const)(
+		'promotes a sole %s without erasing its meaning',
+		(kind) => {
+			const rows = [row('only', 'Volume S Sample 2', false, 'parent', kind)];
+			expect(() => {
+				assertDefaultCoverage(products(), rows, []);
+			}).toThrow('no default');
+			const result = finaliseDefaults(products(), rows, []);
+			expect(rows[0]?.measurement.variant).toMatchObject({ kind, isDefault: true });
+			expect(result.after.productPartitions.withoutDefault).toBe(0);
+		}
+	);
+	it('chooses the lowest sample number, stock fit, and existing tuning tie-break', () => {
+		const rows = [
+			row('units', 'Volume S sample 3', false, 'parent', 'unit'),
+			row('units', 'Volume S sample 2', false, 'parent', 'unit'),
+			row('fits', 'Volume S foam tips', false, 'parent', 'fit'),
+			row('fits', 'Volume S stock tips', false, 'parent', 'fit'),
+			row('tuning', 'Volume S ANC On', false),
+			row('tuning', 'Volume S ANC Off', false)
+		];
+		finaliseDefaults(products(), rows, []);
+		expect(
+			rows.filter((r) => r.measurement.variant.isDefault).map((r) => r.measurement.variant.file)
+		).toEqual(['Volume S sample 2', 'Volume S stock tips', 'Volume S ANC Off']);
+	});
+	it('permits missing selected states only with defaults in the same final partition', () => {
+		const rows = [
+			row('canonical', 'Volume S DD'),
+			row('mismatch', 'Volume S UU', false),
+			row('isolated', 'Volume S UU', false)
+		];
+		const isolated = rows[2];
+		if (!isolated) throw new Error('Missing fixture');
+		isolated.measurement.partition = 'iem-unknown-isolated';
+		const decisions = [{ productId: 'parent', preferred: 'switch:du:dd' }];
+		expect(() => {
+			assertDefaultCoverage(products(), rows, decisions);
+		}).toThrow('no default');
+		const result = finaliseDefaults(products(), rows, decisions);
+		expect(result.exceptions.map((e) => e.source)).toEqual(['mismatch']);
+		expect(isolated.measurement.variant.isDefault).toBe(true);
+		expect(result.after.productPartitions.withoutDefault).toBe(0);
+		const sameState = [row('canonical', 'Volume S DD'), row('missing', 'Volume S DD', false)];
+		expect(() => {
+			assertDefaultCoverage(products(), sameState, decisions);
+		}).toThrow('unjustified missing source default');
+	});
+	it('does not exempt singleton units/fits/unknowns even when another source supplies the selected state', () => {
+		const rows = [
+			row('canonical', 'Volume S DD'),
+			row('sample', 'Volume S sample 2', false, 'parent', 'unit')
+		];
+		finaliseDefaults(products(), rows, [{ productId: 'parent', preferred: 'switch:du:dd' }]);
+		expect(rows[1]?.measurement.variant.isDefault).toBe(true);
+	});
+	it('resolves multiple defaults with a selected labelled state, otherwise preserves and reports them', () => {
+		const rows = [
+			row('resolved', 'Volume S UU'),
+			row('resolved', 'Volume S DD'),
+			row('unresolved', 'Volume S 00'),
+			row('unresolved', 'Volume S 11')
+		];
+		const result = finaliseDefaults(products(), rows, [{ productId: 'parent', preferred: 'switch:du:dd' }]);
+		expect(rows.slice(0, 2).map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
+		expect(rows.slice(2).map((r) => r.measurement.variant.isDefault)).toEqual([true, true]);
+		expect(result.unresolvedMultipleDefaults.map((g) => g.source)).toEqual(['unresolved']);
+	});
 });
 
 describe('switch-state identity and source-balanced defaults', () => {
@@ -339,8 +412,8 @@ describe('switch-state identity and source-balanced defaults', () => {
 		const p: Phone = {
 			brand: 'CrinEar',
 			name: 'Reference',
-			file: ['CrinEar Reference S2', 'CrinEar Reference 75'],
-			suffix: ['', '(75ohm Adapter)'],
+			file: ['CrinEar Reference S2', 'CrinEar Reference 75', 'CrinEar Reference Sample 3'],
+			suffix: ['', '(75ohm Adapter)', 'Sample 3'],
 			price: null,
 			reviewLink: null
 		};

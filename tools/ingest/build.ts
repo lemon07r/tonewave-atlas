@@ -45,6 +45,7 @@ import {
 	defaultVariantIndex,
 	identity,
 	normalise,
+	sampleContext,
 	sourceFor,
 	suspiciousNames,
 	usdPrice,
@@ -65,6 +66,7 @@ import {
 import { rigEvidence } from './rig-evidence.ts';
 import { classifyEq, factoryMode } from './eq.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults, reviewVariantStates } from './switches.ts';
+import { finaliseDefaults } from './default-coverage.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -340,6 +342,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 		for (const warning of book.warnings) report.issues.push({ source: db.id, file: '', reason: warning });
 		counts.phones = book.phones.length;
+		const shortSamples = sampleContext(book.phones);
 		const scanned = { phones: book.phones.length, measurements: 0, reclassified: 0 };
 		report.quality.scanned[db.id] = scanned;
 		for (const rawPhone of book.phones) {
@@ -359,7 +362,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 							'none' || factoryMode(cleanPhone.suffix[i] ?? '')
 				)
 			) {
-				const index = defaultVariantIndex(cleanPhone);
+				const index = defaultVariantIndex(cleanPhone, shortSamples.has(rawPhone));
 				report.quality.defaultSelections.push({
 					source: db.id,
 					name: `${cleanPhone.brand} ${cleanPhone.name}`,
@@ -481,7 +484,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const avg = averageChannels(left, right);
 				const smooth = smoothOctave(avg.values, 12);
 				const rank = Float64Array.from({ length: RANK_SIZE }, (_, i) => smooth[i * RANK_STEP] ?? NaN);
-				const selectedVariant = variant(phone, index, id);
+				const selectedVariant = variant(phone, index, id, shortSamples.has(rawPhone));
 				const defaultKey = `${source.id}:${product.id}`;
 				if (
 					selectedVariant.kind === 'default' &&
@@ -694,6 +697,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		group.push(row);
 		partitions.set(row.measurement.partition, group);
 	}
+	const defaultCoverage = finaliseDefaults(products, allCurves, switchDefaults.decisions);
 	for (const source of sources) {
 		const rows = allCurves.filter((c) => c.measurement.sourceId === source.id);
 		source.forms = [
@@ -907,6 +911,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				...report,
 				switchIdentity,
 				switchDefaults,
+				defaultCoverage,
 				variantReview: reviewVariantStates(products, allCurves),
 				unknownVariants,
 				rigEvidence: rigReport,

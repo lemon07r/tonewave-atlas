@@ -1,6 +1,6 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import { classifyEq } from './eq.ts';
-import { collisionGroups, normalise } from './transform.ts';
+import { collisionGroups, normalise, withoutAttribution } from './transform.ts';
 import {
 	adapterState,
 	cableDescriptor,
@@ -205,6 +205,30 @@ export function reviewVariantStates(products: ReadonlyMap<string, Product>, rows
 	});
 }
 
+/** Shared by reconciliation and final partition coverage: never translate between encodings. */
+export function labelledState(
+	product: Product,
+	measurements: readonly Measurement[]
+): (m: Measurement) => string | null {
+	const withoutModel = (text: string) =>
+		withoutAttribution(text).replaceAll(
+			new RegExp(product.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+			' '
+		);
+	const explicitState = (m: Measurement) =>
+		switchState(withoutModel(m.variant.label)) ?? switchState(withoutModel(m.variant.file));
+	const impedanceContext = measurements.some((m) => explicitState(m)?.startsWith('impedance:'));
+	return (m) => {
+		const text = withoutModel(`${m.variant.file} ${m.variant.label}`);
+		const short = impedanceContext ? text.match(/\b(high|low)(?=\b|\+)|\(([lh])\)/i) : null;
+		const primary =
+			explicitState(m) ??
+			(short ? `impedance:${/^(?:low|l)$/i.test(short[1] ?? short[2] ?? '') ? 'low' : 'high'}` : null);
+		const adapter = adapterState(text);
+		return primary ? `${primary}${adapter ? `+${adapter}` : ''}` : adapter;
+	};
+}
+
 /** Align labelled switch states by one vote per source; ties/unknown encodings are never guessed. */
 export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, rows: readonly SwitchRow[]) {
 	const decisions: {
@@ -223,27 +247,15 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 		const first = group[0]?.measurement;
 		const product = first && products.get(first.productId);
 		if (!first || !product) continue;
-		const withoutModel = (text: string) =>
-			text.replaceAll(new RegExp(product.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
-		const descriptor = (m: Measurement) => withoutModel(`${m.variant.file} ${m.variant.label}`);
-		const explicitState = (m: Measurement) =>
-			switchState(withoutModel(m.variant.label)) ?? switchState(withoutModel(m.variant.file));
-		const impedanceContext = group.some((r) => explicitState(r.measurement)?.startsWith('impedance:'));
-		const state = (m: Measurement): string | null => {
-			const text = descriptor(m);
-			const primary =
-				explicitState(m) ??
-				(impedanceContext
-					? (() => {
-							const short = text.match(/\b(high|low)(?=\b|\+)|\(([lh])\)/i);
-							return short
-								? `impedance:${/^(?:low|l)$/i.test(short[1] ?? short[2] ?? '') ? 'low' : 'high'}`
-								: null;
-						})()
-					: null);
-			const adapter = adapterState(text);
-			return primary ? `${primary}${adapter ? `+${adapter}` : ''}` : adapter;
-		};
+		const descriptor = (m: Measurement) =>
+			`${m.variant.file} ${m.variant.label}`.replaceAll(
+				new RegExp(product.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+				' '
+			);
+		const state = labelledState(
+			product,
+			group.map((r) => r.measurement)
+		);
 		const labelledStates = [
 			...new Set(group.map((r) => state(r.measurement)).filter((s): s is string => s !== null))
 		].sort();

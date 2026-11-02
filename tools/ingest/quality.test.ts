@@ -10,7 +10,7 @@ import {
 	modification,
 	partitionFor
 } from './quality.ts';
-import { identity, sourceFor, variant } from './transform.ts';
+import { identity, sampleContext, sourceFor, variant } from './transform.ts';
 import { RANK_GRID } from '#core/grid.ts';
 
 const db = {
@@ -156,11 +156,11 @@ describe('deterministic catalog quality rules', () => {
 		expect(nonProductName('Focal Utopia Utopia (aftermarket clone pads)')).toBeNull();
 	});
 	it.each([
-		['S2', 'unit'],
+		['S2', 'unknown'],
 		['sample 2', 'unit'],
-		['(by 냥냐냥)', 'unit'],
+		['(by 냥냐냥)', 'unknown'],
 		['unit 2', 'unit'],
-		['S2 ANC on', 'unit'],
+		['S2 ANC on', 'tuning'],
 		['foam tips', 'fit'],
 		['deep insertion', 'fit'],
 		['treble tips', 'fit'],
@@ -196,8 +196,39 @@ describe('deterministic catalog quality rules', () => {
 			['LetShuoer', 'S12 ULTRA', 'Let S12 Ult']
 		])
 			expect(variant(phone(brand, model, [file ?? '']), 0, 'm-model').kind).toBe('default');
-		expect(variant(phone('LETSHUOER', 'S12 PRO S2', ['SHUOER S12 PRO S2']), 0, 'm-sample').kind).toBe('unit');
+		expect(variant(phone('LETSHUOER', 'S12 PRO S2', ['SHUOER S12 PRO S2']), 0, 'm-model').kind).toBe(
+			'default'
+		);
 	});
+	it('requires source sample evidence for S2 and uses same-product S1/S2 siblings', () => {
+		const p = phone('Letshuoer', 'CADENZA 12 S2', ['CADENZA 12 S2']);
+		const unrelated = phone('Other', 'Model', ['Model S1']);
+		expect(sampleContext([p, unrelated]).has(p)).toBe(false);
+		expect(variant(p, 0, 'm-isolated').kind).toBe('default');
+		const sibling = phone('Letshuoer', 'CADENZA 12 S1', ['CADENZA 12 S1']);
+		expect(sampleContext([p, sibling]).has(p)).toBe(true);
+		expect(variant(p, 0, 'm-paired', true).kind).toBe('unit');
+		const explicit = phone('Other', 'Model', ['Model Sample 3']);
+		expect(sampleContext([p, explicit]).has(p)).toBe(true);
+		expect(variant(p, 0, 'm-source', sampleContext([p, explicit]).has(p)).kind).toBe('unit');
+		const within = phone('Maker', 'Model', ['Model S2', 'Model S1']);
+		expect(variant(within, 0, 'm-within').kind).toBe('unit');
+		expect(variant(within, 1, 'm-within1').isDefault).toBe(true);
+	});
+	it.each(['(by 냥냐냥)', '[measured by Sample 2]', '(measurement by Bass On)'])(
+		'treats measurer credit as neutral: %s',
+		(credit) => {
+			const p = phone('Maker', 'Model', [`Model ${credit}`]);
+			p.suffix = [credit];
+			expect(variant(p, 0, 'm-credit')).toMatchObject({
+				label: '',
+				kind: 'default',
+				isDefault: true,
+				file: `Model ${credit}`
+			});
+			expect(sampleContext([p]).has(p)).toBe(false);
+		}
+	);
 	it('detects duplicate shapes at quantization tolerance but retains distinct shape or coverage', () => {
 		const a = Float64Array.from(RANK_GRID, (_, i) => 70 + i / 20);
 		expect(

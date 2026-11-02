@@ -93,6 +93,28 @@ export class DisplayNames {
 	}
 }
 
+/** Credits identify the measurer, not a sample, fit, or voicing. Original filenames stay intact. */
+export function withoutAttribution(text: string): string {
+	return text.replace(/[([]\s*(?:(?:measured|measurement|measurements)\s+)?by\s+[^)\]]+[)\]]/gi, '').trim();
+}
+
+/** S<n> is a sample shorthand only with explicit source evidence or sibling sample numbers. */
+export function sampleContext(phones: readonly Phone[]): ReadonlySet<Phone> {
+	const text = (p: Phone) => [p.name, ...p.file, ...p.suffix].map(withoutAttribution).join(' ');
+	const explicit = phones.some((p) => /\b(?:sample|unit)\s*[:#-]?\s*\d+\b/i.test(text(p)));
+	const key = (p: Phone) => `${normalise(p.brand)}:${normalise(p.name.replace(/\bs[1-9]\b/gi, ''))}`;
+	const groups = Map.groupBy(phones, key);
+	return new Set(
+		phones.filter((p) => {
+			const siblings = groups.get(key(p)) ?? [];
+			const numbers = new Set(
+				siblings.flatMap((q) => [...text(q).matchAll(/\bs([1-9])\b/gi)].map((m) => m[1]))
+			);
+			return explicit || numbers.size > 1;
+		})
+	);
+}
+
 function descriptor(phone: Phone, index: number): string {
 	const file = phone.file[index] ?? '';
 	// Descriptors, not the product's own name: e.g. a sample of Tangzu ON must not become tuning.
@@ -110,28 +132,40 @@ function descriptor(phone: Phone, index: number): string {
 		`(?<![\\p{L}\\p{N}])${phone.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`,
 		'iu'
 	);
-	return (
-		phone.suffix[index]?.trim() ||
-		(index === 0 ? firstDescriptor : file.slice(commonPrefix(phone.file[0] ?? '', file)))
-	).replace(modelPattern, '');
+	return withoutAttribution(
+		(
+			phone.suffix[index]?.trim() ||
+			(index === 0 ? firstDescriptor : file.slice(commonPrefix(phone.file[0] ?? '', file)))
+		).replace(modelPattern, '')
+	);
 }
 
-function sampleDescriptor(phone: Phone, index: number): string {
+function sampleDescriptor(phone: Phone, index: number, shortSamples: boolean): string {
 	// B&W's Pi7/Px7/Px8 S2/S3 labels denote product generations, not replacement samples.
-	const name = phone.name.replace(/\b(?:Pi7|Px[78])\s+S[23]\b/gi, '');
-	return `${descriptor(phone, index)} ${name.match(/\b(?:sample|unit)\s*\d+|\(s[1-9]\)|\s+s[1-9]\s*$|\bprototype\b/gi)?.join(' ') ?? ''}`;
+	const name = phone.name.replace(/\b(?:Pi7|Px[78])\s+S[23]\b|^s\d+$/gi, '');
+	const text = `${descriptor(phone, index)} ${
+		withoutAttribution(name)
+			.match(/\b(?:sample|unit)\s*[:#-]?\s*\d+|\bs[1-9]\b|\bprototype\b/gi)
+			?.join(' ') ?? ''
+	}`;
+	return shortSamples ? text : text.replace(/\bs[1-9]\b/gi, '');
 }
 
-const unitPattern = /\b(?:sample|unit)\s*[:#-]?\s*\d+\b|\bs[1-9]\b|\(by\s+[^)]+\)|\bprototype\b|\bdefect/i;
+const unitPattern = /\b(?:sample|unit)\s*[:#-]?\s*\d+\b|\bs[1-9]\b|\bprototype\b|\bdefect/i;
 const withoutSampleOne = (text: string): string =>
 	text.replace(/\b(?:sample|unit)\s*[:#-]?\s*1\b|\bs1\b/gi, '');
 
 function eqLabel(phone: Phone, index: number): string {
-	return `${phone.brand} ${phone.name} ${phone.file[index] ?? ''} ${phone.suffix[index] ?? ''}`;
+	return withoutAttribution(
+		`${phone.brand} ${phone.name} ${phone.file[index] ?? ''} ${phone.suffix[index] ?? ''}`
+	);
 }
 
 /** Explicit stock/neutral states win, then ANC off; source order breaks ties and supplies the fallback. */
-export function defaultVariantIndex(phone: Phone): number | null {
+export function defaultVariantIndex(
+	phone: Phone,
+	shortSamples = sampleContext([phone]).has(phone)
+): number | null {
 	const candidates = phone.file.flatMap((_file, index) => {
 		const text = descriptor(phone, index);
 		const eq = classifyEq(eqLabel(phone, index));
@@ -139,7 +173,7 @@ export function defaultVariantIndex(phone: Phone): number | null {
 			eq === 'ambiguous' ||
 			nonProductName(eqLabel(phone, index)) ||
 			adapterState(`${phone.file[index] ?? ''} ${text}`) !== null ||
-			unitPattern.test(withoutSampleOne(sampleDescriptor(phone, index)))
+			unitPattern.test(withoutSampleOne(sampleDescriptor(phone, index, shortSamples)))
 		)
 			return [];
 		// A stock accessory does not identify the product's stock electronic/voicing mode.
@@ -157,12 +191,17 @@ export function defaultVariantIndex(phone: Phone): number | null {
 	return candidates.sort((a, b) => b.score - a.score || a.index - b.index)[0]?.index ?? null;
 }
 
-export function variant(phone: Phone, index: number, measurementId: string): Variant {
+export function variant(
+	phone: Phone,
+	index: number,
+	measurementId: string,
+	shortSamples = sampleContext([phone]).has(phone)
+): Variant {
 	const file = phone.file[index] ?? '';
-	const label = phone.suffix[index] ?? (index === 0 ? '' : file);
-	const text = sampleDescriptor(phone, index);
+	const label = withoutAttribution(phone.suffix[index] ?? (index === 0 ? '' : file));
+	const text = sampleDescriptor(phone, index, shortSamples);
 	const eq = classifyEq(eqLabel(phone, index));
-	const preferred = defaultVariantIndex(phone);
+	const preferred = defaultVariantIndex(phone, shortSamples);
 	const unitText = index === 0 || index === preferred ? withoutSampleOne(text) : text;
 	const kind =
 		eq === 'ambiguous'
@@ -182,7 +221,7 @@ export function variant(phone: Phone, index: number, measurementId: string): Var
 								? 'tuning'
 								: cableDescriptor(text) || /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
 									? 'setup'
-									: /sample|unit|proto|defect|\bs\d\b/i.test(text)
+									: /sample|unit|proto|defect/i.test(text)
 										? 'unit'
 										: 'unknown';
 	return { id: `v-${measurementId.slice(2)}`, file, label, kind, isDefault: kind === 'default' };

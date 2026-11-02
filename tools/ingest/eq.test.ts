@@ -125,7 +125,7 @@ describe('real source EQ labels', () => {
 			'(Sample 2) (ANC off)',
 			'S2 (EQ: Default)'
 		]) {
-			const p = phone('Model', ['Model', `Model ${suffix}`], ['', suffix]);
+			const p = phone('Model', ['Model', `Model ${suffix}`, 'Model Sample 3'], ['', suffix, 'Sample 3']);
 			expect(defaultVariantIndex(p)).toBe(0);
 			expect(variant(p, 0, 'm-original').isDefault).toBe(true);
 			expect(variant(p, 1, 'm-alt').isDefault).toBe(false);

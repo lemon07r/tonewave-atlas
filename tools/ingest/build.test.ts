@@ -86,6 +86,11 @@ async function result(paths: { cache: string; output: string }) {
 			productSources: number;
 			decisions: { product: string; preferred: string | null }[];
 		};
+		defaultCoverage: {
+			before: { productPartitions: { withoutDefault: number } };
+			after: { productPartitions: { withoutDefault: number } };
+			changes: { selected: string }[];
+		};
 		groupwiseMerges: {
 			merged: number;
 			groups: { productId: string; originalKeys: string[]; merged: number }[];
@@ -104,6 +109,42 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('covers isolated sample/fit/tuning partitions and treats credits as neutral, offline', async () => {
+		const phones = [
+			{ name: 'Credit', file: ['Credit (by 왈왈)'], suffix: ['(by 왈왈)'] },
+			{ name: 'Olina', file: ['Olina Sample 2'], suffix: ['Sample 2'] },
+			{ name: 'D-Fi', file: ['D-Fi Switch 1011'], suffix: ['Switch 1011'] },
+			{ name: 'Tips', file: ['Tips foam'], suffix: ['foam'] },
+			{ name: 'CADENZA 12 S2', file: ['CADENZA 12 S2'], suffix: [] }
+		];
+		const { paths } = await fixture('rig_description="unidentified coupler"', [
+			[bookUrl, JSON.stringify([{ name: 'Maker', phones }])],
+			...phones.flatMap((p) =>
+				p.file.map((f): [string, string] => [`${base}data/${encodeURIComponent(f + ' L.txt')}`, curve(80)])
+			)
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch')));
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.measurements).toHaveLength(5);
+		for (const ms of Map.groupBy(catalog.measurements, (m) => `${m.productId}|${m.partition}`).values())
+			expect(ms.filter((m) => m.variant.isDefault)).toHaveLength(1);
+		expect(catalog.measurements.find((m) => m.variant.file.includes('(by'))?.variant).toMatchObject({
+			kind: 'default',
+			label: '',
+			isDefault: true
+		});
+		expect(catalog.measurements.find((m) => m.variant.file.includes('Sample 2'))?.variant).toMatchObject({
+			kind: 'unit',
+			isDefault: true
+		});
+		// This source explicitly uses Sample 2 elsewhere: its shorthand is justified.
+		expect(catalog.measurements.find((m) => m.variant.file.includes('S2'))?.variant).toMatchObject({
+			kind: 'unit',
+			isDefault: true
+		});
+		expect(report.defaultCoverage.after.productPartitions.withoutDefault).toBe(0);
+	});
 	it('reconciles labelled switch defaults and split cable/state identities before statistics, without fetching', async () => {
 		const names = ['reviewer', 'second', 'third', 'store', 'joyce', 'tipper'];
 		const directory = names.map((username) => ({
@@ -243,13 +284,18 @@ describe('cached dataset build safety', () => {
 				.filter((m) => m.variant.isDefault)
 				.map((m) => m.variant.file)
 				.sort()
-		).toEqual(['CMF Buds Pro', 'Moondrop May Standard', 'Pi7S2 ANCOff', 'Qudelix QX Over']);
+		).toEqual(['CMF Buds Pro', 'Mode only EQ1', 'Moondrop May Standard', 'Pi7S2 ANCOff', 'Qudelix QX Over']);
+		expect(catalog.measurements.find((m) => m.variant.file === 'Mode only EQ1')?.variant).toMatchObject({
+			kind: 'tuning',
+			isDefault: true
+		});
+		expect(report.defaultCoverage.before.productPartitions.withoutDefault).toBe(1);
+		expect(report.defaultCoverage.after.productPartitions.withoutDefault).toBe(0);
 		for (const file of [
 			'Pi7S2 ANCOn',
 			'Moondrop May Harman',
 			'Moondrop May PEQ0',
-			'Qudelix QX Over (Sunrise Neutral EQ)',
-			'Mode only EQ1'
+			'Qudelix QX Over (Sunrise Neutral EQ)'
 		])
 			expect(catalog.measurements.find((m) => m.variant.file === file)?.variant).toMatchObject({
 				kind: 'tuning',
