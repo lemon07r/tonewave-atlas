@@ -60,6 +60,11 @@ describe('switch-state identity and source-balanced defaults', () => {
 		expect(switchState('(switches: 00)')).toBe('switch:bits:00');
 		expect(switchState('(switches: 00)')).not.toBe(switchState('(switches: DD)'));
 	});
+	it('recognizes grouped eight-switch codes without changing their encoding', () => {
+		expect(stateSuffix('VZ10 DDDD DDDU')).toEqual({ parent: 'VZ10', label: 'DDDD DDDU' });
+		expect(switchState('(switches: DDDD DDDU)')).toBe('switch:du:dddddddu');
+		expect(switchState('(Bass: Off, Treble: On)')).toBe('switch:named:bass=off,treble=on');
+	});
 	it.each([
 		'High Impedence',
 		'high imp',

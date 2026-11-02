@@ -6,9 +6,16 @@ export function switchState(text: string): string | null {
 	const level = impedance?.[1] ?? impedance?.[2];
 	if (level) return `impedance:${level.toLowerCase()}`;
 	const code =
-		text.match(/(?:\bswitch(?:es)?\s*[:=-]?\s*|\bs\.|^\s*[([]?)([du]{2,8}|[01]{2,8})(?=$|[\s)\]])/i) ??
-		text.match(/(?:\s|\()([du]{2,8}|[01]{2,8})\s*[)\]]?\s*$/i);
-	if (code?.[1]) return `switch:${/^[du]+$/i.test(code[1]) ? 'du' : 'bits'}:${code[1].toLowerCase()}`;
+		text.match(
+			/(?:\bswitch(?:es)?\s*[:=-]?\s*|\bs\.|^\s*[([]?)([du]{2,8}(?:\s+[du]{2,8})?|[01]{2,8}(?:\s+[01]{2,8})?)(?=$|[\s)\]])/i
+		) ?? text.match(/(?:\s|\()([du]{2,8}(?:\s+[du]{2,8})?|[01]{2,8}(?:\s+[01]{2,8})?)\s*[)\]]?\s*$/i);
+	if (code?.[1]) {
+		const value = code[1].replace(/\s+/g, '').toLowerCase();
+		return `switch:${/^[du]+$/.test(value) ? 'du' : 'bits'}:${value}`;
+	}
+	const toggles = [...text.matchAll(/\b(bass|treble|midrange|mid|gain)\s*[:=-]?\s*(on|off)\b/gi)];
+	if (toggles.length)
+		return `switch:named:${[...new Set(toggles.map((m) => `${m[1]?.toLowerCase()}=${m[2]?.toLowerCase()}`))].sort().join(',')}`;
 	const mode = text.match(/\b(?:mode\s*[:=-]\s*([\p{L}\d-]+)|([\p{L}\d-]+)\s+mode)\b/iu);
 	if (mode?.[1] || mode?.[2]) return `mode:${(mode[1] ?? mode[2] ?? '').toLowerCase()}`;
 	return null;
@@ -38,7 +45,7 @@ export function tipDescriptor(text: string): boolean {
 /** A suffix is removable only when its exact parent identity is already accepted. */
 export function stateSuffix(model: string): { parent: string; label: string } | null {
 	const match = model.match(
-		/^(.*?)\s+([([]?(?:(?:high|low)[\s-]+imp(?:ed[ae]nce)?(?:\s+(?:setting|mode))?|(?:switch(?:es)?\s*[:=-]?\s*)?(?:[du]{2,8}|[01]{2,8})|[\p{L}\d-]+\s+mode|mode\s*[:=-]\s*[\p{L}\d-]+)[)\]]?)\s*$/iu
+		/^(.*?)\s+([([]?(?:(?:high|low)[\s-]+imp(?:ed[ae]nce)?(?:\s+(?:setting|mode))?|(?:switch(?:es)?\s*[:=-]?\s*)?(?:[du]{2,8}(?:\s+[du]{2,8})?|[01]{2,8}(?:\s+[01]{2,8})?)|[\p{L}\d-]+\s+mode|mode\s*[:=-]\s*[\p{L}\d-]+)[)\]]?)\s*$/iu
 	);
 	if (!match?.[1] || !match[2]) return null;
 	return { parent: match[1].trim(), label: match[2] };
