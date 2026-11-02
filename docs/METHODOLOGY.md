@@ -270,6 +270,38 @@ the caller can supply another form factor. No population input means no inferred
 Per-band user corrections add dB to a copy of a taste centre; they do not rewrite learned evidence,
 confidence or the original inferred summary.
 
+## Plain-language wording and Discover presentation
+
+Discover describes signed, level-aligned candidate-minus-reference band means (candidate minus the
+best-fitting taste centre in profile mode). Absolute means below 0.75 dB are omitted; 0.75 to below
+2 dB uses “slightly”, 2 to below 4 dB uses unqualified “more”/“less”, and 4 dB or greater uses “much”.
+These are editorial brevity thresholds, **not audibility or statistical significance thresholds**.
+The omission threshold suppresses small numerical differences relative to the conservative default
+spread (about 1–6 dB across frequency); even “much” does not prove a perceptual difference. Missing
+bands are never described as equal. Treble/air wording carries the above-8-kHz reliability caveat.
+The expanded table reports all available signed means, RMS values, regional coverage and contribution;
+overall coverage is the engine's fraction of eligible rank samples. Distance and tilt are shown to one
+decimal, in dB and dB/octave respectively. Lower response distance means closer measured shape, not
+better sound. Reviewer ranges retain the service's participating-source count; absent ranges are not
+invented. Listing amounts use only published USD values, attributed to their listing source and crawl
+month/year; they are not current price or availability claims.
+
+Profile inputs map love to strength 1, like to 0.6, dislike to 1, and neutral to 0 (excluded). The engine
+also doubles love's positive centre weight, so a love has weight 2 versus a like's 0.6 before optional
+liked-aspect weighting. Fit/comfort-only items remain stored but do not inform the sound model.
+Taste results show ordinary response distance to the centre and nearest liked item separately from
+the tolerance-weighted fit distance; the combined ranking score/constraint penalty is **not dB** and
+is not presented as response distance. “Matched” bands means below the editorial 0.75 dB threshold,
+not perceptual equivalence. Confidence and constraints retain the service's qualitative explanations.
+
+Measured product displays use GRID detail curves/consensus. “Taste N centre (derived)” is a model,
+not a measurement: the returned corrected 120-point rank centre is mapped exactly to even GRID
+indices, with odd indices linearly interpolated in log frequency between finite neighbours. Missing
+neighbours remain gaps, and GRID index 239 is NaN (no extrapolation past the last rank point).
+This adds no measured resolution. Corrections (−4…+4 dB per band in Discover) are already included
+by the service and are not applied twice. At most five candidate curves may be overlaid, in addition
+to reference/model curves. Difference display subtracts the chosen baseline without further alignment.
+
 ## Multiple references and adjustable targets
 
 For 2–4 references return each D, arithmetic mean D and minimax D. A candidate is Pareto-optimal when
