@@ -125,13 +125,31 @@ for (const profile of profiles) {
 		'disliked curve is further in the stated direction'
 	);
 	const matrix = new Float32Array(candidates.flatMap((r) => Array.from(r.values)));
+	const rankedBase = rankTastePacked(matrix, base, candidates.length);
+	const baseIndices = new Set(rankedBase.map((r) => r.index));
+	const order = rankTastePacked(matrix, model, candidates.length).filter((r) => baseIndices.has(r.index));
+	const common = new Set(order.map((r) => r.index));
+	const baseOrder = rankedBase.filter((r) => common.has(r.index));
 	const plainOrder = candidates
-		.map((r, i) => ({ index: i, distance: plain(r.values, liked.values, base.weights) }))
-		.filter((r) => Number.isFinite(r.distance))
+		.flatMap((r, i) =>
+			common.has(i) ? [{ index: i, distance: plain(r.values, liked.values, base.weights) }] : []
+		)
 		.sort((a, b) => a.distance - b.distance || a.index - b.index);
-	const baseOrder = rankTastePacked(matrix, base, candidates.length),
-		order = rankTastePacked(matrix, model, candidates.length);
-	const violators = new Set(traits.flatMap((t, i) => (profile.direction * (t - threshold) > 0.5 ? [i] : [])));
+	assert(
+		plainOrder.every((r) => Number.isFinite(r.distance)),
+		'plain distance is finite for every common candidate'
+	);
+	const indices = (ordered: readonly { index: number }[]) =>
+		ordered.map((r) => r.index).sort((a, b) => a - b);
+	assert.deepEqual(indices(plainOrder), indices(order), 'plain and reason rank the same candidate set');
+	assert.deepEqual(
+		indices(baseOrder),
+		indices(order),
+		'positive-only and reason rank the same candidate set'
+	);
+	const violators = new Set(
+		traits.flatMap((t, i) => (common.has(i) && profile.direction * (t - threshold) > 0.5 ? [i] : []))
+	);
 	const rank = (ordered: readonly { index: number }[]) =>
 		mean(ordered.flatMap((r, i) => (violators.has(r.index) ? [i + 1] : [])));
 	const top = (ordered: readonly { index: number }[]) => ({
@@ -158,7 +176,9 @@ for (const profile of profiles) {
 				disliked: `${disliked.info.product.brand} ${disliked.info.product.model}`,
 				likedTraitDb: trait(liked),
 				dislikedTraitDb: threshold,
-				candidates: candidates.length,
+				inputCandidates: candidates.length,
+				candidates: common.size,
+				excludedCandidates: candidates.length - common.size,
 				violators: violators.size,
 				demoted,
 				meanViolatorRank: groupRank,

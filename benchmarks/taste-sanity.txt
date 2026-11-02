@@ -5,7 +5,9 @@ Dataset ef7ead8fc680aae919189e39; 8067 usable iem-711 defaults; no tuning candid
   "disliked": "QKZ HBB Hades",
   "likedTraitDb": 9.327050353541509,
   "dislikedTraitDb": 12.270151629592434,
+  "inputCandidates": 8065,
   "candidates": 8065,
+  "excludedCandidates": 0,
   "violators": 48,
   "demoted": 46,
   "meanViolatorRank": {
@@ -34,7 +36,9 @@ Dataset ef7ead8fc680aae919189e39; 8067 usable iem-711 defaults; no tuning candid
   "disliked": "Etymotic ER2SE",
   "likedTraitDb": 2.087431358568594,
   "dislikedTraitDb": -3.0679105122884067,
+  "inputCandidates": 8065,
   "candidates": 8065,
+  "excludedCandidates": 0,
   "violators": 196,
   "demoted": 137,
   "meanViolatorRank": {
@@ -63,7 +67,9 @@ Dataset ef7ead8fc680aae919189e39; 8067 usable iem-711 defaults; no tuning candid
   "disliked": "QKZ HBB Hades",
   "likedTraitDb": 5.939050292968744,
   "dislikedTraitDb": 1.8250003814697209,
+  "inputCandidates": 8065,
   "candidates": 8065,
+  "excludedCandidates": 0,
   "violators": 1720,
   "demoted": 1049,
   "meanViolatorRank": {

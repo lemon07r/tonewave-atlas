@@ -156,8 +156,12 @@ This supports the stated local properties, not a universal spike-ranking or mono
 
 Real-curve sanity uses fixed named profiles, strength 1, unharmonised float32 default rank curves,
 published reliability, no tunings, and excludes both rated products. There are **8,067** usable
-iem-711 defaults and **8,065** candidates per profile. A separate hand-accumulated weighted LS
-distance to the liked curve is the simple baseline; positive-only taste ranking isolates tolerance
+iem-711 defaults and **8,065** input candidates per profile. Every baseline and violator count uses
+only the common candidate set returned by both positive-only and reason `rankTastePacked` calls;
+the script asserts identical membership for all three rankings and reports input/common/excluded
+counts. Re-running after this restriction retained **8,065** candidates in each profile (**0** excluded),
+so the mean ranks, top-20 traits, violation and demotion counts below are unchanged. A separate
+hand-accumulated weighted LS distance to the liked curve is the simple baseline; positive-only taste ranking isolates tolerance
 weighting from the added dislike. Regional means are independently computed from measured bins.
 “Violating” here means beyond the disliked trait by the **0.5 dB** margin in its adverse direction.
 Ranks are one-based; a larger average rank means the group moved down, not that every member did.

@@ -791,16 +791,9 @@ export class AtlasService {
 				const candidate = selected.candidates[i],
 					curve = curves[i];
 				if (!candidate || !curve) return [];
-				let alignedTo: number | null = null,
-					offsetDb = 0;
-				for (const [referenceIndex, reference] of references.entries()) {
-					const distance = distanceSummary(curve, reference.values, options);
-					if (distance) {
-						alignedTo = referenceIndex;
-						offsetDb = distance.offset;
-						break;
-					}
-				}
+				const referenceIndex = tradeoff.offsets.findIndex((offset) => offset !== null);
+				const alignedTo = referenceIndex < 0 ? null : referenceIndex;
+				const offsetDb = tradeoff.offsets[referenceIndex] ?? 0;
 				return [
 					{
 						candidate: candidate.info,
