@@ -29,7 +29,6 @@
 	import { responseDistance } from '#core/analysis/distance.ts';
 	import { makeWeights } from '#core/analysis/weights.ts';
 	import { smoothOctave } from '#core/smooth.ts';
-	import { chartLegendNames } from '#lib/compare/chart-legend.ts';
 	interface Selection {
 		id: string;
 		productId: string;
@@ -386,7 +385,7 @@
 				</div>
 				{#each uploadMessages as warning (warning)}<Notice kind="caution">{warning}</Notice>{/each}
 			</section>
-			<div class="chart stack" {@attach chartLegendNames}>
+			<div class="chart stack">
 				{#if partitions.length > 1}<Notice kind="caution"
 						>These curves were measured on different rigs ({partitions.map(rigLabel).join(' vs ')});
 						differences may reflect the rig rather than the product. They are overlaid for inspection, not

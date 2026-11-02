@@ -22,9 +22,17 @@ for (const theme of ['light', 'dark'] as const) {
 				'href',
 				'https://github.com/lemon07r/tonewave-atlas/issues'
 			);
+			const sourceRegion = page.getByRole('region', { name: 'Scrollable measurement sources' });
+			await sourceRegion.focus();
+			await expect(sourceRegion).toBeFocused();
+			await page.evaluate(() => {
+				window.scrollTo(0, 0);
+			});
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.screenshot({ path: join(shots, `pages-method-${info.project.name}-${theme}.png`) });
-			await page.locator('#sources').scrollIntoViewIfNeeded();
+			await page.locator('#sources').evaluate((element) => {
+				element.scrollIntoView({ block: 'start' });
+			});
 			await page.screenshot({ path: join(shots, `pages-sources-${info.project.name}-${theme}.png`) });
 		});
 	});

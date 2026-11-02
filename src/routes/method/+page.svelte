@@ -144,7 +144,8 @@
 							? 'Headphone'
 							: 'IEM'} sources
 					</p>
-					<div class="source-table">
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex (The overflowing source table must be keyboard-scrollable.) -->
+					<div class="source-table" role="region" aria-label="Scrollable measurement sources" tabindex="0">
 						<table aria-label="Measurement data sources">
 							<thead
 								><tr

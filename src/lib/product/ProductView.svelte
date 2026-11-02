@@ -9,7 +9,6 @@
 	import type { ProductDetail, ProductListItem } from '#core/atlas/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import type { Channel } from '#lib/compare/url.ts';
-	import { chartLegendNames } from '#lib/compare/chart-legend.ts';
 	let {
 		detail,
 		products,
@@ -38,7 +37,7 @@
 		const product = detail,
 			rig = partition,
 			ch = channel,
-			ids = selected;
+			ids = $state.snapshot(selected);
 		const abort = new AbortController();
 		if (!rig) return;
 		busy = true;
@@ -174,7 +173,7 @@
 			</section>
 		{/each}
 	</div>
-	<div class="product-chart stack" {@attach chartLegendNames}>
+	<div class="product-chart stack">
 		<div class="row">
 			<div>
 				<label class="field-label" for="product-rig">Chart & EQ rig</label><select

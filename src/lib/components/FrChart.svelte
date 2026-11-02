@@ -441,7 +441,6 @@
 					<button
 						type="button"
 						aria-pressed={!hidden.includes(curve.id)}
-						aria-label={`${hidden.includes(curve.id) ? 'Show' : 'Hide'} ${curve.label}`}
 						onpointerenter={() => {
 							focusSeries(curve.index);
 						}}

@@ -35,6 +35,18 @@ for (const theme of ['light', 'dark'] as const) {
 				/^https?:\/\//
 			);
 			await expect(page.getByRole('link', { name: 'Find similar' })).toHaveAttribute('href', /\?ref=p-/);
+			const chart = page.getByRole('figure', { name: 'Truthear Hexa', exact: true });
+			await expect(chart.getByRole('button', { name: /1\s*Default consensus/ })).toBeVisible();
+			await expect(chart.getByRole('button', { name: 'Export chart as PNG' })).toBeEnabled();
+			const measurement = page.locator('.measurements').getByRole('checkbox').first();
+			await measurement.check();
+			await expect(chart.getByRole('group', { name: 'Chart series' }).getByRole('button')).toHaveCount(2);
+			await measurement.uncheck();
+			await expect(chart.getByRole('group', { name: 'Chart series' }).getByRole('button')).toHaveCount(1);
+			await expect(page.getByText(/DataCloneError/)).toHaveCount(0);
+			await page.evaluate(() => {
+				window.scrollTo(0, 0);
+			});
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.screenshot({ path: join(shots, `pages-product-${info.project.name}-${theme}.png`) });
 			const target = page.getByRole('combobox', { name: 'EQ target product', exact: true });
