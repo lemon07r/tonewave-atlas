@@ -47,11 +47,17 @@ for (const theme of ['light', 'dark'] as const) {
 				window.scrollTo(0, 0);
 			});
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-			await page.screenshot({ path: join(shots, `pages-method-${info.project.name}-${theme}.png`) });
+			await page.screenshot({
+				scale: 'css',
+				path: join(shots, `pages-method-${info.project.name}-${theme}.png`)
+			});
 			await page.locator('#sources').evaluate((element) => {
 				element.scrollIntoView({ block: 'start' });
 			});
-			await page.screenshot({ path: join(shots, `pages-sources-${info.project.name}-${theme}.png`) });
+			await page.screenshot({
+				scale: 'css',
+				path: join(shots, `pages-sources-${info.project.name}-${theme}.png`)
+			});
 		});
 	});
 }

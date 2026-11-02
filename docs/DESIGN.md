@@ -118,3 +118,10 @@ Unit/component checks cover search, migration, query races, chart values and con
 band/price wording and contrast. Browser journeys and axe cover the real dataset. Visual review uses
 1440×900, 834×1112 and 390×844, in both themes, including expanded evidence and EQ. Automated checks
 do not replace real assistive-technology testing.
+
+`tests/e2e/visual.spec.ts` captures empty/unrated/single/multi-reference workspaces, per-reference
+tables, reviewer-only scoring, taste constraints, missing variants and current validation figures.
+The page journeys capture Compare, catalog/product, EQ and Method/source tables. Captures use CSS
+pixel dimensions (including mobile), check document overflow and keep exports outside the repo.
+Visual review also checks clear series identities, readable wrapped evidence, native control text
+and consistent product headings; it found and corrected the mobile reviewer-select overflow.

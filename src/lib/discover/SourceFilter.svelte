@@ -30,8 +30,8 @@
 				onmodechange(event.currentTarget.value === 'only' ? 'only' : 'coverage');
 			}}
 		>
-			<option value="coverage">Products measured by selected reviewers · score all sources</option>
-			<option value="only">Score selected reviewers’ measurements only</option>
+			<option value="coverage">Reviewer coverage · score all sources</option>
+			<option value="only">Selected measurements only</option>
 		</select></label
 	>
 	<p>

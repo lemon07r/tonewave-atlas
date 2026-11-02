@@ -146,7 +146,9 @@
 				/>
 				<div class="catalog-heading row spread">
 					<h2>{headphones ? 'Headphones' : 'In-ear monitors'}</h2>
-					<span class="small muted" role="status">{filtered.length.toLocaleString()} products</span>
+					<span class="small muted" role="status"
+						>{filtered.length.toLocaleString()} {filtered.length === 1 ? 'product' : 'products'}</span
+					>
 				</div>
 				{#each visible as product (product.id)}<div class="catalog-row">
 						<div>

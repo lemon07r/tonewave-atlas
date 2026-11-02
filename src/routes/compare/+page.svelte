@@ -473,6 +473,9 @@
 	.legend-row .field-label {
 		margin-top: 12px;
 	}
+	.legend-row :global(.button) {
+		margin-top: 12px;
+	}
 	select,
 	input[type='file'] {
 		width: 100%;
