@@ -226,8 +226,12 @@ describe('cached dataset build safety', () => {
 		const phones = [
 			{ name: 'Credit', file: ['Credit (by 왈왈)'], suffix: ['(by 왈왈)'] },
 			{ name: 'Olina', file: ['Olina Sample 2'], suffix: ['Sample 2'] },
-			{ name: 'D-Fi', file: ['D-Fi Switch 1011'], suffix: ['Switch 1011'] },
-			{ name: 'Tips', file: ['Tips foam'], suffix: ['foam'] },
+			{
+				name: 'D-Fi',
+				file: ['D-Fi Switch 1011', 'D-Fi Switch 0000'],
+				suffix: ['Switch 1011', 'Switch 0000']
+			},
+			{ name: 'Tips', file: ['Tips stock', 'Tips foam'], suffix: ['stock tips', 'foam tips'] },
 			{ name: 'CADENZA 12 S2', file: ['CADENZA 12 S2'], suffix: [] }
 		];
 		const { paths } = await fixture('rig_description="unidentified coupler"', [
@@ -239,7 +243,19 @@ describe('cached dataset build safety', () => {
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch')));
 		await build(paths);
 		const { catalog, report, manifest } = await result(paths);
-		expect(catalog.measurements).toHaveLength(5);
+		expect(catalog.measurements).toHaveLength(7);
+		for (const [file, kind, label, isDefault] of [
+			['D-Fi Switch 1011', 'default', 'Switch 1011', true],
+			['D-Fi Switch 0000', 'tuning', 'Switch 0000', false],
+			['Tips stock', 'default', 'stock tips', true],
+			['Tips foam', 'fit', 'foam tips', false]
+		] as const) {
+			const m = catalog.measurements.find((m) => m.variant.file === file);
+			expect(m).toMatchObject({
+				partition: `iem-source-${catalog.sources[0]?.id}`,
+				variant: { kind, label, isDefault }
+			});
+		}
 		for (const ms of Map.groupBy(catalog.measurements, (m) => `${m.productId}|${m.partition}`).values())
 			expect(ms.filter((m) => m.variant.kind === 'default')).toHaveLength(1);
 		for (const m of catalog.measurements) expect(m.variant.isDefault).toBe(m.variant.kind === 'default');

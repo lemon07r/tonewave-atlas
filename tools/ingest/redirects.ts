@@ -54,9 +54,10 @@ export function buildRedirects(previous: readonly Catalog[], current: readonly C
 	}[] = [];
 	const ambiguousMeasurements: string[] = [];
 	for (const catalog of previous) {
+		const byProduct = Map.groupBy(catalog.measurements, (m) => m.productId);
 		for (const product of catalog.products) {
 			const targets = new Map<string, number>();
-			for (const m of catalog.measurements.filter((m) => m.productId === product.id)) {
+			for (const m of byProduct.get(product.id) ?? []) {
 				const matches = byFile.get(fileKey(m)) ?? [];
 				const match = matches.length === 1 ? matches[0] : undefined;
 				if (!match) {

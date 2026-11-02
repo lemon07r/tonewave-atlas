@@ -52,7 +52,7 @@ describe('source transforms', () => {
 		const phone = {
 			brand: 'Maker',
 			name: 'Model',
-			file: ['Model ANC On', 'Model ANC Off'],
+			file: ['Maker Model ANC On', 'Maker Model ANC Off'],
 			suffix: [],
 			price: null,
 			reviewLink: null
