@@ -8,13 +8,13 @@ const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) a
 const catalog = JSON.parse(
 	gunzipSync(readFileSync(`static/data/${manifest.version}/catalog-headphone.json.gz`)).toString()
 ) as Catalog;
-const hd600 = catalog.products.find(
-	(product) => product.brand === 'Sennheiser' && product.model === 'HD 600'
-);
-const mv1 = catalog.products.find((product) => product.brand === 'Sony' && product.model === 'MDR-MV1');
+const hd600 = catalog.products.find((product) => product.id === 'p-d579af27c01cc5f9baa0');
+const mv1 = catalog.products.find((product) => product.id === 'p-22a64e04ddf0f1eed442');
 if (!hd600 || !mv1) throw new Error('Cross-form fixtures require the published HD 600 and MDR-MV1.');
 const hdId = hd600.id,
 	mvId = mv1.id;
+const hdName = `${hd600.brand} ${hd600.model}`;
+const mvName = `${mv1.brand} ${mv1.model}`;
 const measurement = catalog.measurements.find(
 	(row) => row.productId === hdId && row.variant.kind === 'default'
 );
@@ -71,12 +71,12 @@ test('Discover follows a misfiled headphone link without adding history or losin
 	expect(new URL(page.url()).hash).toBe('#main');
 	for (const key of ['rig', 'sources', 'sourceMode'])
 		expect(new URL(page.url()).searchParams.has(key)).toBe(false);
-	const row = page.getByRole('region', { name: 'Sennheiser HD 600', exact: true });
+	const row = page.getByRole('region', { name: hdName, exact: true });
 	await expect(row.getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
 	await expect(row.getByRole('radio', { name: 'Love', exact: true })).not.toBeChecked();
 	await expect(page.locator('.result-row').first()).toBeVisible();
 	const note = page.getByRole('complementary', { name: 'Catalog update' });
-	await expect(note).toContainText('Sennheiser HD 600: opened in Headphones after a catalog update.');
+	await expect(note).toContainText(`${hdName}: opened in Headphones after a catalog update.`);
 	expect(await page.evaluate(() => history.length)).toBe(
 		await page.evaluate(() => (window as unknown as { initialHistoryLength: number }).initialHistoryLength)
 	);
@@ -93,7 +93,7 @@ test('Explore and Compare open the other catalog and retain product, measurement
 	expect(new URL(page.url()).searchParams.get('form')).toBe('headphones');
 	expect(new URL(page.url()).searchParams.get('product')).toBe(mvId);
 	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
-		'Sony MDR-MV1: opened in Headphones'
+		`${mvName}: opened in Headphones`
 	);
 	await page.goto(
 		'/compare?p=misfiled-hd600,misfiled-mv1&m=misfiled-headphone-measurement&diff=misfiled-headphone-measurement&unknown=keep#main'
@@ -140,8 +140,8 @@ for (const version of [1, 2]) {
 			)
 			.toEqual(expected);
 		const note = page.getByRole('complementary', { name: 'Catalog update' });
-		await expect(note).toContainText('Sennheiser HD 600: moved to the Headphones profile');
-		await expect(note).toContainText('Sony MDR-MV1: moved to the Headphones profile');
+		await expect(note).toContainText(`${hdName}: moved to the Headphones profile`);
+		await expect(note).toContainText(`${mvName}: moved to the Headphones profile`);
 		await expect(note).toContainText('duplicate rating from an older link was dropped (love)');
 		await note.getByRole('button', { name: 'Undo', exact: true }).click();
 		await expect(page.locator('.profile-row')).toHaveCount(3);
@@ -149,9 +149,20 @@ for (const version of [1, 2]) {
 			.getByRole('region', { name: 'Truthear Hexa', exact: true })
 			.getByRole('radio', { name: 'Neutral', exact: true })
 			.check();
+		const edited = [item(hexa, 'neutral'), hd, sony];
+		await expect
+			.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
+			.toEqual(edited);
 		expect(parseProfile(await page.evaluate((key) => localStorage.getItem(key) ?? '', PROFILE_KEY))).toEqual(
 			expected
 		);
+		await page.reload();
+		await expect(page.locator('.profile-row')).toHaveCount(3);
+		expect(parseProfile(await page.evaluate((key) => localStorage.getItem(key) ?? '', PROFILE_KEY))).toEqual(
+			expected
+		);
+		// Explicit shared ratings override storage. Reopen the saved workspace to test persistence.
+		await page.goto('/');
 		await page.reload();
 		await expect(page.locator('.profile-row')).toHaveCount(1);
 		await expect(note).toHaveCount(0);
@@ -174,7 +185,7 @@ test('imported misfiled items move to the other profile without inventing a rati
 		})
 		.toEqual({ iem: [], headphone: [{ ...saved, productId: mvId }] });
 	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
-		'Sony MDR-MV1: moved to the Headphones profile'
+		`${mvName}: moved to the Headphones profile`
 	);
 	await expect(page.locator('.profile-row')).toHaveCount(0);
 });
