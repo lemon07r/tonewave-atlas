@@ -96,9 +96,9 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 		/population-relative|conservative default profile|positive examples/
 	);
 	await expect(page.locator('.result-row').first()).toBeVisible();
-	await expect(
-		page.getByRole('button', { name: 'Hide Taste 1 centre (derived)', exact: true })
-	).toBeVisible();
+	const tasteCurve = page.getByRole('button', { name: '1 Taste 1 centre (derived)', exact: true });
+	await expect(tasteCurve).toBeVisible();
+	await expect(tasteCurve).toHaveAttribute('aria-pressed', 'true');
 	const first = page.locator('.result-row').first();
 	await first.locator('summary').click();
 	await expect(first.getByText(/Closest liked product: Truthear Hexa/)).toBeVisible();

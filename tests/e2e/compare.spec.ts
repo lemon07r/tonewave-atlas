@@ -28,7 +28,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await search.press('Escape');
 			await expect(page.getByTestId('comparison-row')).toHaveCount(2);
 			for (const row of await page.getByTestId('comparison-row').all()) {
-				await expect(row).toContainText('711-family');
+				await expect(row).toContainText('711-family coupler');
 				const sources = row.locator('details.sources');
 				const disclosure = sources.locator('summary');
 				await expect(sources.getByRole('link')).toHaveCount(0);
@@ -68,6 +68,19 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.reload();
 			await expect(page.getByRole('radio', { name: 'Difference', exact: true })).toBeChecked();
 			await expect(page.getByTestId('comparison-row')).toHaveCount(2);
+			const measurementChoice = page.getByRole('combobox', {
+				name: 'Measurement for Truthear Hexa',
+				exact: true
+			});
+			const measurementId = (await measurementChoice.locator('option').nth(1).getAttribute('value')) ?? '';
+			expect(measurementId).toBeTruthy();
+			await measurementChoice.selectOption(measurementId);
+			await expect.poll(() => new URL(page.url()).searchParams.get('m')).toBe(measurementId);
+			await page.reload();
+			await expect(
+				page.getByRole('combobox', { name: 'Measurement for Truthear Hexa', exact: true })
+			).toHaveValue(measurementId);
+			await expect(page.getByTestId('comparison-row')).toHaveCount(2);
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			expect(errors).toEqual([]);
 		});
@@ -81,5 +94,13 @@ test('headphone comparison labels its measured rig', async ({ page }) => {
 	await page.getByRole('listbox', { name: 'Add to comparison' }).getByRole('option').first().click();
 	await expect(page.getByTestId('comparison-row')).toHaveCount(1);
 	await expect(page.getByTestId('comparison-row')).toContainText(/5128|Headphone rig|EARS/);
+	await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('unknown measurement links explain the missing metadata', async ({ page }) => {
+	await page.goto('/compare?m=missing-measurement');
+	await expect(
+		page.getByText('Unknown product or measurement: missing-measurement', { exact: true })
+	).toBeVisible();
 	await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

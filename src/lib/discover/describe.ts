@@ -2,7 +2,7 @@ import type { Band } from '#core/analysis/common.ts';
 import type { BandDistance } from '#core/analysis/distance.ts';
 import type { CandidateInfo } from '#core/atlas/types.ts';
 
-export const WORDING = { omit: 0.75, slight: 2, much: 4 } as const;
+const WORDING = { omit: 0.75, slight: 2, much: 4 } as const;
 export const bandLabels: Record<Band, string> = {
 	'sub-bass': 'sub-bass',
 	bass: 'bass',

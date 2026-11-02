@@ -2,29 +2,24 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
-	import { SvelteMap } from 'svelte/reactivity';
 	import { analysis, formFromUrl } from '#lib/atlas.ts';
-	import { catalog, dateLabel, rigLabel } from '#lib/product/data.ts';
+	import { dateLabel } from '#lib/product/data.ts';
+	import { rigLabel } from '#lib/rigs.ts';
 	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
 	let summary = $state.raw<AtlasSummary | null>(null);
-	let counts = $state.raw<Map<string, number>>(new Map());
 	let error = $state('');
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let sources = $derived(summary?.sources.filter((s) => s.form === form) ?? []);
 	$effect(() => {
-		const selectedForm = form;
 		let active = true;
 		error = '';
 		summary = null;
-		void Promise.all([analysis().then((service) => service.summary()), catalog(selectedForm)])
-			.then(([data, metadata]) => {
+		void analysis()
+			.then((service) => service.summary())
+			.then((data) => {
 				if (!active) return;
-				const perSource = new SvelteMap<string, number>();
-				for (const m of metadata.measurements)
-					perSource.set(m.sourceId, (perSource.get(m.sourceId) ?? 0) + 1);
 				summary = data;
-				counts = perSource;
 			})
 			.catch((e: unknown) => {
 				if (active) error = String(e);
@@ -156,9 +151,10 @@
 							><tbody
 								>{#each sources as source (source.id)}<tr
 										><th scope="row"><a href={source.url} rel="external">{source.name}</a></th><td
-											>{source.rig || rigLabel(source.partition)}{source.rigInferred ? ' (inferred)' : ''}<br
-											/><span class="mono">{source.partition}</span></td
-										><td>{counts.get(source.id) ?? 0}</td><td>{dateLabel(source.crawledAt)}</td><td
+											>{source.rig || rigLabel(source.partition, summary.sources)}{source.rigInferred
+												? ' (inferred)'
+												: ''}<br /><span class="mono">{source.partition}</span></td
+										><td>{source.measurementCount}</td><td>{dateLabel(source.crawledAt)}</td><td
 											>{source.permission}</td
 										></tr
 									>{/each}</tbody

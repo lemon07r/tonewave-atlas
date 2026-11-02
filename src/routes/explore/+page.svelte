@@ -2,20 +2,19 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
 	import { resolve } from '$app/paths';
-	import { SvelteMap } from 'svelte/reactivity';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
-	import { catalog, priceListings, rigLabel } from '#lib/product/data.ts';
+	import { priceListings } from '#lib/product/data.ts';
+	import { rigLabel } from '#lib/rigs.ts';
 	import ProductView from '#lib/product/ProductView.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Button from '#lib/components/Button.svelte';
-	import type { Catalog } from '#core/dataset/types.ts';
-	import type { ProductDetail, ProductListItem } from '#core/atlas/types.ts';
+	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let headphones = $derived(form === 'headphone');
 	let productId = $derived(browser ? (page.url.searchParams.get('product') ?? '') : '');
 	let products = $state.raw<ProductListItem[]>([]);
-	let metadata = $state.raw<Catalog | null>(null);
+	let summary = $state.raw<AtlasSummary | null>(null);
 	let detail = $state.raw<ProductDetail | null>(null);
 	let loading = $state(true);
 	let error = $state('');
@@ -41,15 +40,6 @@
 			)
 	);
 	let visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
-	let measurementsByProduct = $derived.by(() => {
-		const map = new SvelteMap<string, NonNullable<typeof metadata>['measurements']>();
-		for (const measurement of metadata?.measurements ?? []) {
-			const rows = map.get(measurement.productId) ?? [];
-			rows.push(measurement);
-			map.set(measurement.productId, rows);
-		}
-		return map;
-	});
 	$effect(() => {
 		const selectedForm = form,
 			id = productId;
@@ -57,19 +47,21 @@
 		loading = true;
 		error = '';
 		detail = null;
+		summary = null;
 		currentPage = 0;
 		brand = '';
 		void (async () => {
-			const [list, data] = await Promise.all([productList(selectedForm), catalog(selectedForm)]);
+			const service = await analysis();
+			const [list, data] = await Promise.all([productList(selectedForm), service.summary()]);
 			abort.signal.throwIfAborted();
 			products = list;
-			metadata = data;
+			summary = data;
 			if (id) {
 				if (!list.some((p) => p.id === id))
 					throw new Error(
 						'This product is not in the selected form-factor catalog. Switch modes or return to the catalog.'
 					);
-				const result = await (await analysis()).productDetail(id);
+				const result = await service.productDetail(id);
 				if (!result.ok) throw new Error(result.message);
 				if (!abort.signal.aborted) detail = result;
 			}
@@ -99,7 +91,7 @@
 			<a href={resolve(`/explore${headphones ? '?form=headphones' : ''}`)}>Back to catalog</a></Notice
 		>{/if}
 	{#if loading}<Skeleton rows={4} label={productId ? 'Loading product measurements' : 'Loading catalog'} />
-	{:else if detail}<ProductView {detail} {products} {headphones} />
+	{:else if detail}<ProductView {detail} {products} {headphones} sources={summary?.sources ?? []} />
 	{:else if !error}
 		<div class="page-heading">
 			<p class="eyebrow">Follow the evidence</p>
@@ -163,13 +155,12 @@
 							<p class="small muted">
 								{product.sourceCount}
 								{product.sourceCount === 1 ? 'reviewer' : 'reviewers'} · {product.partitions
-									.map(rigLabel)
+									.map((rig) => rigLabel(rig, summary?.sources))
 									.join(' / ')}
 							</p>
 						</div>
 						<div class="prices small muted">
-							{#each priceListings(measurementsByProduct.get(product.id) ?? [], metadata?.sources ?? []) as listing (listing)}<p
-								>
+							{#each priceListings(product.prices, summary?.sources ?? []) as listing (listing)}<p>
 									{listing}
 								</p>{/each}
 						</div>

@@ -14,7 +14,8 @@
 	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import { analysis, productList, formFromUrl } from '#lib/atlas.ts';
-	import { catalog, channelSpread, mainPartition, rigLabel } from '#lib/product/data.ts';
+	import { channelSpread, mainPartition } from '#lib/product/data.ts';
+	import { rigLabel } from '#lib/rigs.ts';
 	import {
 		parseCompare,
 		serialiseCompare,
@@ -22,8 +23,8 @@
 		type Channel,
 		type Smoothing
 	} from '#lib/compare/url.ts';
-	import type { ProductDetail, ProductListItem } from '#core/atlas/types.ts';
-	import type { Catalog, Measurement, Source } from '#core/dataset/types.ts';
+	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
+	import type { Measurement, Source } from '#core/dataset/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import { GRID } from '#core/grid.ts';
 	import { responseDistance } from '#core/analysis/distance.ts';
@@ -42,7 +43,7 @@
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let selectionState = $derived(parseCompare(new URLSearchParams(browser ? page.url.search : '')));
 	let products = $state.raw<ProductListItem[]>([]);
-	let metadata = $state.raw<Catalog | null>(null);
+	let summary = $state.raw<AtlasSummary | null>(null);
 	let selections = $state.raw<Selection[]>([]);
 	let uploads = $state.raw<FrSeries[]>([]);
 	let loading = $state(false);
@@ -65,7 +66,7 @@
 				id: p.id,
 				label: `${p.brand} ${p.model}`,
 				sources: p.sourceCount,
-				detail: p.partitions.map(rigLabel).join(' / ')
+				detail: p.partitions.map((rig) => rigLabel(rig, summary?.sources)).join(' / ')
 			}))
 	);
 	let count = $derived(selectionState.products.length + selectionState.measurements.length + uploads.length);
@@ -102,17 +103,17 @@
 		const selectedForm = form;
 		const abort = new AbortController();
 		products = [];
-		metadata = null;
+		summary = null;
 		uploads = [];
-		void Promise.all([productList(selectedForm), catalog(selectedForm)])
+		void Promise.all([productList(selectedForm), analysis().then((service) => service.summary())])
 			.then(([list, data]) => {
 				if (!abort.signal.aborted) {
 					products = list;
-					metadata = data;
+					summary = data;
 				}
 			})
 			.catch((e: unknown) => {
-				if (!abort.signal.aborted) error = String(e);
+				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);
 			});
 		return () => {
 			abort.abort();
@@ -133,7 +134,8 @@
 	}
 	$effect(() => {
 		const settings = selectionState,
-			data = metadata;
+			data = summary,
+			list = products;
 		const abort = new AbortController();
 		if (!data) return;
 		loading = true;
@@ -141,13 +143,19 @@
 		selections = [];
 		void (async () => {
 			const service = await analysis();
+			const measurements = new Map(
+				(await service.measurements([...settings.measurements])).map((measurement) => [
+					measurement.id,
+					measurement
+				])
+			);
 			const rows: Selection[] = [];
 			for (const id of [...settings.products, ...settings.measurements]) {
-				const measurement = settings.measurements.includes(id)
-					? data.measurements.find((m) => m.id === id)
-					: undefined;
+				const measurement = measurements.get(id);
+				if (settings.measurements.includes(id) && !measurement)
+					throw new Error(`Unknown product or measurement: ${id}`);
 				const productId = measurement?.productId ?? id;
-				const product = data.products.find((p) => p.id === productId);
+				const product = list.find((p) => p.id === productId);
 				if (!product) throw new Error(`Unknown product or measurement: ${id}`);
 				const result = await detail(productId);
 				const partition = measurement?.partition ?? mainPartition(result);
@@ -166,7 +174,7 @@
 				const sources = data.sources.filter((s) => contributing.some((m) => m.sourceId === s.id));
 				const label = `${product.brand} ${product.model}`;
 				const variant = measurement
-					? measurement.variant.label || 'Default variant'
+					? measurement.variantLabel || 'Default variant'
 					: 'Product consensus · default variants';
 				rows.push({
 					id,
@@ -178,18 +186,19 @@
 					variant,
 					series: {
 						id,
-						label: `${label} · ${rigLabel(partition)} · ${measurement ? variant : 'consensus'} · ${settings.channel}`,
+						label: `${label} · ${rigLabel(partition, data.sources)} · ${measurement ? variant : 'consensus'} · ${settings.channel}`,
 						values,
 						...(spread && spread.sourceCount >= 2 ? { lo: spread.min, hi: spread.max } : {}),
 						attribution:
-							sources.map((s) => `${s.name} ${s.url}`).join('; ') + ` · ${variant} · ${rigLabel(partition)}`
+							sources.map((s) => `${s.name} ${s.url}`).join('; ') +
+							` · ${variant} · ${rigLabel(partition, data.sources)}`
 					}
 				});
 			}
 			if (!abort.signal.aborted) selections = rows;
 		})()
 			.catch((e: unknown) => {
-				if (!abort.signal.aborted) error = String(e);
+				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);
 			})
 			.finally(() => {
 				if (!abort.signal.aborted) loading = false;
@@ -250,7 +259,7 @@
 				}
 			];
 		} catch (e) {
-			error = String(e);
+			error = e instanceof Error ? e.message : String(e);
 		}
 	}
 </script>
@@ -278,7 +287,7 @@
 						filter={false}
 						label="Add to comparison"
 						shortcut
-						loading={!metadata}
+						loading={!summary}
 						onselect={(item: SearchItem) => {
 							update({ ...selectionState, products: [...selectionState.products, item.id] });
 							query = '';
@@ -290,7 +299,8 @@
 				</div>
 				{#if loading}<Skeleton rows={2} label="Loading measurements" />{/if}
 				{#if error}<Notice kind="caution" title="Could not load comparison"
-						>{error}<Button
+						><p>{error}</p>
+						<Button
 							variant="quiet"
 							onclick={() => {
 								update({ ...selectionState, products: [], measurements: [], difference: '' });
@@ -300,7 +310,7 @@
 				{#each selections as row (row.id)}
 					<div class="legend-row" data-testid="comparison-row">
 						<h3>{row.label}</h3>
-						<p class="small">{rigLabel(row.partition)} · {row.variant}</p>
+						<p class="small">{rigLabel(row.partition, summary?.sources)} · {row.variant}</p>
 						<details class="sources small muted">
 							<summary>{row.sources.length} {row.sources.length === 1 ? 'reviewer' : 'reviewers'}</summary>
 							<div class="source-links">
@@ -317,8 +327,8 @@
 							}}
 							><option value={row.productId}>Product consensus · main rig</option
 							>{#each row.measurements as m (m.id)}<option value={m.id}
-									>{metadata?.sources.find((s) => s.id === m.sourceId)?.name} · {m.variant.label || 'default'} ·
-									{rigLabel(m.partition)}</option
+									>{summary?.sources.find((s) => s.id === m.sourceId)?.name} · {m.variant.label || 'default'} ·
+									{rigLabel(m.partition, summary?.sources)}</option
 								>{/each}</select
 						>
 						<Button
@@ -390,9 +400,10 @@
 			</section>
 			<div class="chart stack">
 				{#if partitions.length > 1}<Notice kind="caution"
-						>These curves were measured on different rigs ({partitions.map(rigLabel).join(' vs ')});
-						differences may reflect the rig rather than the product. They are overlaid for inspection, not
-						ranked or pooled.</Notice
+						>These curves were measured on different rigs ({partitions
+							.map((rig) => rigLabel(rig, summary?.sources))
+							.join(' vs ')}); differences may reflect the rig rather than the product. They are overlaid for
+						inspection, not ranked or pooled.</Notice
 					>{/if}
 				<FrChart
 					{series}

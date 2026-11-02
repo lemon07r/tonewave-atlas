@@ -5,15 +5,22 @@
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
 	import Equalizer from './Equalizer.svelte';
 	import { analysis } from '#lib/atlas.ts';
-	import { channelSpread, dateLabel, mainPartition, priceListings, rigLabel } from './data.ts';
-	import type { ProductDetail, ProductListItem } from '#core/atlas/types.ts';
+	import { channelSpread, dateLabel, mainPartition, priceListings } from './data.ts';
+	import { rigLabel } from '#lib/rigs.ts';
+	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import type { Channel } from '#lib/compare/url.ts';
 	let {
 		detail,
 		products,
-		headphones
-	}: { detail: ProductDetail; products: ProductListItem[]; headphones: boolean } = $props();
+		headphones,
+		sources
+	}: {
+		detail: ProductDetail;
+		products: ProductListItem[];
+		headphones: boolean;
+		sources: AtlasSummary['sources'];
+	} = $props();
 	let partition = $state('');
 	let channel = $state<Channel>('avg');
 	let selected = $state<string[]>([]);
@@ -23,10 +30,7 @@
 	let partitions = $derived([...new Set(detail.measurements.map((r) => r.measurement.partition))]);
 	let formQuery = $derived(headphones ? '&form=headphones' : '');
 	let listings = $derived(
-		priceListings(
-			detail.measurements.map((r) => r.measurement),
-			detail.measurements.map((r) => r.source)
-		)
+		priceListings(products.find((product) => product.id === detail.product.id)?.prices ?? [], sources)
 	);
 	$effect(() => {
 		partition = mainPartition(detail);
@@ -37,7 +41,8 @@
 		const product = detail,
 			rig = partition,
 			ch = channel,
-			ids = $state.snapshot(selected);
+			ids = $state.snapshot(selected),
+			rigSources = sources;
 		const abort = new AbortController();
 		if (!rig) return;
 		busy = true;
@@ -50,7 +55,7 @@
 			if (spread)
 				output.push({
 					id: product.product.id,
-					label: `Default consensus · ${rigLabel(rig)} · ${ch}`,
+					label: `Default consensus · ${rigLabel(rig, rigSources)} · ${ch}`,
 					values: spread.centre,
 					...(spread.sourceCount >= 2 ? { lo: spread.min, hi: spread.max } : {}),
 					attribution: product.measurements
@@ -109,15 +114,17 @@
 			default consensus stays visible.
 		</p>
 		{#each partitions as rig (rig)}
-			<section class="rig-group" aria-label={`${rigLabel(rig)} measurements`}>
-				<h3>{rigLabel(rig)}</h3>
+			<section class="rig-group" aria-label={`${rigLabel(rig, sources)} measurements`}>
+				<h3>{rigLabel(rig, sources)}</h3>
 				{#each [...new Map(detail.measurements
 							.filter((r) => r.measurement.partition === rig)
 							.map((r) => [r.source.id, r.source])).values()] as source (source.id)}
 					<div class="source-group">
 						<h4><a href={source.url} rel="external">{source.name}</a></h4>
 						<p class="small muted">
-							{source.rig || rigLabel(rig)}{source.rigInferred ? ' · rig inferred, not verified' : ''} · crawled
+							{source.rig || rigLabel(rig, sources)}{source.rigInferred
+								? ' · rig inferred, not verified'
+								: ''} · crawled
 							{dateLabel(source.crawledAt)}
 						</p>
 						{#each detail.measurements.filter((r) => r.measurement.partition === rig && r.source.id === source.id) as row (row.measurement.id)}
@@ -180,7 +187,7 @@
 					id="product-rig"
 					bind:value={partition}
 					onchange={() => (selected = [])}
-					>{#each partitions as rig (rig)}<option value={rig}>{rigLabel(rig)}</option>{/each}</select
+					>{#each partitions as rig (rig)}<option value={rig}>{rigLabel(rig, sources)}</option>{/each}</select
 				>
 			</div>
 			<SegmentedControl

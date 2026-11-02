@@ -15,6 +15,9 @@ for (const theme of ['light', 'dark'] as const) {
 			const table = page.getByRole('table', { name: 'Measurement data sources' });
 			await expect(table).toBeVisible();
 			expect(await table.getByRole('row').count()).toBeGreaterThan(1);
+			const counts = await table.locator('tbody tr td:nth-child(3)').allTextContents();
+			for (const count of counts) expect(count).toMatch(/^\d+$/);
+			expect(counts.some((count) => Number(count) > 0)).toBe(true);
 			await expect(table.getByRole('link').first()).toHaveAttribute('href', /^https?:\/\//);
 			await expect(table).toContainText('public, not explicitly licensed');
 			await expect(page.getByText(/^Dataset /)).toContainText(/Built \d{4}-\d{2}-\d{2}/);
