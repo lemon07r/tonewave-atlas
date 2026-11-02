@@ -65,8 +65,9 @@ per-source ranges and query-specific coverage, unused taste ratings, corrections
 detail channel means and variant spread, LRU eviction, concurrent-load deduplication, gzip, failed-load
 retry, private uploads and PEQ exports. A real `static/data` smoke test checks result structure and
 detail curves when the dataset exists, skipping only when the manifest is absent. A Node worker-thread
-test runs the actual Comlink worker entry and verifies typed-array upload/PEQ round trips without
-detaching cached curves. A standalone Vite production build of the client also bundles the ES worker
+test runs the actual Comlink worker entry and verifies typed-array upload/PEQ round trips. It does not
+exercise dataset-backed curve caching. A standalone Vite production build of the client also bundles
+the ES worker
 successfully (48.87 kB worker, 6.01 kB client before gzip); scratch build output was removed.
 
 `pnpm format`, `pnpm lint`, `pnpm check` and `pnpm test` pass. Knip is not clean before UI integration:
@@ -90,3 +91,20 @@ manifest or catalogs; benchmark reference-id selection outside the timer can war
 All three budgets pass in this local observation. Null partition statistics remain null: no
 on-demand cross-source estimation, invented confidence, held-out real-source improvement or listener
 validation is claimed. These timings are not a latency guarantee or a statistical distribution.
+
+### PR #4 review follow-up
+
+After merging the engine/data/UI lanes, `pnpm format && pnpm lint && pnpm check && pnpm test` passes
+**290 tests in 25 files**. Added independent regression cases for sparse anchors on both grids,
+individually failing measurements, rankable-default rig counts, variant-only rigs, usable taste/compare
+coverage, tuning-reference self-exclusion (including top K=1), finite treble penalties ≥1, and typed
+reference identities. Product-only callers and optional product ownership checks for explicit
+measurements remain valid. Client lifecycle tests control the pending RPC response to verify prompt
+initialization rejection, root-release-before-termination ordering, no late child release, idempotent
+disposal and replacement after a late response. Benchmark guard tests reject non-three-reference,
+failed and zero-winner workloads; guards apply to cold, resident and taste requests.
+
+With those fixes, `node benchmarks/atlas.ts` on the same dataset/machine measured **199.17 ms** cold
+similar, **2.39 ms** resident similar and **8.97 ms** taste, each with 20 winners. All existing budgets
+remain met; these are another single local observation under the timing scope above, not a controlled
+comparison with the earlier run.

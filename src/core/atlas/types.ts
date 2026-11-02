@@ -93,18 +93,23 @@ export interface RankFilters {
 	/** Include tuning candidates, including the reference product's tunings in similar(). */
 	includeTunings?: boolean;
 }
-export interface SimilarRequest {
-	productId?: string;
-	measurementId?: string;
-	uploadId?: string;
+interface SimilarSettings {
 	partition?: string;
 	focus?: Focus;
 	customBands?: Partial<Record<Band, number>>;
+	/** Finite multiplier >= 1. The service rejects invalid input rather than relying on engine clamping. */
 	treblePenalty?: number;
 	harmonise?: boolean;
 	filters?: RankFilters;
 	topK?: number;
 }
+/** A product reference, an explicit measurement (optionally checked against its product), or an upload. */
+export type SimilarRequest = SimilarSettings &
+	(
+		| { productId: string; measurementId?: string; uploadId?: never }
+		| { productId?: never; measurementId: string; uploadId?: never }
+		| { productId?: never; measurementId?: never; uploadId: string }
+	);
 export interface SimilarMatch extends DistanceResult {
 	candidate: CandidateInfo;
 	perSourceRange: [number, number] | null;

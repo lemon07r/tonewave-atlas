@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { AtlasService } from '../src/core/atlas/service.ts';
+import { requireAtlasReferences, requireAtlasWinners } from './atlas-guards.ts';
 
 const data = resolve('static/data');
 const service = new AtlasService({
@@ -29,14 +30,15 @@ const references = [
 			.map((m) => m.productId)
 	)
 ].slice(0, 3);
-const productId = references[0];
-if (!productId) throw new Error('No iem-711 default reference; run pnpm data:pull first.');
+const productId = requireAtlasReferences(references);
 const request = { productId, partition: 'iem-711', topK: 20 };
 let start = performance.now();
 const cold = await service.similar(request);
+requireAtlasWinners(cold, 'First similar');
 console.log(`First similar (catalog + rank decode + index): ${(performance.now() - start).toFixed(2)} ms`);
 start = performance.now();
-await service.similar(request);
+const resident = await service.similar(request);
+requireAtlasWinners(resident, 'Resident similar');
 console.log(`Resident similar: ${(performance.now() - start).toFixed(2)} ms`);
 const taste = {
 	partition: 'iem-711',
@@ -50,8 +52,8 @@ const taste = {
 };
 start = performance.now();
 const ranked = await service.taste(taste);
+requireAtlasWinners(ranked, 'Taste');
 console.log(`Taste (3 likes, includes model construction): ${(performance.now() - start).toFixed(2)} ms`);
 console.log(
 	`Dataset ${manifest.version}; products ${catalog.products.length}; iem-711 measurements ${catalog.partitions.find((p) => p.id === 'iem-711')?.measurementCount ?? 0}; winners ${cold.ok ? cold.results.length : 0}/${ranked.ok ? ranked.results.length : 0}`
 );
-if (!cold.ok || !ranked.ok) throw new Error('Benchmark request failed');

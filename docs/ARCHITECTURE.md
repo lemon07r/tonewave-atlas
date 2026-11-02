@@ -56,7 +56,8 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
   only when parseable as USD.
 - **Worker boundary.** `src/workers/analysis.ts` exposes a service factory through Comlink.
   `await getAnalysis(baseUrl)` in `src/lib/analysis/client.ts` lazily creates one worker and returns a
-  typed `Remote<Analysis>`; the UI supplies `asset('/data/')`. `dispose()` releases proxies and stops
+  typed `Remote<Analysis>`; the UI supplies `asset('/data/')`. `dispose()` rejects pending initialization,
+  releases the root endpoint once, then stops
   the worker. Requests contain ids/settings; results are plain data with typed arrays copied through
   structured clone, so the worker's cached curves are not detached. Uploads stay in worker memory and
   are never sent to a server. Upload-to-dataset comparisons require the caller to choose the rig.
@@ -81,9 +82,11 @@ unknown prices do not pass a price bound. Source filters select candidates with 
 in the set, without silently changing the consensus curve. Tuning candidates are opt-in through
 `filters.includeTunings`; similarity excludes the reference product's default but may include its
 explicit tunings when enabled. Taste always excludes every rated product, including its tunings.
+An explicit tuning measurement is never its own similarity candidate, even with tunings enabled.
 Multi-reference compare retains the reference products as Pareto endpoints alongside other defaults.
-Default partition selection uses the reference's largest measurement count, or the greatest coverage
-of eligible rated/reference items for taste/compare; ties use partition id order. A product with no
+Default partition selection uses the reference's largest contributing rankable-default measurement
+count, or the greatest coverage of usable rated/reference items for taste/compare; ties use partition
+id order. Explicit measurement references keep their own rig, including non-default variants. A product with no
 usable default on that rig requires an explicit measurement id rather than substituting a fit variant.
 
 ## Dataset files (`static/data/`)

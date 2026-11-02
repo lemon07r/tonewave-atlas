@@ -28,7 +28,8 @@ Equal response on a coupler does not establish equal response at a particular pe
 
 Inside each partition, the atlas service gives a product one reference: the per-frequency median of
 its **default-variant** rank measurements across available sources. Each measurement is aligned to
-the first by a uniform-weight LS level offset before taking the median. Missing frequencies remain
+the first measurement with adequate self-coverage by a uniform-weight LS level offset before taking
+the median. Missing frequencies remain
 missing unless another aligned measurement covers them; measurements with insufficient overlap with
 the anchor do not contribute, and their ids are not claimed as contributors. When requested and
 available, estimated source-offset curves are subtracted before alignment/median pooling. Missing
@@ -115,6 +116,8 @@ vocals (250 Hz–5 kHz), or treble (2–10 kHz). Custom nonnegative band multipl
 
 Optional treble sensitivity multiplies **squared positive** aligned residuals in 2–10 kHz by α; use
 `treblePenalty: 2` for the default sensitive setting (otherwise 1; values below 1 are clamped to 1).
+The atlas service boundary accepts only finite multipliers ≥1 and throws `RangeError` otherwise;
+the lower-level engine retains its clamping behavior. No finite upper cap is specified.
 c remains the symmetric LS alignment. This directional score is explicitly **not symmetric**; its
 penalty energy is included in band contribution shares, while band RMS stays in ordinary dB. Peak
 audibility exceeding dip audibility has qualitative support (Bücklein, 1981), but no universal α is

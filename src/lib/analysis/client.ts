@@ -8,6 +8,7 @@ let singleton:
 			worker: Worker;
 			root: Comlink.Remote<AnalysisWorker>;
 			remote: Promise<Comlink.Remote<Analysis>>;
+			cancelInitialization: () => void;
 	  }
 	| undefined;
 
@@ -20,8 +21,14 @@ export function getAnalysis(baseUrl: string): Promise<Comlink.Remote<Analysis>> 
 	}
 	const worker = new Worker(new URL('../../workers/analysis.ts', import.meta.url), { type: 'module' });
 	const root = Comlink.wrap<AnalysisWorker>(worker);
-	const remote = root.create(new URL(baseUrl, globalThis.location.href).href);
-	singleton = { baseUrl, worker, root, remote };
+	let cancelInitialization!: () => void;
+	const remote = new Promise<Comlink.Remote<Analysis>>((resolve, reject) => {
+		cancelInitialization = () => {
+			reject(new Error('Analysis worker disposed before initialization completed.'));
+		};
+		void root.create(new URL(baseUrl, globalThis.location.href).href).then(resolve, reject);
+	});
+	singleton = { baseUrl, worker, root, remote, cancelInitialization };
 	return remote;
 }
 
@@ -29,12 +36,7 @@ export function dispose(): void {
 	const current = singleton;
 	if (!current) return;
 	singleton = undefined;
-	void current.remote.then(
-		(remote) => {
-			remote[Comlink.releaseProxy]();
-		},
-		() => {}
-	);
+	current.cancelInitialization();
 	current.root[Comlink.releaseProxy]();
 	current.worker.terminate();
 }
