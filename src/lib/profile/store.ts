@@ -25,14 +25,20 @@ export function profileStore(storage: Storage, session?: Storage) {
 		if (restored) {
 			value = parseProfile(restored);
 			sessionOnly = restoredSession = true;
-			error = restoredNotice;
+			error = error ? `${error} ${restoredNotice}` : restoredNotice;
 		}
 	} catch {
-		/* Unavailable or malformed tab state must not overwrite canonical storage. */
+		// Unreadable tab state means an Undo was in progress; never let the next edit overwrite canonical storage.
+		sessionOnly = true;
+		const notice =
+			'Restored tab state could not be read. Edits stay in this session; export them to keep them.';
+		error = error ? `${error} ${notice}` : notice;
 	}
 	function saveSession(next: Profile) {
 		try {
-			session?.setItem(SESSION_KEY, JSON.stringify(next));
+			if (!session) throw new Error('Tab storage is unavailable');
+			session.setItem(SESSION_KEY, JSON.stringify(next));
+			error = restoredNotice;
 		} catch {
 			error = `${restoredNotice} Tab storage is unavailable; export before leaving this workspace.`;
 		}

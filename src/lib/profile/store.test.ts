@@ -79,3 +79,43 @@ test('malformed tab state is ignored, and failed session writes never fall back 
 	expect(store.error).toContain('Tab storage is unavailable');
 	expect(setItem).not.toHaveBeenCalled();
 });
+
+test('malformed tab state keeps the next edit out of canonical storage and says so', () => {
+	const setItem = vi.fn();
+	const store = profileStore(
+		{ getItem: () => JSON.stringify(emptyProfile()), setItem },
+		{ getItem: () => '{invalid', setItem: vi.fn() }
+	);
+	expect(store.error).toContain('Restored tab state could not be read');
+	store.change(edited);
+	expect(store.value).toEqual(edited);
+	expect(setItem).not.toHaveBeenCalled();
+});
+
+test('an unreadable canonical profile keeps its warning when a restored session also loads', () => {
+	const store = profileStore(
+		{ getItem: () => '{broken', setItem: vi.fn() },
+		{ getItem: () => JSON.stringify(edited), setItem: vi.fn() }
+	);
+	expect(store.value).toEqual(edited);
+	expect(store.error).toContain('has not been overwritten');
+	expect(store.error).toContain('session-only');
+});
+
+test('a recovered tab storage write clears the unavailable warning', () => {
+	let fail = true;
+	const session = {
+		getItem: () => null,
+		setItem: () => {
+			if (fail) throw new Error('blocked');
+		}
+	};
+	const store = profileStore({ getItem: () => null, setItem: vi.fn() }, session);
+	store.restoreSession(edited);
+	store.change(emptyProfile());
+	expect(store.error).toContain('Tab storage is unavailable');
+	fail = false;
+	store.change(edited);
+	expect(store.error).not.toContain('Tab storage is unavailable');
+	expect(store.error).toContain('session-only');
+});
