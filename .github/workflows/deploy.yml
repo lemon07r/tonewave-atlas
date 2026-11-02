@@ -53,6 +53,11 @@ jobs:
           key: ingest-${{ github.run_id }}
           restore-keys: ingest-
 
+      # Refresh builds need the previous catalogs, including inherited redirects.
+      # Pull failure stops publication rather than silently dropping link history.
+      - name: Restore published dataset and redirect baseline
+        run: pnpm data:pull
+
       - name: Crawl and build dataset
         if: steps.mode.outputs.refresh == 'true'
         run: |
@@ -65,10 +70,6 @@ jobs:
         with:
           path: .cache/ingest
           key: ingest-${{ github.run_id }}
-
-      - name: Reuse published dataset
-        if: steps.mode.outputs.refresh != 'true'
-        run: pnpm data:pull
 
       - run: pnpm build
 
