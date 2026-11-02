@@ -221,11 +221,7 @@ export class AtlasService {
 		const measurement = input.measurementId ? await this.locateMeasurement(input.measurementId) : null;
 		let productId = product?.product.id ?? input.productId;
 		// An exact historical measurement disambiguates a split product; current mismatches still fail.
-		if (
-			measurement &&
-			measurement.measurement.id !== input.measurementId &&
-			(!product || product.product.id !== input.productId)
-		)
+		if (measurement && measurement.measurement.id !== input.measurementId)
 			productId = measurement.measurement.productId;
 		const measurementId = measurement?.measurement.id ?? input.measurementId;
 		const changed = productId !== input.productId || measurementId !== input.measurementId;
