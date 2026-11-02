@@ -231,6 +231,12 @@ describe('deterministic catalog quality rules', () => {
 			expect(sampleContext([p]).has(p)).toBe(false);
 		}
 	);
+	it('removes credits before finding the shared filename prefix, including later measurements', () => {
+		const p = phone('Maker', 'Model', ['Model (by 냥냐냥)', 'Model (by Sample 2)']);
+		p.suffix = ['', ''];
+		expect(variant(p, 1, 'm-later')).toMatchObject({ label: '', kind: 'unknown', isDefault: false });
+		expect(sampleContext([p]).has(p)).toBe(false);
+	});
 	it('detects duplicate shapes at quantization tolerance but retains distinct shape or coverage', () => {
 		const a = Float64Array.from(RANK_GRID, (_, i) => 70 + i / 20);
 		expect(

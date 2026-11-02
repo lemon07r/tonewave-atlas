@@ -116,7 +116,7 @@ export function sampleContext(phones: readonly Phone[]): ReadonlySet<Phone> {
 }
 
 function descriptor(phone: Phone, index: number): string {
-	const file = phone.file[index] ?? '';
+	const file = withoutAttribution(phone.file[index] ?? '');
 	// Descriptors, not the product's own name: e.g. a sample of Tangzu ON must not become tuning.
 	let firstDescriptor = file;
 	for (const prefix of [`${phone.brand} ${phone.name}`, phone.name]) {
@@ -135,7 +135,9 @@ function descriptor(phone: Phone, index: number): string {
 	return withoutAttribution(
 		(
 			phone.suffix[index]?.trim() ||
-			(index === 0 ? firstDescriptor : file.slice(commonPrefix(phone.file[0] ?? '', file)))
+			(index === 0
+				? firstDescriptor
+				: file.slice(commonPrefix(withoutAttribution(phone.file[0] ?? ''), file)))
 		).replace(modelPattern, '')
 	);
 }
