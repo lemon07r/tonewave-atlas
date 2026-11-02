@@ -1,0 +1,181 @@
+@import '@fontsource-variable/newsreader';
+
+/* Direction A — Listening Room. Warm editorial pages around a cobalt instrument. */
+:root {
+	--paper: #f4f0e6;
+	--surface: #fffdf7;
+	--subtle: #e8e2d5;
+	--ink: #172337;
+	--muted: #555d6a;
+	--line: #d7d1c4;
+	--strong-line: #797b7e;
+	--accent: #234ac3;
+	--accent-ink: #ffffff;
+	--accent-soft: #e2e7f7;
+	--detail: #93502c;
+	--caution: #805017;
+	--caution-soft: #f2e5cc;
+	--curve-1: #234ac3;
+	--curve-2: #994a25;
+	--curve-3: #7741a0;
+	--curve-4: #a8325c;
+	--curve-5: #316a66;
+	--curve-6: #405a95;
+	--curve-7: #806000;
+	--display: 'Newsreader Variable', Georgia, serif;
+	--radius: 2px;
+	--text-title: clamp(2.7rem, 4.4vw, 4.5rem);
+}
+:root[data-theme='dark'] {
+	--paper: #171b25;
+	--surface: #202633;
+	--subtle: #292f40;
+	--ink: #f2ecde;
+	--muted: #b6bdce;
+	--line: #3c4354;
+	--strong-line: #8790a6;
+	--accent: #a5b8ff;
+	--accent-ink: #172148;
+	--accent-soft: #303c60;
+	--detail: #edb18e;
+	--caution: #efc583;
+	--caution-soft: #3c3227;
+	--curve-1: #a5b8ff;
+	--curve-2: #f4ad7d;
+	--curve-3: #c5a8ef;
+	--curve-4: #f29abd;
+	--curve-5: #81c9c2;
+	--curve-6: #93c4f4;
+	--curve-7: #e7ce7e;
+}
+body .page h1 {
+	font-family: var(--display);
+	font-weight: 450;
+	letter-spacing: -0.045em;
+	line-height: 1.03;
+}
+body .site-header {
+	border-top: 4px solid var(--ink);
+}
+body .page.discover {
+	padding-top: 36px;
+}
+body .page.discover.starting .page-heading {
+	display: grid;
+	grid-template-columns: 1.25fr 0.75fr;
+	gap: 72px;
+	align-items: end;
+	padding-bottom: 34px;
+	border-bottom: 1px solid var(--strong-line);
+	margin-bottom: 36px;
+}
+body .page.discover.starting .page-heading h1 {
+	font-size: clamp(48px, 5.3vw, 76px);
+	max-width: 16ch;
+}
+body .page.discover.starting .page-heading p {
+	margin: 0 0 4px;
+	font-size: 17px;
+	line-height: 1.65;
+	max-width: 34ch;
+}
+body .page.discover.starting .discover-grid {
+	gap: 80px;
+	grid-template-columns: 1.05fr 0.95fr;
+}
+body .page.discover .starting-examples {
+	border-left: 1px solid var(--line);
+	padding-left: 40px;
+}
+body .page.discover .start-guide h2,
+body .page.discover .examples-heading h2,
+body .page.discover .example-name strong,
+body .result-row .result-model {
+	font-family: var(--display);
+	font-weight: 500;
+}
+body .page.discover .example-name strong {
+	font-size: 31px;
+}
+body .page.discover .example {
+	padding-block: 16px;
+}
+body .fr-chart {
+	border-top: 3px solid var(--detail);
+	padding: 22px;
+}
+body .fr-chart .plot {
+	height: 292px;
+}
+body .segmented {
+	border: 0;
+	padding: 0;
+	gap: 16px;
+	border-radius: 0;
+	border-bottom: 1px solid var(--line);
+}
+body .segmented span {
+	padding: 8px 0;
+	border-radius: 0;
+	border-bottom: 2px solid transparent;
+}
+body .segmented input:checked + span {
+	background: none;
+	color: var(--accent);
+	border-color: var(--accent);
+}
+body .result-row {
+	padding-block: 20px;
+}
+body .result-row .rank {
+	color: var(--detail);
+}
+body .result-row .result-model {
+	font-size: 27px;
+}
+body .method .eyebrow {
+	text-transform: none;
+	letter-spacing: 0;
+}
+@media (max-width: 900px) {
+	body .page.discover.starting .page-heading {
+		grid-template-columns: 1fr;
+		gap: 20px;
+	}
+	body .page.discover.starting .discover-grid {
+		grid-template-columns: 1fr;
+		gap: 32px;
+	}
+	body .page.discover .starting-examples {
+		border-left: 0;
+		padding-left: 0;
+	}
+}
+@media (max-width: 640px) {
+	body .page.discover {
+		padding-top: 28px;
+	}
+	body .page.discover.starting .page-heading {
+		padding-bottom: 26px;
+		margin-bottom: 24px;
+	}
+	body .page.discover.starting .page-heading h1 {
+		font-size: 48px;
+	}
+	body .page.discover.starting .page-heading p {
+		font-size: 15px;
+	}
+	body .page.discover .start-guide {
+		padding-top: 16px;
+		margin-top: 16px;
+	}
+	body .fr-chart {
+		padding: 16px 10px;
+	}
+	body .fr-chart .plot {
+		height: 244px;
+	}
+	body .result-row .result-model {
+		font-size: 25px;
+	}
+}
