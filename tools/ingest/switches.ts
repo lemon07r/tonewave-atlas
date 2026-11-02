@@ -299,6 +299,8 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 				const selected = eligible.find((m) => m.variant.isDefault) ?? eligible[0];
 				const explicit = ms.filter((m) => state(m) !== null);
 				if (!selected && explicit.length) unresolvedSources.push(source);
+				// Unresolved multiple defaults must survive unchanged unless the selected state is present.
+				if (!selected && before.length > 1) continue;
 				if (!explicit.length) continue;
 				for (const m of explicit)
 					if (m.variant.kind !== 'unit') {

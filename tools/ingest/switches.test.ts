@@ -118,6 +118,19 @@ describe('final partition-aware default coverage', () => {
 		expect(rows.slice(2).map((r) => r.measurement.variant.isDefault)).toEqual([true, true]);
 		expect(result.unresolvedMultipleDefaults.map((g) => g.source)).toEqual(['unresolved']);
 	});
+	it('preserves multiple defaults through reconciliation when the selected encoding is absent', () => {
+		const rows = [
+			row('a', 'Volume S DD'),
+			row('b', 'Volume S DD'),
+			row('mixed', 'Volume S 00'),
+			row('mixed', 'Volume S 11')
+		];
+		const decisions = reconcileSwitchDefaults(products(), rows).decisions;
+		expect(decisions[0]?.preferred).toBe('switch:du:dd');
+		expect(rows.slice(2).map((r) => r.measurement.variant.isDefault)).toEqual([true, true]);
+		const final = finaliseDefaults(products(), rows, decisions);
+		expect(final.unresolvedMultipleDefaults.map((g) => g.source)).toEqual(['mixed']);
+	});
 });
 
 describe('switch-state identity and source-balanced defaults', () => {
