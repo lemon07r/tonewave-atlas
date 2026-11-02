@@ -29,7 +29,7 @@ export function smoothOctave(
 
 	for (let i = 0; i < n; i++) {
 		const centre = values[i] ?? NaN;
-		if (Number.isNaN(centre)) {
+		if (!Number.isFinite(centre)) {
 			out[i] = NaN;
 			continue;
 		}
@@ -39,7 +39,7 @@ export function smoothOctave(
 		const hi = Math.min(n - 1, i + radius);
 		for (let j = lo; j <= hi; j++) {
 			const v = values[j] ?? NaN;
-			if (Number.isNaN(v)) continue;
+			if (!Number.isFinite(v)) continue;
 			const w = kernel[j - i + radius] ?? 0;
 			sum += w * v;
 			weight += w;
