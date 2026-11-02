@@ -138,12 +138,12 @@
 		error = '';
 		void Promise.all([productList(selectedForm), analysis().then((service) => service.summary())])
 			.then(async ([list, data]) => {
-				const current = await catalogIdentity(selectedForm, data.version);
 				if (!abort.signal.aborted) {
-					identity = current;
 					products = list;
 					summary = data;
 				}
+				const current = await catalogIdentity(selectedForm, data.version).catch(() => undefined);
+				if (!abort.signal.aborted) identity = current;
 			})
 			.catch((e: unknown) => {
 				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);

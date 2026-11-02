@@ -5,23 +5,15 @@ import { analysis } from '#lib/atlas.ts';
 import type { Channel } from '#lib/compare/url.ts';
 import { resolve } from '$app/paths';
 import { AsyncLru } from '#lib/analysis/cache.ts';
-import { CatalogIdentity, type RedirectCatalog } from '#lib/catalog/identity.ts';
+import { CatalogIdentity } from '#lib/catalog/identity.ts';
+import { catalogMetadata } from '#lib/catalog/client.ts';
 
 const identities = new AsyncLru<string, CatalogIdentity>(4);
 
 /** UI lookups must resolve the catalog's ids before relying on engine-returned canonical ids. */
 export function catalogIdentity(form: Form, version: string): Promise<CatalogIdentity> {
 	const url = `${resolve('/')}data/${version}/catalog-${form}.json.gz`;
-	return identities.get(url, async () => {
-		const response = await fetch(url);
-		if (!response.ok) throw new Error(`Catalog identity request failed (${response.status}).`);
-		const bytes = new Uint8Array(await response.arrayBuffer());
-		const text =
-			bytes[0] === 0x1f && bytes[1] === 0x8b
-				? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
-				: new TextDecoder().decode(bytes);
-		return new CatalogIdentity(JSON.parse(text) as RedirectCatalog);
-	});
+	return identities.get(url, async () => new CatalogIdentity((await catalogMetadata(url)).identity));
 }
 
 export function productFor<T extends { id: string }>(

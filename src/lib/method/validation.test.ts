@@ -42,3 +42,27 @@ test('uses current published metadata without substituting absent legacy fields'
 	});
 	expect(() => validationFigures({})).toThrow('partition metadata');
 });
+
+test('legacy statistics without support or harmonisation remain unknown, and low support keeps its reason', () => {
+	const figures = validationFigures({
+		partitions: [
+			{ id: 'legacy', statistics: { spread: [1], populationMedian: [80], sourceOffsets: { s: [0] } } },
+			{ id: 'low', statistics: { support: { status: 'low', reason: 'Too few shared products' } } },
+			{ id: 'unreported', statistics: { support: { status: 'low' } } }
+		]
+	});
+	expect(figures[0]).toEqual({
+		id: 'legacy',
+		support: 'Cross-source support not reported',
+		products: null,
+		sources: null,
+		pairs: null,
+		folds: null,
+		before: null,
+		after: null,
+		medianBefore: null,
+		improvements: []
+	});
+	expect(figures[1]?.support).toBe('Too few shared products');
+	expect(figures[2]?.support).toBe('Cross-source support not reported');
+});

@@ -3,8 +3,13 @@ import type { ProductListItem } from '#core/atlas/types.ts';
 import { catalogIdentity, priceListings, productFor } from './data.ts';
 import { gzipSync } from 'node:zlib';
 
+vi.mock('#lib/catalog/client.ts', async () => ({
+	catalogMetadata: (await import('#lib/catalog/metadata.ts')).readCatalogMetadata
+}));
+
 test('loads redirects from both gzip and decoded catalogs and retries failed requests', async () => {
 	const fixture = {
+		partitions: [],
 		products: [{ id: 'now', brand: 'Fixture', model: 'One' }],
 		measurements: [{ id: 'm-now', productId: 'now' }],
 		redirects: { products: { old: 'now' }, measurements: { 'm-old': 'm-now' } }

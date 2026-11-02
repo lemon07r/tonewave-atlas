@@ -320,15 +320,24 @@
 		profile = store.value;
 		storageError = store.error;
 		ready = true;
-		let active = true;
+		const startup = new AbortController();
+		// A function, so narrowing after one check doesn't hide a later abort across awaits.
+		const cancelled = () => startup.signal.aborted;
 		void Promise.all([productList(form), analysis().then((service) => service.summary())])
 			.then(async ([list, info]) => {
-				const catalogs: Partial<Record<Form, CatalogIdentity>> = {
-					[form]: await catalogIdentity(form, info.version)
-				};
+				if (cancelled()) return;
+				products = list;
+				summary = info;
+				catalogLoading = false;
+				const catalogs: Partial<Record<Form, CatalogIdentity>> = {};
 				const other = form === 'iem' ? 'headphone' : 'iem';
-				if (profile.profiles[other].length) catalogs[other] = await catalogIdentity(other, info.version);
-				if (active) {
+				await Promise.all(
+					([form, ...(profile.profiles[other].length ? [other] : [])] as Form[]).map(async (selectedForm) => {
+						const current = await catalogIdentity(selectedForm, info.version).catch(() => undefined);
+						if (current) catalogs[selectedForm] = current;
+					})
+				);
+				if (!cancelled()) {
 					const before = profile;
 					const migrated = migrateProfile(profile, catalogs);
 					migrationNote = migrationMessages(migrated.messages);
@@ -340,19 +349,16 @@
 					}
 					identity = catalogs[form];
 					if (identity) await migrateLocation(page.url.href, identity);
-					products = list;
-					summary = info;
-					catalogLoading = false;
 				}
 			})
 			.catch((cause: unknown) => {
-				if (active) {
+				if (!cancelled()) {
 					catalogError = errorText(cause);
 					catalogLoading = false;
 				}
 			});
 		return () => {
-			active = false;
+			startup.abort();
 			controller.invalidate();
 		};
 	});

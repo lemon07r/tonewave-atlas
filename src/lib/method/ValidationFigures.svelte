@@ -34,7 +34,7 @@
 	const count = (value: number | null) => (value === null ? 'not reported' : value.toLocaleString('en-US'));
 </script>
 
-<div class="validation" aria-label="Published dataset validation">
+<div class="validation" role="region" aria-label="Published dataset validation">
 	<p>
 		Dataset <span class="mono">{summary.version}</span> · built {summary.builtAt.slice(0, 10)}. Figures below
 		come from this build’s published partition metadata.

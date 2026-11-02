@@ -67,22 +67,23 @@
 		void (async () => {
 			const service = await analysis();
 			const [list, data] = await Promise.all([productList(selectedForm), service.summary()]);
-			const identity = await catalogIdentity(selectedForm, data.version);
 			abort.signal.throwIfAborted();
-			const migrated = migrateUrl(new URL(href), identity);
-			const fresh = migrationMessages(migrated.messages);
-			if (fresh.length) migrationNote = [...migrationNote, ...fresh];
-			if (migrated.changed)
-				await goto(
-					resolve(
-						`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
-					),
-					{ state: page.state, shallow: true, replace: true, reset: false }
-				);
 			products = list;
 			summary = data;
 			if (id) {
-				const canonical = migrated.url.searchParams.get('product') ?? id;
+				const identity = await catalogIdentity(selectedForm, data.version).catch(() => undefined);
+				abort.signal.throwIfAborted();
+				const migrated = identity ? migrateUrl(new URL(href), identity) : undefined;
+				const fresh = migrationMessages(migrated?.messages ?? []);
+				if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+				if (migrated?.changed)
+					await goto(
+						resolve(
+							`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+						),
+						{ state: page.state, shallow: true, replace: true, reset: false }
+					);
+				const canonical = migrated?.url.searchParams.get('product') ?? id;
 				if (!productFor(list, canonical, identity))
 					throw new Error(
 						'This product is not in the selected form-factor catalog. Switch modes or return to the catalog.'
