@@ -78,14 +78,6 @@
 <header class="site-header">
 	<div class="header-inner">
 		<a href={href('/')} class="wordmark" aria-label="Tonewave Atlas home"
-			><svg
-				width="32"
-				height="32"
-				viewBox="0 0 32 32"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.5"
-				aria-hidden="true"><path d="M2 18h4l3-9 5 17 5-21 4 13h7" /></svg
 			><span>Tonewave <span class="atlas">Atlas</span></span></a
 		>
 		<nav class="desktop-nav" aria-label="Primary">
@@ -187,9 +179,6 @@
 		font-size: 18px;
 		font-weight: 600;
 		letter-spacing: -0.04em;
-	}
-	.wordmark > :global(svg) {
-		color: var(--accent);
 	}
 	.atlas {
 		font-weight: 400;
@@ -333,9 +322,6 @@
 		}
 		.wordmark {
 			font-size: 17px;
-		}
-		.wordmark > :global(svg) {
-			width: 26px;
 		}
 		.form-switch {
 			display: none;

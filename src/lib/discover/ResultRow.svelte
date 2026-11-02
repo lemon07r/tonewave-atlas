@@ -66,8 +66,10 @@
 	<div class="row-heading">
 		<span class="rank mono">{rank.toString().padStart(2, '0')}</span>
 		<h3>
-			{candidate.product.brand}
-			{candidate.product.model}{#if candidate.variantLabel}<span class="variant">
+			<span class="result-brand">{candidate.product.brand}</span>
+			<span class="result-model">{candidate.product.model}</span>{#if candidate.variantLabel}<span
+					class="variant"
+				>
 					· {candidate.variantLabel}</span
 				>{/if}
 		</h3>
