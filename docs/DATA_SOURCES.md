@@ -29,16 +29,27 @@ local ingestion state, never part of the published dataset. Discovery must succe
 
 ## Rigs and processing
 
-- IEMs on 711-family couplers and B&K 5128 are separate partitions. An IEM entry without a recognised
-  rig defaults to 711-family and is marked as inferred, not verified hardware; explicit partition
-  overrides are curator decisions.
+- IEMs on 711-family couplers and B&K 5128 are separate partitions. Source `rigEvidence` is `verified`
+  (recognised config hardware, directory database type 5128, or a rationale-bearing override),
+  `evidenced` (the product-overlap test below), or `unknown`. Unknown IEM rigs use `iem-source-<id>`:
+  measurements remain visible, but never silently join a shared ranking partition. `rigInferred`
+  remains for older readers; evidence is not independent hardware certification.
 - Headphones never share an IEM partition, including databases labelled “5128” under `/headphones/`.
-  Explicit 5128, 4128 and miniDSP EARS families can share their own headphone partition (EARS Pro
+  Maker/model form rules audit every source index, including explicit `[IEMs]` categories in headphone
+  databases. Reclassifications keep all channels and original URLs. Mixed-source `forms`/`partitions`
+  list actual membership; a source can appear in both form catalogs. Explicit 5128, 4128 and miniDSP EARS families can share their own headphone partition (EARS Pro
   remains separate); other headphone rigs remain source-specific. `data/sources.json` owns overrides.
 - The parser ignores phase, drops nonfinite rows, averages duplicate Hz in dB, sorts and validates.
   Curves are linearly interpolated in log Hz on the canonical 240-bin 1/24-octave grid, never
-  extrapolated. Flat/absurd curves and target, calibration, delta-symbol (∆/Δ) and EQ sandbox names are
-  rejected. The word “Delta” alone is ambiguous with product names and is not an exclusion.
+  extrapolated. Flat raw curves (<0.05 dB range), >100 dB ranges, calibrated values outside ±200 dB,
+  and calibrated curves with fewer than 16 finite bins are rejected. Targets, calibration curves,
+  delta-symbol (∆/Δ) curves, averages and EQ-applied curves are non-products. EQ matching uses tokens,
+  not substrings: Fatfreq, bleqk, SuperEQ and Tequila are retained, as is the genuine Ecoustic EQ-100.
+  Explicit no/default/blank/zero/flat-EQ labels, and `EQ: Neutral/Normal/Original` states
+  (including `EQ: None` and `PEQ - no gain`)
+  are retained; these are source labels, not independently verified zero processing. Numbered EQ
+  presets, named custom “Neutral EQ”, and neutral-plus-boost states are excluded. The word “Delta”
+  alone is not an exclusion.
 - Detail packs retain each available channel and numbered repetition. Ranking uses finite dB means
   within repeated channels, then the L/R dB mean (or available channel), 1/12-octave smoothing and
   every second canonical bin. Missing data stays missing. Channel contribution masks and paired-bin
@@ -57,7 +68,30 @@ local ingestion state, never part of the published dataset. Discovery must succe
   population median and shrunk source offsets. Unsupported bins are JSON `null`, never invented zeros;
   TWFR remains v1 (additive JSON metadata, unchanged binary samples).
 
-### Statistics support and validation
+## Evidence and validation
+
+### Rig evidence
+
+The signed rig projection uses one stable-ID default per product/source and the engine's log-grid
+consensus and least-squares level alignment, with uniform weights on the full rank grid. Its direction
+is the binwise median of (verified-5128 consensus − verified-711 consensus) over shared products.
+Only bins with a 95% product-bootstrap median interval excluding zero and at least 50% product support
+are used. Each source's binwise median residual against at least three **other** verified-711 sources
+is projected onto that direction: dot(residual, direction) / dot(direction, direction). Zero is
+711-like; one is 5128-like. Source intervals use 500 product-bootstrap replicates, conditional on the
+learned direction; seeds and ordering are deterministic. Controls leave themselves out of both the
+reference and direction. Total response distance is retained for comparison, not classification.
+
+The threshold bisects the nearest control interval bounds. Controls must have disjoint intervals and
+a score gap exceeding three times their median interval width (at least three 711 and two 5128 controls).
+Minimum overlap is selected from 4/8/12/16/20/24/32 products: 200 subsamples without replacement must
+classify correctly in at least 99% of trials for **every** eligible control, including at least two
+5128 controls. An unverified source needs that overlap and an interval wholly on one side of the
+threshold; otherwise it stays unknown. Insufficiently separated/stable controls stop the real build.
+`report.json` records the direction, bin support, control scores, intervals, stability trials and every
+source decision. No unverified source trains this test; evidenced sources do not certify hardware.
+
+### Partition statistics
 
 Statistics use only products with at least two distinct sources. Each product/source contributes one
 default rank curve (lowest stable measurement ID breaks ties); non-default tuning/fit/unit variants
@@ -94,7 +128,8 @@ processing steps and every successful parse warning (including dropped rows or m
 
 ### Commands and reports
 
-Updates are explicit: `pnpm data:crawl`, then `pnpm data:build`. There is no automatic schedule yet.
+Manual updates use `pnpm data:crawl`, then `pnpm data:build`. The Deploy workflow also re-crawls weekly
+on Monday at 06:17 UTC (`17 6 * * 1`) before rebuilding and deploying.
 Use `--sites superreview,elrics --limit 10` for a partial crawl (limit is filename stems per database).
 The crawler uses an identifying User-Agent, four global request slots (never more than six),
 conditional ETag/Last-Modified requests, persistent content-addressed cache, and exponential backoff.
@@ -122,11 +157,29 @@ variants in partial crawls from rejected measurements, and list parsing failures
 brands, duplicate index rows, normalised identity collisions, and suspicious adjacent near-names. Exact
 duplicate index rows are removed; duplicate measurement identities retain the first accepted entry
 with a report entry. Fuzzy names are never
-automatically merged. Abbreviations may remain separate products; heuristic variant kinds can be
-wrong and always retain the original label. Newer index schemas without `file` lists are reported as
+automatically merged. Abbreviations may remain separate products. Variant kinds retain the original
+label: replacement samples (`S2`, sample/unit 2, `(by person)`) take precedence as `unit`; tips, foam,
+insertion and pads are `fit`; switches, filters, impedance, nozzles and DSP are `tuning`; cables and
+adapters are `setup`. Classification uses descriptors rather than the stock model's words. The first
+stock file remains default, including explicitly labelled sample 1; a replacement sample 2 does not.
+Newer index schemas without `file` lists are reported as
 unsupported, not silently guessed. Source hardware, raw calibration, insertion, tips, seal and prices
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
 and inter-source differences require caution.
+
+Blank/placeholder identities and unresolved leading markers are quarantined. Numeric models such as
+Binary 1900 are legitimate when their maker is named; wholly symbolic/numeric identities are not.
+Explicit fake/replica/counterfeit names or file descriptors, clone/copy product names, and unidentified
+one-character custom names are non-products. Clone accessories alone do not make the product fake.
+Earphones Archive's `*` is a mixed index category, not a uniform fake flag (its index, config and page
+do not define a stronger meaning). Named mods/DIY/prototypes remain separate, source-attributed custom
+products; an explicitly modified file grouped under stock gets its own full descriptor in the identity.
+No mod label is stripped to merge it into stock. Near-identical defaults from the same source and
+normalized product identity retain the first accepted curve only when coverage matches, aligned RMS
+is ≤0.01 dB and every aligned bin differs by ≤0.02 dB. Separately labelled units/fits/tunings are not
+deduplicated by shape. Quarantine reasons, marker changes, variant corrections and per-database form
+counts are written to the report. The build stops if this removes >3% of legitimate defaults from a
+partition of at least 200 measurements; non-product exclusions and data-preserving moves are exempt.
 
 Product identity removes complete leading raw or canonical brand names using the same case, accent,
 spacing and punctuation normalization as identity, with a nonempty remainder; partial words remain
@@ -249,3 +302,54 @@ Switch encodings are retained as supplied: no unverified DD ↔ 00 correspondenc
 |   18 | KZ Castor Pro Black (IEM; 5)             | DDDD/DDDU/DDUD/DUDD/UDDD settings; Pro is also not stripped.                                                                          |
 |   19 | KZ Krilla (IEM; 5)                       | DDDD/DDDU/DDUD/DUDD/UDDD settings.                                                                                                    |
 |   20 | Night Oblivion W20 (IEM; 5)              | DDD/DDU/DUD/UDD/UUU settings.                                                                                                         |
+
+### Catalog-quality audit (November 2026)
+
+The offline rebuild from `ef7ead8fc680aae919189e39` to `abae8ab46fc2d5afd215c344` changes
+**10,013 → 10,001 products** and **41,064 → 39,798 measurements**, retaining all **138 databases /
+118 publishers**. The 1,266 previously published exclusions are 1,102 EQ-applied curves, 70 explicitly
+fake/replica/counterfeit/clone/copy entries, 84 placeholder brand/model identities, two unidentified
+one-character customs, two population averages and six target/calibration/delta/sandbox entries.
+There are **zero legitimate duplicate-default removals**; the duplicate guard is tested but finds no
+new matches in this cache. The report's 1,403 quarantine candidates also include uncached or
+previously rejected entries, so they are not the published before/after removal total.
+
+All 142 available source indexes were audited (four have no accepted curves). Data-preserving form
+corrections move **651 measurements across 30 databases**: 161 IEM-tagged → headphone and 490
+headphone-tagged → IEM. [Listener's protected 5128 database](https://listener.squig.link/5128/) retains
+its measurements: 47 headphone measurements / 38 prior product identities move to `headphone-5128`.
+The preliminary 45/36 count missed the case variants HD660s2 and HD800s. Maker/model rules also catch
+headphones in HBB, Hu-Fi and Regancipher, and IEMs in Sai's explicit `[IEMs]` group and Auriculares
+Argentina. There are 120 category/marker corrections and 2,876 variant-kind corrections; named mods
+retain distinct identities and their original file URLs. KZ Unknown (`Kz Un`) and CVJ Unknown
+(`Cvj Un`) came directly from HBB's index: the parser previously validated strings without a semantic
+placeholder check. Both are now quarantined, not assigned invented models.
+
+Rig evidence uses 236 direction products and 116/120 rank bins. The nearest leave-source-out control
+interval bounds are **0.390095 / 0.844076**, giving threshold **0.617086**. At four products the least
+stable control classifies correctly in 197/200 trials; at **eight products all 37 eligible controls
+achieve 200/200**, so eight is the minimum. Larger 24/32-product trials lack two eligible 5128 controls
+and cannot establish sufficiency. Among databases with accepted IEMs: 35 are config-verified 711,
+three directory-verified 5128, 70 evidenced 711, and 15 unknown. The latter retain 1,158 IEM
+measurements in source-specific partitions. No unverified source becomes a 5128 control.
+
+| Partition      | Multi-source products before → after | Held-out pairs before → after | Current mean before → after dB | Current fold mean-improvement range dB |
+| -------------- | -----------------------------------: | ----------------------------: | -----------------------------: | -------------------------------------: |
+| IEM 711        |                        2,500 → 2,410 |               83,575 → 79,910 |            1.758759 → 1.568341 |                    0.180169 … 0.196132 |
+| IEM 5128       |                              22 → 22 |                       28 → 28 |            1.633987 → 1.627507 |                   −0.009648 … 0.094329 |
+| Headphone 5128 |                               3 → 19 |                        3 → 19 |            1.574191 → 1.564997 |                   −0.025221 … 0.038159 |
+
+Headphone 5128 remains low-support (19 products, below 20), despite its increased overlap. IEM 5128's
+pooled median improvement is slightly negative (−0.000032 dB); these results do not justify claiming
+universal benefit from harmonisation. The full support, fold and band-spread arrays remain in the
+report. All 231 artifact sizes/hashes and 228 binary packs were checked: 39,798 rank curves and
+78,452 detail-channel curves, with catalog references intact. Retained measurements preserve channel
+metadata, dates, prices, review URLs and original/calibration URLs.
+
+Remaining cross-form names are reported, not merged: 1MORE Triple Driver genuinely names both forms;
+QKZ MDR, Yuin PK1 and TrueFree O1 are embedded earbud/open-ear candidates in mixed databases. Directory
+earbud databases remain excluded, but such mixed-index entries still need a supported form policy;
+the audit preserves them rather than inventing a third core `Form`. Per-source rig scores/config text,
+every scanned database's form counts, all quarantine reasons and remaining conflicts are recorded in
+`.cache/ingest/report.json` (`rigEvidence`, `sourceEvidence`, `quality`, `quarantineSummary`,
+`remainingFormConflicts`).
