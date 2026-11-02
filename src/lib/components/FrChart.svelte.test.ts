@@ -148,3 +148,14 @@ test('readout distinguishes neighbouring grid samples that share an axis label',
 	scrubber.dispatchEvent(new Event('input', { bubbles: true }));
 	await expect.element(screen.getByText('1318 Hz', { exact: true })).toBeVisible();
 });
+
+test('multiple references use distinct dash and colour slots in the legend', async () => {
+	const screen = await render(FrChart, { series: series.map((item) => ({ ...item, reference: true })) });
+	const lines = [...screen.container.querySelectorAll('.legend-row line')];
+	expect(lines.map((line) => line.getAttribute('stroke-dasharray'))).toEqual(['', '14 5', '4 4']);
+	expect(lines.map((line) => line.getAttribute('stroke'))).toEqual([
+		'var(--curve-1)',
+		'var(--curve-2)',
+		'var(--curve-3)'
+	]);
+});

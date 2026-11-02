@@ -1,5 +1,7 @@
 import type { FrSeries } from '#lib/chart.ts';
 import type { DiscoveryResult } from './query.ts';
+import type { Source } from '#core/dataset/types.ts';
+import { rigLabel } from '#lib/rigs.ts';
 
 /** No interpolation, smoothing or second alignment: these are the exact values scored by the worker. */
 export function rankedSeries(
@@ -9,6 +11,8 @@ export function rankedSeries(
 ): FrSeries[] {
 	const chosen = result.data.results.filter((row) => overlays.includes(row.candidate.id));
 	const series: FrSeries[] = [];
+	const attribution = (sources: readonly Source[]) =>
+		`${sources.map((source) => `${source.name} ${source.url}`).join('; ') || 'No measured-source attribution returned'} · ${rigLabel(result.data.partition, sources)} · as ranked, level-aligned${result.data.harmonised ? ', reviewer offsets corrected' : ''}`;
 	if (result.kind === 'similar')
 		series.push({
 			id: 'reference',
@@ -16,7 +20,8 @@ export function rankedSeries(
 				? nameFor(result.data.reference.productId)
 				: 'Your local measurement',
 			values: result.data.reference.rankCurve,
-			reference: true
+			reference: true,
+			attribution: attribution(result.data.reference.sources)
 		});
 	else if (result.kind === 'compare')
 		for (const [index, reference] of result.data.references.entries())
@@ -24,7 +29,8 @@ export function rankedSeries(
 				id: `reference-${index}`,
 				label: nameFor(reference.productId ?? ''),
 				values: reference.rankCurve,
-				reference: true
+				reference: true,
+				attribution: attribution(reference.sources)
 			});
 	else {
 		const tastes = chosen.length
@@ -37,7 +43,8 @@ export function rankedSeries(
 				id: `taste-${taste.id}`,
 				label: `Taste ${taste.id + 1} centre (derived)`,
 				values: taste.centre,
-				reference: true
+				reference: true,
+				attribution: 'Derived taste centre · as ranked; not a new measurement'
 			});
 	}
 	for (const row of chosen) {
@@ -51,8 +58,31 @@ export function rankedSeries(
 			id: row.candidate.id,
 			label: `${row.candidate.product.brand} ${row.candidate.product.model}${row.candidate.variantLabel ? ` · ${row.candidate.variantLabel}` : ''}${'tasteId' in row ? ` · Taste ${row.tasteId + 1}` : ''}${alignment}`,
 			values: row.rankCurve,
-			attribution: `${result.data.partition} · as ranked, level-aligned${result.data.harmonised ? ', reviewer offsets corrected' : ''}`
+			attribution: attribution(row.candidate.sources)
 		});
 	}
 	return series;
+}
+
+/** Separate alignment coordinate systems without transforming any returned samples. */
+export function rankedGroups(
+	result: DiscoveryResult,
+	overlays: readonly string[],
+	nameFor: (id: string) => string
+) {
+	const series = rankedSeries(result, overlays, nameFor).map((item, styleIndex) => ({ ...item, styleIndex }));
+	if (result.kind !== 'compare')
+		return [{ id: 'rank', label: 'Frequency response', baselineId: series[0]?.id ?? '', series }];
+	return result.data.references.map((reference, index) => {
+		const ids = result.data.results
+			.filter((row) => row.alignedTo === index && overlays.includes(row.candidate.id))
+			.map((row) => row.candidate.id);
+		const id = `reference-${index}`;
+		return {
+			id,
+			label: `Aligned to ${nameFor(reference.productId ?? '')}`,
+			baselineId: id,
+			series: series.filter((item) => item.id === id || ids.includes(item.id))
+		};
+	});
 }

@@ -3,6 +3,7 @@ import type { CompareResult, SimilarResult, TasteResult } from '#core/atlas/type
 import { rankedSeries } from './rank-series.ts';
 import { nearestLikedEvidence } from './evidence.ts';
 import { RANK_GRID } from '#core/grid.ts';
+import type { Source } from '#core/dataset/types.ts';
 
 const candidate = {
 	id: 'match',
@@ -59,6 +60,20 @@ test('compare overlays preserve exact returned values aligned to the second refe
 	]);
 });
 test('plotted reference and candidate values equal returned rank values, including gaps and offsets', () => {
+	const source: Source = {
+		id: 'reviewer',
+		name: 'Measured by Reviewer',
+		url: 'https://reviewer.example/measurements',
+		username: 'reviewer',
+		dbType: 'squig',
+		form: 'iem',
+		partition: 'iem-711',
+		rig: null,
+		rigInferred: true,
+		permission: 'public, not explicitly licensed',
+		crawledAt: '',
+		calibration: null
+	};
 	const reference = new Float64Array([1, 3, NaN]);
 	const ranked = new Float64Array([2, -1, NaN]);
 	const result: SimilarResult = {
@@ -92,6 +107,13 @@ test('plotted reference and candidate values equal returned rank values, includi
 	expect(series[0]?.values).toBe(reference);
 	expect(series[1]?.values).toBe(ranked);
 	expect(Array.from(series[1]?.values ?? [])).toEqual([2, -1, NaN]);
+	result.reference.sources = [source];
+	result.results[0]?.candidate.sources.push(source);
+	for (const item of rankedSeries({ kind: 'similar', data: result }, ['match'], (id) => id)) {
+		expect(item.attribution).toContain('Measured by Reviewer https://reviewer.example/measurements');
+		expect(item.attribution).toContain('as ranked');
+		expect(item.attribution).toContain('reviewer offsets corrected');
+	}
 });
 test('taste overlay uses the centre named by the result tasteId, not the first taste', () => {
 	const first = new Float64Array([99, 99, 99]);

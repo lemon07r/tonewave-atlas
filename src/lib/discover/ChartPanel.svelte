@@ -5,7 +5,7 @@
 	import Notice from '#lib/components/Notice.svelte';
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
 	import type { DiscoveryResult } from './query.ts';
-	import { rankedSeries } from './rank-series.ts';
+	import { rankedGroups } from './rank-series.ts';
 	import { candidateCurve, displayCurve } from './display.ts';
 	import { alignDisplaySeries } from './align-display.ts';
 	let {
@@ -17,17 +17,11 @@
 	let detailSeries = $state.raw<FrSeries[]>([]);
 	let error = $state('');
 	let loading = $state(false);
-	let rank = $derived(rankedSeries(result, overlays, nameFor));
+	let groups = $derived(rankedGroups(result, overlays, nameFor));
 	let unaligned = $derived(
 		result.kind === 'compare'
 			? result.data.results.filter((row) => overlays.includes(row.candidate.id) && row.alignedTo === null)
 			: []
-	);
-	let alignedTo = $derived(
-		result.kind === 'compare'
-			? result.data.results.find((row) => overlays.includes(row.candidate.id) && row.alignedTo !== null)
-					?.alignedTo
-			: undefined
 	);
 	$effect(() => {
 		if (view !== 'detail') return;
@@ -100,15 +94,16 @@
 			Taste centres are derived rank curves, not detail measurements. Switch to “As ranked” to compare each
 			match with its scored taste centre.
 		</p>{/if}
-	<FrChart
-		series={view === 'rank' ? rank : detailSeries}
-		frequencies={view === 'rank' ? result.data.rankFrequencies : GRID}
-		baselineId={(view === 'rank'
-			? alignedTo != null
-				? `reference-${alignedTo}`
-				: rank[0]?.id
-			: detailSeries[0]?.id) ?? ''}
-	/>
+	{#if view === 'rank'}
+		{#each groups as group (group.id)}
+			<FrChart
+				title={group.label}
+				series={group.series}
+				frequencies={result.data.rankFrequencies}
+				baselineId={group.baselineId}
+			/>
+		{/each}
+	{:else}<FrChart series={detailSeries} frequencies={GRID} baselineId={detailSeries[0]?.id ?? ''} />{/if}
 	{#if loading}<p role="status" class="chart-note">Loading detail measurements…</p>{/if}
 	{#if error}<Notice kind="caution">{error}</Notice>{/if}
 </section>

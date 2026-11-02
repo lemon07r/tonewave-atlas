@@ -74,6 +74,7 @@
 			? series.map((item, index) => ({
 					...item,
 					index,
+					styleIndex: item.styleIndex ?? index,
 					data: chartValues(item.values, mode === 'difference' ? baseline?.values : undefined, size),
 					low: item.lo
 						? chartValues(item.lo, mode === 'difference' ? baseline?.values : undefined, size)
@@ -124,7 +125,9 @@
 		const style = themeStyle;
 		const ink = style.getPropertyValue('--muted').trim();
 		const line = style.getPropertyValue('--line').trim();
-		const colours = current.map((curve) => style.getPropertyValue(`--curve-${(curve.index % 7) + 1}`).trim());
+		const colours = current.map((curve) =>
+			style.getPropertyValue(`--curve-${(curve.styleIndex % 7) + 1}`).trim()
+		);
 		const range = chartRange(
 			current
 				.filter((curve) => !invisible.includes(curve.id))
@@ -230,7 +233,7 @@
 						label: curve.label,
 						stroke: colours[index] ?? ink,
 						width: curve.reference ? 2 : 2.4,
-						dash: dash(curve.index),
+						dash: dash(curve.styleIndex),
 						show: !invisible.includes(curve.id),
 						spanGaps: false,
 						points: { show: false }
@@ -328,8 +331,8 @@
 			let y = chartTop + chartHeight + 24;
 			series.forEach((item, index) => {
 				ctx.lineWidth = item.reference ? 1.5 : 2;
-				ctx.strokeStyle = style.getPropertyValue(`--curve-${(index % 7) + 1}`);
-				ctx.setLineDash(dash(index));
+				ctx.strokeStyle = style.getPropertyValue(`--curve-${((item.styleIndex ?? index) % 7) + 1}`);
+				ctx.setLineDash(dash(item.styleIndex ?? index));
 				ctx.beginPath();
 				ctx.moveTo(24, y - 4);
 				ctx.lineTo(72, y - 4);
@@ -487,9 +490,9 @@
 								x2="48"
 								y1="5"
 								y2="5"
-								stroke={colour(curve.index)}
+								stroke={colour(curve.styleIndex)}
 								stroke-width="2"
-								stroke-dasharray={dash(curve.index).join(' ')}
+								stroke-dasharray={dash(curve.styleIndex).join(' ')}
 							/></svg
 						><span class="legend-number">{curve.index + 1}</span><span
 							>{curve.label}{#if curve.reference}<span class="reference-label" aria-hidden="true"

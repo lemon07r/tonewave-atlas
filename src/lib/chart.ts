@@ -7,6 +7,8 @@ export interface FrSeries {
 	lo?: Float64Array | Float32Array;
 	hi?: Float64Array | Float32Array;
 	reference?: boolean;
+	/** Preserve visual identity when an aligned overlay is split into independent panels. */
+	styleIndex?: number;
 	/** Human-readable source, rig and processing details, also included in PNG exports. */
 	attribution?: string;
 }
