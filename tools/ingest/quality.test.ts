@@ -38,13 +38,8 @@ describe('deterministic catalog quality rules', () => {
 		'Moondrop May (User EQ)',
 		'Sennheiser IE400 Pro (h0llow EQ)',
 		'EQed AKG N400',
-		'S12 BassheadEQ',
-		'illu eqharman',
 		'QCU Aware + EQ (-4,0,-4)',
-		'Aeolus EQ applied',
-		'Moondrop May (EQ: No bass)',
-		'Sennheiser Momentum TW5 (EQ: Neutral + Bass Boost)',
-		'Qudelix QX Over (Sunrise Neutral EQ)'
+		'Aeolus EQ applied'
 	])('excludes non-stock curve %s', (name) => {
 		expect(derivedName(name)).not.toBeNull();
 	});
@@ -58,6 +53,11 @@ describe('deterministic catalog quality rules', () => {
 		'Moondrop Rays EQ Default',
 		'EQ blank',
 		'Custom EQ All 0',
+		'Moondrop May (EQ: No bass)',
+		'Sennheiser Momentum TW5 (EQ: Neutral + Bass Boost)',
+		'Qudelix QX Over (Sunrise Neutral EQ)',
+		'S12 BassheadEQ',
+		'illu eqharman',
 		'QCU Quiet No EQ',
 		'Bose QC Ultra 2 (Codec: APTX Adaptive, EQ: None, ANC: Quiet)',
 		'Denon Perl Pro (EQ: Flat, ANC: On)',
@@ -70,9 +70,9 @@ describe('deterministic catalog quality rules', () => {
 	])('retains genuine names and neutral EQ states: %s', (name) => {
 		expect(derivedName(name)).toBeNull();
 	});
-	it('rejects numbered EQ presets rather than reading them as embedded words', () => {
-		expect(derivedName('Sony Linkbuds S (ANC OFF, EQ1)')).toBe('derived EQ curve');
-		expect(derivedName('Sony Linkbuds S (ANC ON, EQ2)')).toBe('derived EQ curve');
+	it('preserves uncertain numbered EQ presets', () => {
+		expect(derivedName('Sony Linkbuds S (ANC OFF, EQ1)')).toBeNull();
+		expect(derivedName('Sony Linkbuds S (ANC ON, EQ2)')).toBeNull();
 	});
 	it.each(['Target', '∆ difference', 'Calibration file', 'EQ Sandbox'])(
 		'reports target/delta/calibration/sandbox %s',

@@ -42,6 +42,7 @@ import {
 import {
 	collisionGroups,
 	DisplayNames,
+	defaultVariantIndex,
 	identity,
 	normalise,
 	sourceFor,
@@ -62,6 +63,7 @@ import {
 	partitionFor
 } from './quality.ts';
 import { rigEvidence } from './rig-evidence.ts';
+import { classifyEq, factoryMode } from './eq.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -157,6 +159,28 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				after: string;
 			}[],
 			eqAudit: [] as { source: string; file: string; name: string; decision: string }[],
+			ambiguousEqLabelsKeptAsTuning: [] as {
+				source: string;
+				file: string;
+				label: string;
+				index: number;
+				measurementId: string;
+			}[],
+			tuningModes: [] as {
+				source: string;
+				file: string;
+				label: string;
+				index: number;
+				classification: string;
+				kind: string;
+				isDefault: boolean;
+			}[],
+			defaultSelections: [] as {
+				source: string;
+				name: string;
+				index: number | null;
+				file: string | null;
+			}[],
 			scanned: {} as Record<string, { phones: number; measurements: number; reclassified: number }>
 		},
 		targets: targets.map(({ id, provenance }) => ({ id, ...provenance })),
@@ -327,6 +351,21 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					before: `${rawPhone.brand} ${rawPhone.name}`,
 					after: `${cleanPhone.brand} ${cleanPhone.name}`
 				});
+			if (
+				cleanPhone.file.some(
+					(file, i) =>
+						classifyEq(`${cleanPhone.brand} ${cleanPhone.name} ${file} ${cleanPhone.suffix[i] ?? ''}`) !==
+							'none' || factoryMode(cleanPhone.suffix[i] ?? '')
+				)
+			) {
+				const index = defaultVariantIndex(cleanPhone);
+				report.quality.defaultSelections.push({
+					source: db.id,
+					name: `${cleanPhone.brand} ${cleanPhone.name}`,
+					index,
+					file: index === null ? null : (cleanPhone.file[index] ?? null)
+				});
+			}
 			for (const [index, file] of cleanPhone.file.entries()) {
 				const phone = modification(cleanPhone, index);
 				counts.variants++;
@@ -349,7 +388,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						source: db.id,
 						file,
 						name: `${phone.brand} ${phone.name}`,
-						decision: derived ?? 'retained: not a derived-EQ token (or explicit neutral/default EQ state)'
+						decision: derived ?? `retained: ${classifyEq(text)}`
 					});
 				if (derived) {
 					quarantine(derived, false);
@@ -486,6 +525,25 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					scanned.reclassified++;
 				}
 				scanned.measurements++;
+				const eq = classifyEq(text);
+				if (eq !== 'none' || factoryMode(selectedVariant.label))
+					report.quality.tuningModes.push({
+						source: db.id,
+						file,
+						label: selectedVariant.label,
+						index,
+						classification: eq === 'none' ? 'factory mode' : eq,
+						kind: selectedVariant.kind,
+						isDefault: selectedVariant.isDefault
+					});
+				if (eq === 'ambiguous')
+					report.quality.ambiguousEqLabelsKeptAsTuning.push({
+						source: db.id,
+						file,
+						label: selectedVariant.label,
+						index,
+						measurementId: id
+					});
 				const measurement: Measurement = {
 					id,
 					productId: product.id,

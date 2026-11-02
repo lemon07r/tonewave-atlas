@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
+import { classifyEq } from './eq.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CACHE = resolve(ROOT, '.cache/ingest');
@@ -539,26 +540,10 @@ export function nonProductName(name: string): string | null {
 	return derivedName(name);
 }
 
-/** Match EQ operations, not embedded maker/model text; neutral/no-EQ states are not excluded. */
+/** Exclude explicit post-hoc operations, never factory or uncertain preset labels. */
 export function derivedName(name: string): string | null {
 	if (/\baverage\s+(?:iem|headphone)s?\b/i.test(name)) return 'derived population average';
-	if (/\bp?eq\s*[:=-]?\s*(?:neutral|flat|normal|default|standard)\s*\+/i.test(name))
-		return 'derived EQ curve';
-	const clean = name
-		// Ecoustic EQ-100 is an actual model, not an equalizer instruction.
-		.replace(/\bEcoustic\s+EQ-100\b/gi, 'Ecoustic model')
-		.replace(/\b(?:p?eq\s*:\s*)?p?eq\s*[:-]?\s*(?:no|zero)\s+gain\b/gi, '')
-		.replace(
-			/\b(?:no|null|none|blank|empty|zero|default|standard|stock|pure|flat)[\s_:-]*p?eq\b|\bp?eq[\s_:=-]*(?:none|off|blank|empty|zero|default|standard|stock|original|flat|neutral|normal|0)\b|\b(?:user|custom)\s+eq\s+(?:all\s*0|all\s+zero|\(0 gain\))/gi,
-			''
-		);
-	if (
-		/\b(?:auto[\s_-]*eq|eq(?:ed|d)|p?eq|equaliz(?:ed|ation)|equalis(?:ed|ation))\b|\b(?:basshead|heavy)eq\b|\beq(?:harman|mine)\b|\bp?eq\d+\b/i.test(
-			clean
-		)
-	)
-		return 'derived EQ curve';
-	return null;
+	return classifyEq(name) === 'post-hoc' ? 'derived EQ curve' : null;
 }
 
 export function errorMessage(error: unknown): string {

@@ -88,6 +88,9 @@ async function result(paths: { cache: string; output: string }) {
 		quality: {
 			quarantine: { reason: string; file: string }[];
 			forms: { file: string; before: string; after: string }[];
+			ambiguousEqLabelsKeptAsTuning: { file: string; label: string }[];
+			tuningModes: { file: string; kind: string; isDefault: boolean }[];
+			defaultSelections: { name: string; index: number | null; file: string | null }[];
 		};
 		targets: ({ id: string } & ReferenceTarget['provenance'])[];
 	};
@@ -95,6 +98,106 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('retains factory/uncertain EQ modes offline, selects stock defaults and reports uncertainty', async () => {
+		const groups = [
+			{
+				name: 'Bowers and Wilkins',
+				phones: [
+					{
+						name: 'Pi7 S2',
+						file: ['Pi7S2 ANCOn', 'Pi7S2 ANCOff'],
+						suffix: ['(Codec: APTX Adaptive, EQ: N/A, ANC: On)', '(Codec: APTX Adaptive, EQ: N/A, ANC: Off)']
+					}
+				]
+			},
+			{
+				name: 'CMF by Nothing',
+				phones: [
+					{ name: 'CMF Buds Pro', file: ['CMF Buds Pro'], suffix: ['(Codec: AAC, EQ: Balanced, ANC: High)'] }
+				]
+			},
+			{
+				name: 'Qudelix',
+				phones: [
+					{
+						name: 'QX Over',
+						file: [
+							'Qudelix QX Over',
+							'Qudelix QX Over (Sunrise Neutral EQ)',
+							'Qudelix QX Over (Oratory1990 EQ)'
+						],
+						suffix: []
+					}
+				]
+			},
+			{ name: 'Fixture', phones: [{ name: 'Mode only', file: ['Mode only EQ1'], suffix: [] }] },
+			{
+				name: 'Moondrop',
+				phones: [
+					{
+						name: 'May',
+						file: [
+							'Moondrop May Harman',
+							'Moondrop May Standard',
+							'Moondrop May PEQ0',
+							'Moondrop May (User EQ)'
+						],
+						suffix: ['(EQ: Harman)', '(EQ: Standard)', '(EQ: PEQ 0 Gain)', '(User EQ)']
+					}
+				]
+			}
+		];
+		const bodies: [string, string][] = groups.flatMap((g) =>
+			g.phones.flatMap((p) =>
+				p.file.map((file, i): [string, string] => [
+					`${base}data/${encodeURIComponent(file + ' L.txt')}`,
+					curve(80, i)
+				])
+			)
+		);
+		const { paths } = await fixture('rig_description="B&K 5128"', [
+			[bookUrl, JSON.stringify(groups)],
+			...bodies
+		]);
+		const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Build must not fetch'));
+		vi.stubGlobal('fetch', request);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(request).not.toHaveBeenCalled();
+		expect(catalog.products).toHaveLength(5);
+		expect(catalog.measurements).toHaveLength(9);
+		expect(
+			catalog.measurements
+				.filter((m) => m.variant.isDefault)
+				.map((m) => m.variant.file)
+				.sort()
+		).toEqual(['CMF Buds Pro', 'Moondrop May Standard', 'Pi7S2 ANCOff', 'Qudelix QX Over']);
+		for (const file of [
+			'Pi7S2 ANCOn',
+			'Moondrop May Harman',
+			'Moondrop May PEQ0',
+			'Qudelix QX Over (Sunrise Neutral EQ)',
+			'Mode only EQ1'
+		])
+			expect(catalog.measurements.find((m) => m.variant.file === file)?.variant).toMatchObject({
+				kind: 'tuning',
+				isDefault: false
+			});
+		expect(report.quality.quarantine.map((q) => q.file).sort()).toEqual([
+			'Moondrop May (User EQ)',
+			'Qudelix QX Over (Oratory1990 EQ)'
+		]);
+		expect(report.quality.ambiguousEqLabelsKeptAsTuning.map((q) => q.file).sort()).toEqual([
+			'Mode only EQ1',
+			'Qudelix QX Over (Sunrise Neutral EQ)'
+		]);
+		expect(report.quality.defaultSelections).toContainEqual(
+			expect.objectContaining({ name: 'Bowers and Wilkins Pi7 S2', index: 1, file: 'Pi7S2 ANCOff' })
+		);
+		expect(report.quality.tuningModes).toContainEqual(
+			expect.objectContaining({ file: 'Moondrop May Harman', kind: 'tuning', isDefault: false })
+		);
+	});
 	it('stops before publication when legitimate duplicate removal exceeds 3% of a 200-measurement partition', async () => {
 		const phones = Array.from({ length: 200 }, (_, i) => ({ name: 'Model', file: `copy-${i}` }));
 		const bodies: [string, string][] = phones.map((p) => [`${base}data/${p.file}%20L.txt`, curve(80)]);
