@@ -104,6 +104,20 @@ describe('recoverable dataset publication', () => {
 		expect(await readFile(resolve(f.output, 'manifest.json'), 'utf8')).toBe(text);
 		await expect(stat(f.backup)).rejects.toThrow();
 	});
+	it('removes an obsolete same-version backup on manifest failure when the live target is verified', async () => {
+		const f = await fixture();
+		await rename(f.target, f.backup);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), payload);
+		await rename(f.staging, f.target);
+		vi.mocked(rename).mockImplementation((from, to) =>
+			to === resolve(f.output, 'manifest.json')
+				? Promise.reject(new Error('manifest interrupted'))
+				: realFs.rename(from, to)
+		);
+		await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('manifest interrupted');
+		expect(await readFile(resolve(f.target, 'catalog-iem.json.gz'), 'utf8')).toBe(payload);
+		expect(await readdir(f.output)).toEqual(['manifest.json', version].sort());
+	});
 	it('rejects corrupt staging without renaming the live target', async () => {
 		const f = await fixture();
 		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), 'corrupt');

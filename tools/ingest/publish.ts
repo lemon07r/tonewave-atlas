@@ -17,13 +17,19 @@ export async function removeStaging(path: string): Promise<void> {
 	}
 }
 
-async function sweep(output: string, staging: string, version: string, committed: boolean): Promise<void> {
+async function sweep(
+	output: string,
+	staging: string,
+	version: string,
+	committed: boolean,
+	preserveBackup: boolean
+): Promise<void> {
 	await removeStaging(staging);
 	try {
 		for (const entry of await readdir(output, { withFileTypes: true })) {
 			// Publication is serial: another active build/pull must not share this output directory.
 			// Preserve the sole recovery copy if rollback itself failed; never delete live data.
-			if (!committed && entry.name === `.backup-${version}`) continue;
+			if (preserveBackup && entry.name === `.backup-${version}`) continue;
 			if (
 				/^\.(?:build|pull|backup|interrupted)-/.test(entry.name) ||
 				(committed && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== version)
@@ -73,8 +79,10 @@ export async function publishDataset(
 	const target = resolve(output, manifest.version);
 	const backup = resolve(output, `.backup-${manifest.version}`);
 	let committed = false;
+	let verifiedTarget = false;
 	try {
 		if (await matches(target, manifest)) {
+			verifiedTarget = true;
 			await atomicWrite(resolve(output, 'manifest.json'), manifestText);
 		} else {
 			// Recover a crash between old→backup and staging→target before starting a new repair.
@@ -109,6 +117,6 @@ export async function publishDataset(
 		}
 		committed = true;
 	} finally {
-		await sweep(output, staging, manifest.version, committed);
+		await sweep(output, staging, manifest.version, committed, !committed && !verifiedTarget);
 	}
 }
