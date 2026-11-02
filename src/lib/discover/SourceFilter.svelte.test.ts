@@ -22,10 +22,12 @@ test('offers explicit coverage and source-only scoring without changing reviewer
 			)
 		)
 		.toBeVisible();
-	await expect.element(screen.getByText(/1 selected reviewers are outside this rig’s list/)).toBeVisible();
+	await expect.element(screen.getByText(/1 selected reviewer is outside this rig’s list/)).toBeVisible();
 	await screen.getByRole('combobox', { name: 'Reviewer scoring mode' }).selectOptions('only');
 	expect(onmodechange).toHaveBeenCalledExactlyOnceWith('only');
 	expect(onchange).not.toHaveBeenCalled();
+	await screen.rerender({ selected: ['reviewer-a', 'reviewer-b'] });
+	await expect.element(screen.getByText(/2 selected reviewers are outside this rig’s list/)).toBeVisible();
 });
 
 test('source-only scoring is disabled until a reviewer is selected', async () => {

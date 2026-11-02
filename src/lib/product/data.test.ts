@@ -11,7 +11,16 @@ test('loads redirects from both gzip and decoded catalogs and retries failed req
 	const fixture = {
 		partitions: [],
 		products: [{ id: 'now', brand: 'Fixture', model: 'One' }],
-		measurements: [{ id: 'm-now', productId: 'now' }],
+		measurements: [
+			{
+				id: 'm-now',
+				productId: 'now',
+				sourceId: 's',
+				partition: 'rig',
+				variant: { label: 'Default', kind: 'default' }
+			}
+		],
+		sources: [{ id: 's', name: 'Fixture Reviewer' }],
 		redirects: { products: { old: 'now' }, measurements: { 'm-old': 'm-now' } }
 	};
 	const fetch = vi.spyOn(globalThis, 'fetch');
@@ -38,6 +47,7 @@ test('migration lookup fetches the other form only for unresolved identities and
 	const fixture = {
 		partitions: [],
 		products: [{ id: 'iem', brand: 'Fixture', model: 'IEM' }],
+		sources: [],
 		measurements: []
 	};
 	const fetch = vi.spyOn(globalThis, 'fetch');

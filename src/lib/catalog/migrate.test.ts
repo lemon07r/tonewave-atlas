@@ -215,6 +215,20 @@ test('unchanged identities do not re-encode a query or navigate over a concurren
 	}
 });
 
+test('canonical first values still collapse duplicate identity parameters without touching unknown keys', () => {
+	const url = new URL(
+		'https://example.org/?ref=current&ref=old&p=current&p=old&m=variant&m=old-variant&chart=variant&chart=old-variant&diff=current&diff=old&unknown=one&unknown=two'
+	);
+	url.searchParams.append('ratings', '[]');
+	url.searchParams.append('ratings', JSON.stringify([item('old', 'like')]));
+	const migrated = migrateUrl(url, catalog);
+	expect(migrated.changed).toBe(true);
+	for (const key of ['ref', 'p', 'm', 'chart', 'diff', 'ratings'])
+		expect(migrated.url.searchParams.getAll(key)).toHaveLength(1);
+	expect(migrated.url.searchParams.getAll('unknown')).toEqual(['one', 'two']);
+	expect(migrateUrl(migrated.url, catalog).changed).toBe(false);
+});
+
 test('legacy catalogs without redirects still resolve current ids, never inherited object keys', () => {
 	const legacy = new CatalogIdentity({ products: fixture.products, measurements: fixture.measurements });
 	expect(legacy.productId('current')).toBe('current');
@@ -294,11 +308,72 @@ test('a full destination profile retains the misfiled item instead of exceeding 
 	expect(parseProfile(JSON.stringify(migrated.profile))).toEqual(migrated.profile);
 });
 
+test('two full profiles swap all outgoing rows before evaluating destination capacity', () => {
+	const iems = Array.from({ length: 200 }, (_, i) => ({ id: `i-${i}`, brand: 'Fixture', model: `IEM ${i}` }));
+	const heads = Array.from({ length: 200 }, (_, i) => ({
+		id: `h-${i}`,
+		brand: 'Fixture',
+		model: `Headphone ${i}`
+	}));
+	const profile = {
+		version: 2 as const,
+		profiles: {
+			iem: heads.map(({ id }) => item(id, 'like')),
+			headphone: iems.map(({ id }) => item(id, 'neutral'))
+		}
+	};
+	const catalogs = {
+		iem: new CatalogIdentity({ products: iems, measurements: [] }),
+		headphone: new CatalogIdentity({ products: heads, measurements: [] })
+	};
+	const migrated = migrateProfile(profile, catalogs);
+	expect(migrated.profile.profiles).toEqual({
+		iem: profile.profiles.headphone,
+		headphone: profile.profiles.iem
+	});
+	expect(parseProfile(JSON.stringify(migrated.profile))).toEqual(migrated.profile);
+	expect(migrated.messages).toHaveLength(400);
+	expect(migrated.messages.every((message) => message.includes(': moved to '))).toBe(true);
+	expect(migrateProfile(migrated.profile, catalogs).changed).toBe(false);
+});
+
+test('rejected outgoing moves reserve their origin capacity before accepting incoming moves', () => {
+	const iems = Array.from({ length: 201 }, (_, i) => ({ id: `i-${i}`, brand: 'Fixture', model: `IEM ${i}` }));
+	const heads = Array.from({ length: 200 }, (_, i) => ({
+		id: `h-${i}`,
+		brand: 'Fixture',
+		model: `Headphone ${i}`
+	}));
+	const catalogs = {
+		iem: new CatalogIdentity({ products: iems, measurements: [] }),
+		headphone: new CatalogIdentity({ products: heads, measurements: [] })
+	};
+	const profile = {
+		version: 2 as const,
+		profiles: {
+			iem: [...iems.slice(0, 199).map(({ id }) => item(id, 'like')), item('h-0', 'love')],
+			headphone: [
+				...heads.slice(1, 199).map(({ id }) => item(id, 'neutral')),
+				item('i-199', 'like'),
+				item('i-200', 'like')
+			]
+		}
+	};
+	const migrated = migrateProfile(profile, catalogs);
+	expect(migrated.profile.profiles.iem).toHaveLength(200);
+	expect(migrated.profile.profiles.headphone).toHaveLength(200);
+	expect(migrated.profile.profiles.iem.some(({ productId }) => productId === 'i-199')).toBe(true);
+	expect(migrated.profile.profiles.headphone.some(({ productId }) => productId === 'i-200')).toBe(true);
+	expect(parseProfile(JSON.stringify(migrated.profile))).toEqual(migrated.profile);
+});
+
 test.each([
 	'ref=misfiled-headphone&m=misfiled-measurement',
 	'product=misfiled-headphone&measurement=misfiled-measurement',
 	'p=misfiled-headphone&m=misfiled-measurement',
 	'm=misfiled-measurement,headphone-measurement',
+	'chart=misfiled-headphone',
+	'chart=misfiled-measurement',
 	`ratings=${encodeURIComponent(JSON.stringify([item('misfiled-headphone', 'love')]))}`
 ])('cross-form URLs resolve other-catalog redirects and clear incompatible rig controls: %s', (query) => {
 	const url = new URL(
@@ -324,7 +399,13 @@ test('reverse-form links recover explicit split ownership, while mixed or unreso
 	);
 	expect(reverse.url.searchParams.has('form')).toBe(false);
 	expect(reverse.url.searchParams.get('ref')).toBe('split-current');
-	for (const query of ['p=current,headphone', 'ref=unknown', 'ref=headphone&ratings=invalid']) {
+	for (const query of [
+		'p=current,headphone',
+		'ref=unknown',
+		'ref=headphone&ratings=invalid',
+		'chart=current,headphone',
+		'chart=unknown'
+	]) {
 		const url = new URL(`https://example.org/?${query}`);
 		expect(migrateUrl(url, catalog, headphones).url.href).toBe(url.href);
 	}

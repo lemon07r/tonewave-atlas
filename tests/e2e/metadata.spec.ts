@@ -54,6 +54,43 @@ test('inactive identity metadata failure cannot disable the active Discover cata
 	await expect(page.getByText(/Catalog unavailable:/)).toHaveCount(0);
 });
 
+test('Compare form and history navigation never migrate with the previous form identity', async ({
+	page
+}) => {
+	await page.goto('/compare?p=p-19d1654fcb150bf1aa2f');
+	await expect(page.getByTestId('comparison-row')).toHaveCount(1);
+	await page.evaluate(() => {
+		const link = document.createElement('a');
+		link.href = '/compare?form=headphones&p=p-d579af27c01cc5f9baa0';
+		link.textContent = 'Open headphone comparison fixture';
+		document.querySelector('main')?.append(link);
+	});
+	await page.getByRole('link', { name: 'Open headphone comparison fixture' }).click();
+	await expect(page.getByTestId('comparison-row').getByRole('heading')).toHaveText('Sennheiser HD600');
+	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toHaveCount(0);
+	await page.goBack();
+	await expect(page.getByTestId('comparison-row').getByRole('heading')).toHaveText('Truthear Hexa');
+	await page.goForward();
+	await expect(page.getByTestId('comparison-row').getByRole('heading')).toHaveText('Sennheiser HD600');
+	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toHaveCount(0);
+});
+
+test('an unrelated Explore URL change preserves the active brand filter', async ({ page }) => {
+	await page.goto('/explore');
+	await expect(page.locator('.catalog-row')).toHaveCount(40);
+	await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('Truthear');
+	await page.evaluate(() => {
+		const link = document.createElement('a');
+		link.href = '/explore?unknown=retained#main';
+		link.textContent = 'Change unrelated catalog URL';
+		document.querySelector('main')?.append(link);
+	});
+	await page.getByRole('link', { name: 'Change unrelated catalog URL' }).click();
+	await expect(page).toHaveURL(/unknown=retained/);
+	await expect(page.getByRole('combobox', { name: 'Brand', exact: true })).toHaveValue('Truthear');
+	for (const row of await page.locator('.catalog-row').all()) await expect(row).toContainText('Truthear');
+});
+
 test.afterEach(async ({ page }) => {
 	await page.unrouteAll({ behavior: 'wait' });
 });

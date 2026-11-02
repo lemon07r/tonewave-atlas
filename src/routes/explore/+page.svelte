@@ -3,6 +3,7 @@
 	import { browser } from '$app/env';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
 	import { migrationCatalogs, priceListings } from '#lib/product/data.ts';
@@ -56,7 +57,7 @@
 	$effect(() => {
 		const selectedForm = form,
 			id = productId,
-			href = page.url.href;
+			href = untrack(() => page.url.href);
 		const abort = new AbortController();
 		loading = true;
 		error = '';

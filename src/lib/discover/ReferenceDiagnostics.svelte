@@ -1,15 +1,17 @@
 <script lang="ts">
 	import type { AtlasSummary, MeasurementInfo, ProductListItem, SourceMode } from '#core/atlas/types.ts';
+	import type { Form } from '#core/dataset/types.ts';
 	import { analysis } from '#lib/atlas.ts';
 	import type { WorkspaceItem } from '#lib/profile/profile.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { referenceDiagnostic } from './evidence.ts';
 	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	import { canonicalItem } from '#lib/catalog/migrate.ts';
-	import { productFor } from '#lib/product/data.ts';
-	import { detail } from './display.ts';
+	import { productFor, productMeasurements } from '#lib/product/data.ts';
 	let {
 		items,
+		form,
+		version,
 		identity,
 		products,
 		partition,
@@ -18,6 +20,8 @@
 		mode = 'coverage'
 	}: {
 		items: WorkspaceItem[];
+		form: Form;
+		version: string;
 		identity?: CatalogIdentity | undefined;
 		products: ProductListItem[];
 		partition: string;
@@ -45,42 +49,22 @@
 						)
 						.map((item) => (identity ? canonicalItem(item, identity) : item))
 				: [];
-		void Promise.all([
+		const selectedForm = form,
+			selectedVersion = version;
+		void Promise.allSettled([
 			analysis().then((service) =>
 				service.measurements(explicit.flatMap((item) => (item.measurementId ? [item.measurementId] : [])))
 			),
-			Promise.all(
-				defaults.map(async (item): Promise<MeasurementInfo[]> => {
-					const product = await detail(item.productId);
-					return product.measurements.map(({ measurement, source }) => ({
-						id: measurement.id,
-						productId: measurement.productId,
-						brand: product.product.brand,
-						model: product.product.model,
-						partition: measurement.partition,
-						sourceId: source.id,
-						sourceName: source.name,
-						variantLabel: measurement.variant.label,
-						variantKind: measurement.variant.kind
-					}));
-				})
+			...defaults.map((item) =>
+				productMeasurements(selectedForm, selectedVersion, item.productId, abort.signal)
 			)
-		])
-			.then(([explicitRows, defaults]) => [...explicitRows, ...defaults.flat()])
-			.then(
-				(rows) => {
-					if (!abort.signal.aborted) {
-						measurements = rows;
-						loading = false;
-					}
-				},
-				() => {
-					if (!abort.signal.aborted) {
-						error = 'Variant metadata could not be loaded. No measurement has been substituted.';
-						loading = false;
-					}
-				}
-			);
+		]).then((outcomes) => {
+			if (abort.signal.aborted) return;
+			measurements = outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : []));
+			if (outcomes.some((outcome) => outcome.status === 'rejected'))
+				error = 'Variant metadata could not be loaded. No measurement has been substituted.';
+			loading = false;
+		});
 		return () => {
 			abort.abort();
 		};

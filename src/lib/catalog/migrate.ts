@@ -10,21 +10,20 @@ import type { Form } from '#core/dataset/types.ts';
 
 const active = (item: WorkspaceItem) => ['love', 'like', 'dislike'].includes(item.rating);
 const formName = (form: Form) => (form === 'iem' ? 'IEMs' : 'Headphones');
+type IdentityItem = Pick<WorkspaceItem, 'productId' | 'measurementId'> & { either?: boolean };
 
 /** Explicit measurement ownership may resolve a split product, but never guess from its name. */
-function hasIdentity(
-	item: Pick<WorkspaceItem, 'productId' | 'measurementId'>,
-	catalog: CatalogIdentity
-): boolean {
+function hasIdentity(item: IdentityItem, catalog: CatalogIdentity): boolean {
+	if (item.either) return !!(catalog.productId(item.productId) ?? catalog.measurementProduct(item.productId));
 	const product =
 		catalog.productId(item.productId) ??
 		(item.measurementId ? catalog.measurementProduct(item.measurementId) : undefined);
 	return !!product && (!item.measurementId || catalog.measurementProduct(item.measurementId) === product);
 }
 
-function urlItems(url: URL): Pick<WorkspaceItem, 'productId' | 'measurementId'>[] | undefined {
+function urlItems(url: URL): IdentityItem[] | undefined {
 	const params = url.searchParams;
-	const items: Pick<WorkspaceItem, 'productId' | 'measurementId'>[] = [];
+	const items: IdentityItem[] = [];
 	for (const [key, measurementKey] of [
 		['ref', 'm'],
 		['product', 'measurement']
@@ -38,6 +37,9 @@ function urlItems(url: URL): Pick<WorkspaceItem, 'productId' | 'measurementId'>[
 	}
 	for (const key of ['p', 'refs'])
 		for (const productId of (params.get(key) ?? '').split(',').filter(Boolean)) items.push({ productId });
+	for (const key of ['chart', 'diff'])
+		for (const id of (params.get(key) ?? '').split(',').filter(Boolean))
+			items.push({ productId: id, either: true });
 	if (params.has('ratings')) {
 		try {
 			items.push(
@@ -139,37 +141,64 @@ export function migrateProfile(profile: Profile, catalogs: Partial<Record<Form, 
 	const next: Profile = { ...profile, profiles: { ...profile.profiles } };
 	const messages: string[] = [];
 	let droppedRating = false;
-	const incoming: Record<Form, WorkspaceItem[]> = { iem: [], headphone: [] };
+	const moves: { from: Form; to: Form; index: number; item: WorkspaceItem; accepted: boolean }[] = [];
 	for (const form of ['iem', 'headphone'] as const) {
 		const current = catalogs[form],
 			otherForm = form === 'iem' ? 'headphone' : 'iem',
 			other = catalogs[otherForm];
 		if (!current || !other) continue;
-		next.profiles[form] = profile.profiles[form].filter((item) => {
-			if (hasIdentity(item, current) || !hasIdentity(item, other)) return true;
-			const canonical = canonicalItem(item, other);
-			const occupied = new Set(
-				[...profile.profiles[otherForm], ...incoming[otherForm]].map(
-					(row) => canonicalItem(row, other).productId
-				)
-			);
-			if (!occupied.has(canonical.productId) && occupied.size >= PROFILE_LIMIT) {
-				messages.push(
-					`${other.name(canonical.productId)}: could not move to ${formName(otherForm)} because that profile is full. It has been kept.`
-				);
-				return true;
-			}
-			incoming[otherForm].push(item);
-			messages.push(
-				`${other.name(canonical.productId)}: moved to the ${formName(otherForm)} profile after a catalog update.`
-			);
-			return false;
+		profile.profiles[form].forEach((item, index) => {
+			if (!hasIdentity(item, current) && hasIdentity(item, other))
+				moves.push({ from: form, to: otherForm, index, item, accepted: true });
 		});
+	}
+	const staying = (form: Form) =>
+		profile.profiles[form].filter(
+			(_, index) => !moves.some((move) => move.accepted && move.from === form && move.index === index)
+		);
+	// Plan both directions first. A rejected incoming move stays at its origin, which may
+	// in turn consume space there; only reject moves, so this loop always terminates.
+	let rejected: boolean;
+	do {
+		rejected = false;
+		for (const form of ['iem', 'headphone'] as const) {
+			const catalog = catalogs[form];
+			if (!catalog) continue;
+			const retained = new Set(staying(form).map((row) => canonicalItem(row, catalog).productId));
+			const incoming = moves.filter((move) => move.accepted && move.to === form);
+			const occupied = new Set([
+				...retained,
+				...incoming.map(({ item }) => canonicalItem(item, catalog).productId)
+			]);
+			if (occupied.size <= PROFILE_LIMIT) continue;
+			const last = incoming.findLast(({ item }) => !retained.has(canonicalItem(item, catalog).productId));
+			if (!last) continue;
+			const id = canonicalItem(last.item, catalog).productId;
+			for (const move of incoming)
+				if (canonicalItem(move.item, catalog).productId === id) move.accepted = false;
+			rejected = true;
+		}
+	} while (rejected);
+	for (const move of moves) {
+		const catalog = catalogs[move.to];
+		if (!catalog) continue;
+		const name = catalog.name(canonicalItem(move.item, catalog).productId);
+		messages.push(
+			move.accepted
+				? `${name}: moved to the ${formName(move.to)} profile after a catalog update.`
+				: `${name}: could not move to ${formName(move.to)} because that profile is full. It has been kept.`
+		);
 	}
 	for (const form of ['iem', 'headphone'] as const) {
 		const catalog = catalogs[form];
 		if (!catalog) continue;
-		const migrated = migrateItems([...next.profiles[form], ...incoming[form]], catalog);
+		const migrated = migrateItems(
+			[
+				...staying(form),
+				...moves.filter((move) => move.accepted && move.to === form).map(({ item }) => item)
+			],
+			catalog
+		);
 		next.profiles[form] = migrated.items;
 		messages.push(...migrated.messages);
 		droppedRating ||= migrated.droppedRating;
@@ -208,6 +237,7 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity, other?: CatalogId
 				identities.map((item) =>
 					other.name(
 						other.productId(item.productId) ??
+							(item.either ? other.measurementProduct(item.productId) : undefined) ??
 							(item.measurementId ? other.measurementProduct(item.measurementId) : undefined) ??
 							item.productId
 					)
@@ -229,7 +259,7 @@ export function migrateUrl(url: URL, catalog: CatalogIdentity, other?: CatalogId
 	let droppedRating = false;
 	// Even setting the same value re-encodes the whole query and can trigger a stale navigation.
 	function setChanged(key: string, value: string) {
-		if (params.get(key) !== value) params.set(key, value);
+		if (params.get(key) !== value || params.getAll(key).length > 1) params.set(key, value);
 	}
 	function resolve(id: string, kind: 'product' | 'measurement' | 'either'): string {
 		const current =

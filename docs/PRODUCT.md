@@ -42,7 +42,7 @@ entry. A surviving explicit measurement can identify a split product; unresolved
 with a quiet, one-time note. Duplicate profile products merge: equal ratings combine their preference
 details, fit/comfort flag and explicit variant; an active rating beats Neutral or unrated. Conflicting
 active ratings prefer the already-current product entry and explain the dropped older rating by name.
-Undo restores the pre-migration profile for the session, leaving the saved canonical profile intact.
+Migration Undo restores the earliest pre-migration profile for the session, leaving the saved canonical profile intact; import has a separate ordinary Undo.
 Mixed reviewer databases remain available in each form and measurement rig they actually cover.
 Cross-form redirects check the other catalog: unambiguous links switch form and saved items move to that form’s profile; mixed or unresolved links remain intact with a quiet note.
 

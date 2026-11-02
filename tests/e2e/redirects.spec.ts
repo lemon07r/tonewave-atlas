@@ -161,3 +161,49 @@ test('shared ratings use the same merge policy and can be restored for the sessi
 		.toEqual(ratings);
 	await expect(page.locator('.profile-row')).toHaveCount(2);
 });
+
+test('migration Undo retains the earliest snapshot while import has its own ordinary Undo', async ({
+	page
+}) => {
+	const startup = {
+		version: 2,
+		profiles: { iem: [like('legacy-product'), dislike(reference)], headphone: [] }
+	};
+	await page.addInitScript(
+		({ key, value }) => {
+			localStorage.setItem(key, value);
+		},
+		{ key: PROFILE_KEY, value: JSON.stringify(startup) }
+	);
+	await page.goto('/');
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	await expect(note).toContainText('a duplicate rating from an older link was dropped');
+	const imported = {
+		version: 2,
+		profiles: { iem: [dislike('legacy-product'), like(reference)], headphone: [] }
+	};
+	const file = {
+		name: 'import.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(JSON.stringify(imported))
+	};
+	await page.getByLabel('Import profile file', { exact: true }).setInputFiles(file);
+	await expect(page.locator('.profile-row').getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
+	await page.locator('.toast').getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(
+		page.locator('.profile-row').getByRole('radio', { name: 'Dislike', exact: true })
+	).toBeChecked();
+	await page.getByLabel('Import profile file', { exact: true }).setInputFiles(file);
+	await expect(page.locator('.profile-row').getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
+	const saved = await page.evaluate((key) => localStorage.getItem(key), PROFILE_KEY);
+	expect(parseProfile(saved ?? '').profiles.iem).toEqual([like(reference)]);
+	await note.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await expect(
+		page.locator('.profile-row').getByRole('radio', { name: 'Like', exact: true }).first()
+	).toBeChecked();
+	await expect(
+		page.locator('.profile-row').getByRole('radio', { name: 'Dislike', exact: true }).last()
+	).toBeChecked();
+	expect(await page.evaluate((key) => localStorage.getItem(key), PROFILE_KEY)).toBe(saved);
+});

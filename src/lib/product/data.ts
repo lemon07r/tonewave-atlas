@@ -1,5 +1,5 @@
 import type { Source, Form } from '#core/dataset/types.ts';
-import type { ProductDetail, ProductListItem, ProductSpread } from '#core/atlas/types.ts';
+import type { MeasurementInfo, ProductDetail, ProductListItem, ProductSpread } from '#core/atlas/types.ts';
 import { spreadFor } from '#core/atlas/spread.ts';
 import { analysis } from '#lib/atlas.ts';
 import type { Channel } from '#lib/compare/url.ts';
@@ -16,6 +16,19 @@ const identities = new AsyncLru<string, CatalogIdentity>(4);
 export function catalogIdentity(form: Form, version: string): Promise<CatalogIdentity> {
 	const url = `${resolve('/')}data/${version}/catalog-${form}.json.gz`;
 	return identities.get(url, async () => new CatalogIdentity((await catalogMetadata(url)).identity));
+}
+
+/** Reference diagnostics need catalog metadata, never decoded curve shards. */
+export async function productMeasurements(
+	form: Form,
+	version: string,
+	productId: string,
+	signal: AbortSignal
+): Promise<MeasurementInfo[]> {
+	const metadata = await catalogMetadata(`${resolve('/')}data/${version}/catalog-${form}.json.gz`, signal);
+	signal.throwIfAborted();
+	const canonical = new CatalogIdentity(metadata.identity).productId(productId);
+	return metadata.measurements.filter((row) => row.productId === canonical);
 }
 
 /** Identity metadata is optional; fetch the other form only for unresolved links or saved items. */

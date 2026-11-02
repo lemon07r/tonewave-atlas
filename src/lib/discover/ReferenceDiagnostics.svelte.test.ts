@@ -4,7 +4,12 @@ import type { MeasurementInfo, ProductListItem } from '#core/atlas/types.ts';
 import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
 
 const service = vi.hoisted(() => ({ measurements: vi.fn<(ids: string[]) => Promise<MeasurementInfo[]>>() }));
+const metadata = vi.hoisted(() => vi.fn<() => Promise<MeasurementInfo[]>>());
 vi.mock('#lib/atlas.ts', () => ({ analysis: () => Promise.resolve(service) }));
+vi.mock('#lib/product/data.ts', async (original) => ({
+	...(await original<typeof import('#lib/product/data.ts')>()),
+	productMeasurements: metadata
+}));
 
 const product: ProductListItem = {
 	id: 'p',
@@ -44,6 +49,8 @@ test('reports a failed dislike reference, clears stale errors on rating reload a
 		.mockResolvedValueOnce([]);
 	const screen = await render(ReferenceDiagnostics, {
 		items: [item],
+		form: 'iem',
+		version: 'fixture',
 		products: [product],
 		partition: 'iem-711',
 		sources: []
@@ -73,6 +80,8 @@ test('an aborted metadata request cannot overwrite the newer rating state', asyn
 		.mockResolvedValueOnce([]);
 	const screen = await render(ReferenceDiagnostics, {
 		items: [item],
+		form: 'iem',
+		version: 'fixture',
 		products: [product],
 		partition: 'iem-711',
 		sources: []
@@ -83,4 +92,36 @@ test('an aborted metadata request cannot overwrite the newer rating state', asyn
 	release([measurement]);
 	await expect.element(screen.getByText(/selected variant new/)).toBeVisible();
 	await expect.element(screen.getByText(/Available on/)).not.toBeInTheDocument();
+});
+
+test('a failed default metadata lookup cannot erase explicit or other default diagnostics', async () => {
+	service.measurements.mockResolvedValueOnce([measurement]);
+	metadata
+		.mockRejectedValueOnce(new Error('offline'))
+		.mockResolvedValueOnce([{ ...measurement, id: 'm-good', productId: 'good', variantKind: 'default' }]);
+	const screen = await render(ReferenceDiagnostics, {
+		items: [
+			item,
+			{ productId: 'failed', rating: 'like', strength: 0.6, soundRelated: true },
+			{ productId: 'good', rating: 'like', strength: 0.6, soundRelated: true }
+		],
+		form: 'iem',
+		version: 'fixture',
+		products: [
+			product,
+			{ ...product, id: 'failed', model: 'Failed' },
+			{ ...product, id: 'good', model: 'Good' }
+		],
+		partition: 'iem-711',
+		sources: [],
+		selected: ['s'],
+		mode: 'only'
+	});
+	await expect.element(screen.getByText(/Fixture Reference.*Available on 711-family coupler/)).toBeVisible();
+	await expect.element(screen.getByText(/Fixture Good.*Available on 711-family coupler/)).toBeVisible();
+	await expect
+		.element(screen.getByText(/Fixture Failed.*No eligible default measurements for these reviewers/))
+		.toBeVisible();
+	await expect.element(screen.getByText(/Variant metadata could not be loaded/)).toBeVisible();
+	expect(metadata).toHaveBeenCalledWith('iem', 'fixture', 'good', expect.any(AbortSignal));
 });

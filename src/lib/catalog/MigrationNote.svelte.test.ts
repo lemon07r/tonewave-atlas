@@ -10,15 +10,17 @@ for (const action of ['Undo', 'Dismiss catalog update']) {
 		main.append(heading);
 		document.body.append(main);
 		try {
-			const callback = vi.fn();
+			const onundo = vi.fn(),
+				ondismiss = vi.fn();
 			const screen = await render(MigrationNote, {
 				messages: ['Fixture notice'],
-				onundo: callback,
-				ondismiss: callback
+				onundo,
+				ondismiss
 			});
 			await screen.getByRole('button', { name: action, exact: true }).click();
 			await screen.rerender({ messages: [] });
-			expect(callback).toHaveBeenCalledOnce();
+			expect(action === 'Undo' ? onundo : ondismiss).toHaveBeenCalledOnce();
+			expect(action === 'Undo' ? ondismiss : onundo).not.toHaveBeenCalled();
 			expect(document.activeElement).toBe(heading);
 		} finally {
 			main.remove();

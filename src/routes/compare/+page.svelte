@@ -30,7 +30,7 @@
 		type Smoothing
 	} from '#lib/compare/url.ts';
 	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
-	import type { Measurement, Source } from '#core/dataset/types.ts';
+	import type { Form, Measurement, Source } from '#core/dataset/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import { GRID } from '#core/grid.ts';
 	import { responseDistance } from '#core/analysis/distance.ts';
@@ -48,7 +48,7 @@
 		warning: string | undefined;
 	}
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
-	let identity = $state.raw<CatalogIdentity>();
+	let identity = $state.raw<{ form: Form; catalog: CatalogIdentity }>();
 	let migrationNote = $state<string[]>([]);
 	let selectionState = $derived(parseCompare(new URLSearchParams(browser ? page.url.search : '')));
 	let products = $state.raw<ProductListItem[]>([]);
@@ -111,14 +111,14 @@
 			current = identity,
 			version = summary?.version,
 			selectedForm = form;
-		if (!current || !version) return;
+		if (!current || current.form !== selectedForm || !version) return;
 		const abort = new AbortController();
 		untrack(() => {
 			void migrationCatalogs(selectedForm, version, new URL(href)).then((catalogs) => {
 				if (abort.signal.aborted) return;
 				const migrated = migrateUrl(
 					new URL(href),
-					current,
+					current.catalog,
 					catalogs[selectedForm === 'iem' ? 'headphone' : 'iem']
 				);
 				const fresh = migrationMessages(migrated.messages);
@@ -150,7 +150,7 @@
 					summary = data;
 				}
 				const current = await catalogIdentity(selectedForm, data.version).catch(() => undefined);
-				if (!abort.signal.aborted) identity = current;
+				if (!abort.signal.aborted) identity = current ? { form: selectedForm, catalog: current } : undefined;
 			})
 			.catch((e: unknown) => {
 				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);

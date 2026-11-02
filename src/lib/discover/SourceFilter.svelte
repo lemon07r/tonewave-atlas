@@ -50,8 +50,8 @@
 			: 'products must be measured by a selected reviewer; reference and candidate curves use all eligible sources.'}
 	</p>
 	{#if hiddenSelected.length}<p>
-			{hiddenSelected.length} selected reviewers are outside this rig’s list. They still scope matching; reset reviewers
-			to clear them.
+			{`${hiddenSelected.length} selected reviewer${hiddenSelected.length === 1 ? ' is' : 's are'} outside this rig’s list.`}
+			They still scope matching; reset reviewers to clear them.
 		</p>{/if}
 	<div class="source-tools">
 		<label class="field-label"

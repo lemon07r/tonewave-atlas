@@ -214,6 +214,7 @@ test('failed optional other-catalog metadata keeps an unresolved link intact and
 }) => {
 	let requests = 0;
 	await page.route('**/catalog-headphone.json.gz', async (route) => {
+		// Summary needs the first engine catalog. The separate UI metadata request is optional.
 		if (++requests > 1) await route.abort('failed');
 		else await route.fallback();
 	});
@@ -221,10 +222,57 @@ test('failed optional other-catalog metadata keeps an unresolved link intact and
 	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
 		'could not be resolved'
 	);
+	expect(requests).toBeGreaterThanOrEqual(2);
 	expect(new URL(page.url()).searchParams.get('ref')).toBe('misfiled-hd600');
 	expect(new URL(page.url()).searchParams.has('form')).toBe(false);
 	const search = page.getByRole('combobox', { name: 'Add an IEM', exact: true });
 	await search.fill('Truthear Hexa');
 	await expect(page.getByRole('option').first()).toContainText('Truthear Hexa');
 	await expect(page.getByText(/Catalog unavailable:/)).toHaveCount(0);
+});
+
+test('overlay-only cross-form links resolve product or measurement IDs without adding a reference', async ({
+	page
+}) => {
+	for (const overlay of ['misfiled-hd600', 'misfiled-headphone-measurement']) {
+		await page.goto(`/?chart=${overlay}`);
+		await expect.poll(() => new URL(page.url()).searchParams.get('form')).toBe('headphones');
+		expect(new URL(page.url()).searchParams.get('chart')).toBe(
+			overlay === 'misfiled-hd600' ? hdId : measurementId
+		);
+		await expect(page.locator('.profile-row')).toHaveCount(0);
+		await expect(page.getByRole('combobox', { name: 'Add a headphone', exact: true })).toBeVisible();
+	}
+});
+
+test('slow identity migration keeps search ready without showing a premature missing-reference error', async ({
+	page
+}) => {
+	let iemRequests = 0;
+	await page.route('**/catalog-iem.json.gz', async (route) => {
+		if (++iemRequests === 2) await new Promise((resolve) => setTimeout(resolve, 500));
+		await route.continue();
+	});
+	await page.addInitScript(() => {
+		const errors: string[] = [];
+		Object.assign(window, { prematureReferenceErrors: errors });
+		new MutationObserver(() => {
+			for (const message of [
+				'A rated reference is not in this form-factor catalog.',
+				'References do not overlap on this rig'
+			])
+				if (document.documentElement.textContent.includes(message)) errors.push(message);
+		}).observe(document, { childList: true, subtree: true });
+	});
+	await page.goto('/?ref=misfiled-hd600');
+	const search = page.getByRole('combobox', { name: 'Add an IEM', exact: true });
+	await search.fill('Truthear Hexa');
+	await expect(page.getByRole('option').first()).toContainText('Truthear Hexa');
+	await expect.poll(() => new URL(page.url()).searchParams.get('form')).toBe('headphones');
+	await expect(page.locator('.result-row').first()).toBeVisible();
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { prematureReferenceErrors: string[] }).prematureReferenceErrors
+		)
+	).toEqual([]);
 });

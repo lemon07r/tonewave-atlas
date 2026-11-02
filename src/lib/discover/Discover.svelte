@@ -57,6 +57,8 @@
 	let migrationUndone = false;
 	let locationVersion = 0;
 	let catalogLoading = $state(true);
+	let identityReady = $state(false);
+	let migratedHref = $state('');
 	let catalogError = $state('');
 	let ready = $state(false);
 	let query = $state('');
@@ -169,7 +171,7 @@
 		return product ? `${product.brand} ${product.model}` : 'Unavailable product';
 	}
 	async function migrateLocation(href: string, current: CatalogIdentity, other?: CatalogIdentity) {
-		if (migrationUndone) return;
+		if (migrationUndone) return false;
 		const migrated = migrateUrl(new URL(href), current, other);
 		const fresh = migrationMessages(migrated.messages);
 		if (fresh.length) migrationNote = [...migrationNote, ...fresh];
@@ -184,6 +186,7 @@
 				{ state: page.state, replace: true, reset: false }
 			);
 		}
+		return migrated.changed;
 	}
 	function undoMigration() {
 		if (!migrationBefore || !store) return;
@@ -358,6 +361,7 @@
 						storageError = store.error;
 					}
 					identity = catalogs[form];
+					identityReady = true;
 				}
 			})
 			.catch((cause: unknown) => {
@@ -375,14 +379,20 @@
 		const href = page.url.href,
 			current = identity,
 			version = summary?.version;
-		if (catalogLoading || !current || !version) return;
+		if (catalogLoading || !identityReady || !version) return;
+		migratedHref = '';
 		const abort = new AbortController();
+		const cancelled = () => abort.signal.aborted;
 		untrack(() => {
 			const revision = locationVersion;
-			void migrationCatalogs(form, version, new URL(href)).then((catalogs) => {
-				if (!abort.signal.aborted && revision === locationVersion)
-					return migrateLocation(href, current, catalogs[form === 'iem' ? 'headphone' : 'iem']);
-			});
+			void (current ? migrationCatalogs(form, version, new URL(href)) : Promise.resolve({})).then(
+				async (catalogs: Partial<Record<Form, CatalogIdentity>>) => {
+					if (abort.signal.aborted || revision !== locationVersion) return;
+					const changed =
+						current && (await migrateLocation(href, current, catalogs[form === 'iem' ? 'headphone' : 'iem']));
+					if (!changed && !cancelled() && revision === locationVersion) migratedHref = href;
+				}
+			);
 		});
 		return () => {
 			abort.abort();
@@ -396,7 +406,7 @@
 			});
 	});
 	$effect(() => {
-		if (!ready || catalogLoading || catalogError) return;
+		if (!ready || catalogLoading || catalogError || migratedHref !== page.url.href) return;
 		const spec = JSON.parse(queryKey) as QuerySpec;
 		const currentIdentity = identity;
 		controller.invalidate();
@@ -781,6 +791,8 @@
 				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
 						><ReferenceDiagnostics
 							{items}
+							{form}
+							version={summary?.version ?? ''}
 							{identity}
 							{products}
 							partition={activePartition}
