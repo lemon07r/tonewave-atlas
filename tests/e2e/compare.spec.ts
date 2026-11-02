@@ -15,14 +15,14 @@ for (const theme of ['light', 'dark'] as const) {
 			page.on('pageerror', (error) => errors.push(error.message));
 			await page.goto('/compare');
 			const search = page.getByRole('combobox', { name: 'Add to comparison', exact: true });
-			for (const name of ['Truthear Hexa', 'TRUTHEAR NOVA']) {
+			for (const name of ['Truthear Hexa', 'Truthear Nova']) {
 				await search.fill(name);
 				await page
 					.getByRole('option')
-					.filter({ has: page.locator('.option-title').filter({ hasText: new RegExp(`^${name}$`) }) })
+					.filter({ has: page.locator('.option-title').filter({ hasText: new RegExp(`^${name}$`, 'i') }) })
 					.click();
 				await expect(
-					page.getByTestId('comparison-row').getByRole('heading', { name, exact: true })
+					page.getByTestId('comparison-row').getByRole('heading', { name: new RegExp(`^${name}$`, 'i') })
 				).toBeVisible();
 			}
 			await search.press('Escape');

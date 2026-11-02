@@ -186,7 +186,7 @@ test('Discover clears source filters on rig changes and keeps taste corrections 
 	await page.getByRole('combobox', { name: 'Add an IEM to your profile', exact: true }).fill('DUNU Vulkan 2');
 	await page
 		.getByRole('option')
-		.filter({ has: page.locator('.option-title').filter({ hasText: /^DUNU Vulkan 2$/ }) })
+		.filter({ has: page.locator('.option-title').filter({ hasText: /^DUNU Vulkan 2$/i }) })
 		.click();
 	const rig = page.getByRole('combobox', { name: 'Taste measurement rig', exact: true });
 	await rig.selectOption('iem-711');

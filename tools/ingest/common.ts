@@ -169,7 +169,7 @@ export function productAliasKey(brand: string, model: string): string {
 }
 
 /** Additional maker aliases are terminal; legacy punctuation/case-only entries remain valid. */
-export function validateProductBrands(
+function validateProductBrands(
 	value: unknown,
 	existing: Record<string, string> = {}
 ): Record<string, string> {

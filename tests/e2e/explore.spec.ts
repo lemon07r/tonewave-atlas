@@ -59,10 +59,10 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.screenshot({ path: join(shots, `pages-product-${info.project.name}-${theme}.png`) });
 			const target = page.getByRole('combobox', { name: 'EQ target product', exact: true });
-			await target.fill('TRUTHEAR NOVA');
+			await target.fill('Truthear Nova');
 			await page
 				.getByRole('option')
-				.filter({ has: page.locator('.option-title').filter({ hasText: /^TRUTHEAR NOVA$/ }) })
+				.filter({ has: page.locator('.option-title').filter({ hasText: /^Truthear Nova$/i }) })
 				.click();
 			await target.press('Escape');
 			const table = page.getByRole('table', { name: 'Parametric EQ filters' });
