@@ -32,7 +32,9 @@ export function tuningDescriptor(text: string): boolean {
 	return (
 		switchState(text) !== null ||
 		adapterState(text) !== null ||
-		/\bimped[ae]nce\b|\b(?:high|low)\s+imp\b|\d\s*ohms?\b|impedance\s+adapter/i.test(text)
+		/\bimped[ae]nce\b|\b(?:high|low)\s+imp\b|\d\s*ohms?\b|impedance\s+adapter|\b(?:bass|tuning)\s+plug\b/i.test(
+			text
+		)
 	);
 }
 
@@ -65,7 +67,10 @@ export function cableSuffixes(model: string): { parent: string; label: string }[
 		.flatMap((boundary) => {
 			const parent = model.slice(0, boundary.index).trim();
 			const label = model.slice(boundary.index + boundary[0].length).trim();
-			if (!cableDescriptor(label) || /\b(?:tip|pad|earphone|special edition|after burn|batch)\b/i.test(label))
+			if (
+				!cableDescriptor(label) ||
+				/\b(?:tip|pad|foam|earphone|special edition|after burn|batch|sample|unit|s\d+)\b/i.test(label)
+			)
 				return [];
 			if (
 				!/^(?:[([][^()[\]]+[)\]]|(?:with\s+|\+\s*)?[^()[\]]*(?:cable|termination|plug)|(?:standard\s+)?[234][.,][45]\s*mm(?:\s+(?:balanced|single[ -]ended))?|balanced\s+(?:connection|output)|single[ -]ended)$/i.test(

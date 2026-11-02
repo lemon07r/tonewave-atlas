@@ -15,6 +15,14 @@ interface SwitchRow {
 	measurement: Measurement;
 }
 
+/** Neutral cable metadata cannot erase existing fit, unit, EQ or impedance-load meaning. */
+function cableKind(m: Measurement): Measurement['variant']['kind'] {
+	if (m.variant.kind === 'unit') return 'unit';
+	if (m.variant.kind === 'tuning' || tuningDescriptor(m.variant.label) || /\bdsp\b/i.test(m.variant.label))
+		return 'tuning';
+	return m.variant.kind === 'fit' ? 'fit' : 'setup';
+}
+
 /** Fold only recognized terminal state descriptors into an already accepted exact parent. */
 export function mergeSwitchIdentities(products: Map<string, Product>, rows: readonly SwitchRow[]) {
 	const before = collisionGroups([...products.values()]);
@@ -55,8 +63,10 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			m.provenance.processing.push(
 				`recognized ${switchSuffix ? 'switch-state' : 'cable/termination'} identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${suffix.label}`
 			);
-			if (!switchSuffix && !m.variant.isDefault && m.variant.kind !== 'unit')
-				m.variant.kind = /\bdsp\b/i.test(suffix.label) || tuningDescriptor(suffix.label) ? 'tuning' : 'setup';
+			if (!switchSuffix) {
+				if (/\bdsp\b/i.test(suffix.label) || tuningDescriptor(suffix.label)) m.variant.isDefault = false;
+				if (!m.variant.isDefault) m.variant.kind = cableKind(m);
+			}
 			parent.measurementIds.push(m.id);
 		}
 		products.delete(p.id);
@@ -85,7 +95,7 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			const demoted = defaults.filter((m) => m !== selected);
 			for (const m of demoted) {
 				m.variant.isDefault = false;
-				m.variant.kind = 'setup';
+				m.variant.kind = cableKind(m);
 			}
 			cableDefaultChanges.push({
 				source,

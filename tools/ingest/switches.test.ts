@@ -148,6 +148,38 @@ describe('switch-state identity and source-balanced defaults', () => {
 		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['setup', 'default']);
 		expect(rows.map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
 	});
+	it('preserves impedance-load and fit labels when a generic plug or cable identity joins stock', () => {
+		const products = new Map([product(), product('plug', 'Volume S PLUG')].map((p) => [p.id, p]));
+		const rows = [
+			row('source', 'Volume S stock'),
+			row('source', 'Volume S PLUG (220 Ohm)', false, 'plug'),
+			row('source', 'Volume S PLUG CP145', false, 'plug', 'fit')
+		];
+		mergeSwitchIdentities(products, rows);
+		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['default', 'tuning', 'fit']);
+	});
+	it.each(['DSP Cable', 'Bass plug'])(
+		'does not make a non-neutral accessory a bare default: %s',
+		(suffix) => {
+			const products = new Map([product(), product('cable', `Volume S ${suffix}`)].map((p) => [p.id, p]));
+			const rows = [row('source', `Volume S ${suffix}`, true, 'cable')];
+			mergeSwitchIdentities(products, rows);
+			expect(rows[0]?.measurement.variant).toMatchObject({ kind: 'tuning', isDefault: false });
+		}
+	);
+	it('does not consume sample or fit identity words as part of a cable name', () => {
+		const products = new Map(
+			[product(), product('sample', 'Volume S S2 CABLE'), product('fit', 'Volume S Foam Cable')].map((p) => [
+				p.id,
+				p
+			])
+		);
+		const rows = [row('source', 'Volume S S2 CABLE', true, 'sample')];
+		const result = mergeSwitchIdentities(products, rows);
+		expect(result.moves).toHaveLength(0);
+		expect(products.has('sample')).toBe(true);
+		expect(products.has('fit')).toBe(true);
+	});
 	it('selects the most source-default state, not the most measured state; leaves unlabeled data intact', () => {
 		const products = new Map([['parent', product()]]);
 		const rows = [
