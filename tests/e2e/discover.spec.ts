@@ -5,7 +5,7 @@ async function pick(page: Page, searchLabel: string, model: string) {
 	await page.getByRole('combobox', { name: searchLabel, exact: true }).fill(model);
 	await page
 		.getByRole('option')
-		.filter({ has: page.locator('.option-title').filter({ hasText: new RegExp(`^${model}$`) }) })
+		.filter({ has: page.locator('.option-title').filter({ hasText: new RegExp(`^${model}$`, 'i') }) })
 		.click();
 }
 async function accessible(page: Page) {
@@ -94,8 +94,8 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 	await page.getByRole('radio', { name: 'Match my taste profile', exact: true }).check();
 	await expect(page.getByText(/Add at least one sound-related Like or Love/)).toBeVisible();
 	await pick(page, 'Add an IEM to your profile', 'Truthear Hexa');
-	await pick(page, 'Add an IEM to your profile', 'TRUTHEAR NOVA');
-	const nova = page.getByRole('region', { name: 'TRUTHEAR NOVA', exact: true });
+	await pick(page, 'Add an IEM to your profile', 'Truthear Nova');
+	const nova = page.getByRole('region', { name: /^Truthear Nova$/i });
 	await nova.getByRole('radio', { name: 'Dislike', exact: true }).check();
 	await nova.getByRole('checkbox', { name: 'Too much bass', exact: true }).check();
 	await expect(page.getByRole('region', { name: 'Taste model summary' })).toBeVisible();
@@ -132,9 +132,7 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 	await expect(
 		page.locator('.result-row').getByRole('heading', { name: 'Truthear Hexa', exact: true })
 	).toHaveCount(0);
-	await expect(
-		page.locator('.result-row').getByRole('heading', { name: 'TRUTHEAR NOVA', exact: true })
-	).toHaveCount(0);
+	await expect(page.locator('.result-row').getByRole('heading', { name: /^Truthear Nova$/i })).toHaveCount(0);
 	await accessible(page);
 	await page.getByRole('button', { name: 'Clear profile', exact: true }).click();
 	await expect(page.getByText(/No IEMs in your profile yet/)).toBeVisible();

@@ -1,11 +1,28 @@
 {
 	"_note": "Explicit aliases verified in catalog 3c9d923462f8b79c98aa4ef9: aden's Aria II uses files MD Aria 2 BBR, Chu 2 uses Moondrop Chu II, and Timeless II uses 7Hz Timeless 2. Canonical brand spellings only; no tuning, fit, or sample variants are removed.",
+	"brands": {
+		"_note": "Binary's own binary.audio site names the maker Binary / Binary Acoustics. Same-rig measurements support these source-brand spellings; see docs/DATA_SOURCES.md identity audit. Display spelling is voted, not taken from this table.",
+		"Binary Acoustics": "Binary",
+		"Binary Acoustic": "Binary"
+	},
 	"aliases": {
 		"_note": "Collaboration spellings verified in dataset 82c0a5df23cc64e5d7268caa: enemyspider lists QKZxHBB (QKZHBB WT/BT), ankramutt QKZ X HBB; eplv lists BLONxHBB Z300, achoreviews Blon Z300. Closest default rank-curve distances across spellings are 1.041 and 0.887 dB respectively (20 Hz-20 kHz, LS level alignment); no same-source pair exists. Measurement variants remain separate.",
 		"MOONDROP|Aria II": "MOONDROP|Aria 2",
 		"MOONDROP|Chu II": "MOONDROP|Chu 2",
 		"7Hz|Timeless II": "7Hz|Timeless 2",
 		"QKZ|QKZxHBB": "QKZ|x HBB",
-		"BLON|BLONxHBB Z300": "BLON|x HBB Z300"
+		"BLON|BLONxHBB Z300": "BLON|x HBB Z300",
+		"Binary|EP321 MEMS": "Binary|EP321",
+		"Binary|Chopin": "Binary|x Gizaudio Chopin",
+		"Kiwi Ears|Halycon": "Kiwi Ears|Halcyon",
+		"Kiwi Ears|Haylcon": "Kiwi Ears|Halcyon",
+		"Kiwi Ears|Fortenza": "Kiwi Ears|Forteza",
+		"Kiwi Ears|Airioso": "Kiwi Ears|Airoso",
+		"MOONDROP|Solis II": "MOONDROP|Solis 2",
+		"MOONDROP|Variation": "MOONDROP|Variations",
+		"KZ|Linlong": "KZ|Ling Long",
+		"Symphonium|Crimsom": "Symphonium|Crimson",
+		"Juzear|Dragonly 81T": "Juzear|Dragonfly 81T",
+		"Focal|Azuyrs": "Focal|Azurys"
 	}
 }

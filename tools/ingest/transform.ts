@@ -1,6 +1,6 @@
 import type { Database, Phone } from './common.ts';
 import { configString, formFor, productAliasKey, record, sha256 } from './common.ts';
-import type { Form, Source, Variant } from '#core/dataset/types.ts';
+import type { Form, Product, Source, Variant } from '#core/dataset/types.ts';
 
 export function normalise(value: string): string {
 	return value
@@ -16,7 +16,15 @@ export function identity(
 	form: Form,
 	aliases: Record<string, string>,
 	productAliases: Record<string, string> = {}
-): { id: string; brand: string; model: string; key: string; originalKey: string } {
+): {
+	id: string;
+	brand: string;
+	model: string;
+	key: string;
+	originalKey: string;
+	observedBrand: string;
+	observedModel: string;
+} {
 	let canonical = aliases[normalise(brand)] ?? brand.trim().replace(/\s+/g, ' ');
 	let cleanModel = model.trim().replace(/\s+/g, ' ');
 	const originalKey = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
@@ -31,6 +39,8 @@ export function identity(
 		if (!rest) break;
 		cleanModel = rest;
 	}
+	const observedBrand = brand.trim().replace(/\s+/g, ' ');
+	const observedModel = cleanModel;
 	const alias = productAliases[productAliasKey(canonical, cleanModel)];
 	if (alias) {
 		const [targetBrand = '', targetModel = ''] = alias.split('|');
@@ -38,7 +48,47 @@ export function identity(
 		cleanModel = targetModel.trim().replace(/\s+/g, ' ');
 	}
 	const key = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
-	return { id: `p-${sha256(key).slice(0, 20)}`, brand: canonical, model: cleanModel, key, originalKey };
+	return {
+		id: `p-${sha256(key).slice(0, 20)}`,
+		brand: canonical,
+		model: cleanModel,
+		key,
+		originalKey,
+		observedBrand,
+		observedModel
+	};
+}
+
+/** Labels only: one vote per accepted measurement, never alias-table casing. */
+export class DisplayNames {
+	brands = new Map<string, Map<string, number>>();
+	models = new Map<string, Map<string, number>>();
+
+	observe(product: ReturnType<typeof identity>): void {
+		for (const [votes, key, spelling] of [
+			[this.brands, normalise(product.brand), product.observedBrand],
+			[this.models, product.id, product.observedModel]
+		] as const) {
+			const counts = votes.get(key) ?? new Map<string, number>();
+			counts.set(spelling, (counts.get(spelling) ?? 0) + 1);
+			votes.set(key, counts);
+		}
+	}
+
+	apply(products: Iterable<Pick<Product, 'id' | 'brand' | 'model'>>): void {
+		const preferred = (counts: Map<string, number> | undefined): string => {
+			const mixed = (value: string) => /\p{Lu}/u.test(value) && /\p{Ll}/u.test(value);
+			const spelling = [...(counts ?? [])].sort(
+				([a, n], [b, m]) => m - n || Number(mixed(b)) - Number(mixed(a)) || (a < b ? -1 : a > b ? 1 : 0)
+			)[0]?.[0];
+			if (spelling === undefined) throw new Error('Missing source-observed display spelling');
+			return spelling;
+		};
+		for (const product of products) {
+			product.brand = preferred(this.brands.get(normalise(product.brand)));
+			product.model = preferred(this.models.get(product.id));
+		}
+	}
 }
 
 export function variant(phone: Phone, index: number, measurementId: string): Variant {
@@ -143,8 +193,7 @@ export function collisionGroups(products: AuditProduct[]): string[][] {
 	const names = new Map(products.map((p) => [p.id, `${p.form ? `[${p.form}] ` : ''}${p.brand} ${p.model}`]));
 	return [...groups.values()]
 		.map((ids) => [...ids].map((id) => names.get(id) ?? id).sort())
-		.sort((a, b) => b.length - a.length || (a[0] ?? '').localeCompare(b[0] ?? '', 'en'))
-		.slice(0, 20);
+		.sort((a, b) => b.length - a.length || (a[0] ?? '').localeCompare(b[0] ?? '', 'en'));
 }
 
 /** Edit-distance candidates are audit suggestions ONLY; no fuzzy identity merges. */

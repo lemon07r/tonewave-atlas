@@ -42,6 +42,7 @@ import {
 } from './common.ts';
 import {
 	collisionGroups,
+	DisplayNames,
 	identity,
 	normalise,
 	sourceFor,
@@ -106,6 +107,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		aliases[normalise(b)] = b;
 	}
 	const products = new Map<string, Product>();
+	const displayNames = new DisplayNames();
 	const identities = new Map<string, Set<string>>();
 	const originalIdentities = new Map<string, Set<string>>();
 	const trackIdentity = (product: ReturnType<typeof identity>, originalName: string) => {
@@ -411,6 +413,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					products.set(p.id, p);
 				}
 				p.measurementIds.push(id);
+				displayNames.observe(product);
 				trackIdentity(product, `${phone.brand} ${phone.name}`);
 				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
 				const group = partitions.get(source.partition) ?? [];
@@ -430,6 +433,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			`${db.id}: ${counts.accepted} accepted / ${counts.rejected} rejected; ${counts.missingChannels} missing channels`
 		);
 	}
+	displayNames.apply(products.values());
 	const artifacts = new Map<string, Uint8Array>();
 	artifacts.set('targets.json.gz', gzipSync(JSON.stringify(targets), { level: 9 }));
 	const partitionMetadata: Partition[] = [];

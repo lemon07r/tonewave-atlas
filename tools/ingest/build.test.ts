@@ -91,6 +91,49 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('votes only accepted measurements, with global brand spelling and unchanged provenance', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'BRAND',
+						phones: [
+							{ name: 'MODEL', file: 'Model' },
+							{ name: 'MODEL', file: 'Missing' },
+							{ name: 'MODEL', file: 'Missing' },
+							{ name: 'MODEL', file: 'Missing' },
+							{ name: 'MODEL', file: 'Model' }
+						]
+					},
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: ['Model2', 'Model3'] },
+							{ name: 'Other', file: 'Model4' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)],
+			[`${base}data/Model4%20L.txt`, curve(80)]
+		]);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.products.map((p) => `${p.brand} ${p.model}`).sort()).toEqual([
+			'Brand Model',
+			'Brand Other'
+		]);
+		expect(catalog.measurements).toHaveLength(4);
+		expect(catalog.measurements.map((m) => m.variant.file).sort()).toEqual([
+			'Model',
+			'Model2',
+			'Model3',
+			'Model4'
+		]);
+		expect(catalog.measurements.every((m) => m.provenance.originalUrls[0]?.startsWith(base))).toBe(true);
+	});
 	it('counts unique original keys and net reduction separately from groupwise merges when a key splits', async () => {
 		const { paths } = await fixture('', [
 			[
@@ -191,6 +234,38 @@ describe('cached dataset build safety', () => {
 		expect(catalog.products).toHaveLength(1);
 		expect(catalog.measurements).toHaveLength(3);
 		expect(report.identityMerges).toEqual({ productsBefore: 3, productsAfter: 1, merged: 2 });
+	});
+	it('combines maker and model aliases before identity but votes the original source spelling', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{ name: 'Maker Acoustics', phones: [{ name: 'Model MEMS', file: 'Model' }] },
+					{
+						name: 'MAKER',
+						phones: [
+							{ name: 'MODEL', file: 'Model2' },
+							{ name: 'MODEL', file: 'Model3' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)]
+		]);
+		await writeFile(
+			resolve(paths.root, 'data/products.json'),
+			JSON.stringify({
+				brands: { 'Maker Acoustics': 'Maker' },
+				aliases: { 'Maker Acoustics|Model MEMS': 'Maker|Model' }
+			})
+		);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.products).toHaveLength(1);
+		// The source spelling with the most accepted measurements wins, not the alias target's spelling.
+		expect(catalog.products[0]).toMatchObject({ brand: 'MAKER', model: 'MODEL' });
+		expect(catalog.measurements).toHaveLength(3);
 	});
 	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
 		'reports stale discovery/calibration/measurement %s',
