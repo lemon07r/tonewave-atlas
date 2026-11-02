@@ -239,6 +239,9 @@
 		border-bottom: var(--hairline) solid var(--line);
 		scroll-margin-top: 32px;
 	}
+	article {
+		min-width: 0;
+	}
 	article section:last-child {
 		border: 0;
 		margin-bottom: 0;
@@ -258,6 +261,7 @@
 	}
 	.source-table {
 		overflow-x: auto;
+		max-width: 100%;
 		margin: 24px 0;
 	}
 	table {
@@ -288,7 +292,7 @@
 	}
 	@media (max-width: 700px) {
 		.method-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 			gap: 36px;
 			margin-top: 36px;
 		}

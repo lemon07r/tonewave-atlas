@@ -301,7 +301,7 @@
 					<div class="legend-row" data-testid="comparison-row">
 						<h3>{row.label}</h3>
 						<p class="small">{rigLabel(row.partition)} · {row.variant}</p>
-						<p class="small muted">
+						<p class="sources small muted">
 							{#each row.sources as source (source.id)}<a href={source.url} rel="external">{source.name}</a>
 							{/each}
 						</p>
@@ -414,6 +414,18 @@
 		gap: 48px;
 		align-items: start;
 	}
+	.compare-grid > section {
+		min-width: 0;
+	}
+	.sources {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 12px;
+		margin-top: 8px;
+	}
+	.sources a {
+		overflow-wrap: anywhere;
+	}
 	.legend-row {
 		border-top: 1px solid var(--line);
 		padding-top: 20px;
@@ -451,7 +463,7 @@
 	}
 	@media (max-width: 900px) {
 		.compare-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 		.chart {
 			position: static;

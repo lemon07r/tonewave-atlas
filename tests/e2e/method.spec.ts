@@ -25,6 +25,7 @@ for (const theme of ['light', 'dark'] as const) {
 			const sourceRegion = page.getByRole('region', { name: 'Scrollable measurement sources' });
 			await sourceRegion.focus();
 			await expect(sourceRegion).toBeFocused();
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 			await page.evaluate(() => {
 				window.scrollTo(0, 0);
 			});

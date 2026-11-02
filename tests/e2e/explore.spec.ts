@@ -71,6 +71,12 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.locator('.eq').scrollIntoViewIfNeeded();
 			await page.screenshot({ path: join(shots, `pages-eq-${info.project.name}-${theme}.png`) });
+			await page
+				.getByRole('figure', { name: 'Original, target and EQ approximation' })
+				.evaluate((element) => {
+					element.scrollIntoView({ block: 'start' });
+				});
+			await page.screenshot({ path: join(shots, `pages-eq-chart-${info.project.name}-${theme}.png`) });
 			expect(errors).toEqual([]);
 		});
 	});

@@ -33,8 +33,15 @@ for (const theme of ['light', 'dark'] as const) {
 			}
 			await expect(page.getByRole('button', { name: 'Export chart as PNG' })).toBeEnabled();
 			await expect(page).toHaveURL(/[?&]p=p-/);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.screenshot({ path: join(shots, `pages-compare-${info.project.name}-${theme}.png`) });
+			if (info.project.name === 'mobile') {
+				await page.locator('.chart').evaluate((element) => {
+					element.scrollIntoView({ block: 'start' });
+				});
+				await page.screenshot({ path: join(shots, `pages-compare-chart-${info.project.name}-${theme}.png`) });
+			}
 			await page.getByRole('radio', { name: 'Difference', exact: true }).check();
 			await expect(page.getByRole('combobox', { name: 'Difference baseline' })).toBeVisible();
 			await expect(page).toHaveURL(/[?&]diff=p-/);
