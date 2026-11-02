@@ -186,7 +186,7 @@ describe('cached dataset build safety', () => {
 		expect(
 			headphones.measurements.every((m) => m.partition === `headphone-source-${manifest.sources[0]?.id}`)
 		).toBe(true);
-		const next = { ...catalog, redirects: { products: {}, measurements: {} } };
+		const next: Catalog = { ...catalog, redirects: { products: {}, measurements: {} } };
 		const existingProduct = catalog.products[0],
 			existingMeasurement = catalog.measurements[0];
 		if (!existingProduct || !existingMeasurement) throw new Error('Missing retained fixture');
@@ -198,8 +198,8 @@ describe('cached dataset build safety', () => {
 			provenance: { ...existingMeasurement.provenance, originalUrls: [`${base}data/Reference%20L.txt`] }
 		};
 		buildRedirects([{ ...catalog, products: [gone], measurements: [removed] }], [next]);
-		expect(next.redirects.products['non-product']).toBeUndefined();
-		expect(next.redirects.measurements['removed']).toBeUndefined();
+		expect(next.redirects?.products['non-product']).toBeUndefined();
+		expect(next.redirects?.measurements['removed']).toBeUndefined();
 	});
 	it('retains separately labelled same-response fits and every channel before default reconciliation', async () => {
 		const phones = [
