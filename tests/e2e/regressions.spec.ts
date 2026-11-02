@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { productOnRigs, reviewerForReference } from './catalog.ts';
 
 const reference = 'p-437de4e3e3402077cdc3';
 const volume = 'p-9104c8bb39d66e906811';
@@ -15,26 +16,42 @@ const fixture = {
 };
 
 test('upload requests keep the declared rig and lock the independent discovery rig', async ({ page }) => {
-	await page.goto(`/?ref=${reference}&rig=iem-5128`);
+	const uploadReference = productOnRigs(['iem-711', 'iem-5128']);
+	await page.goto(`/?ref=${uploadReference.id}&rig=iem-5128`);
 	await expect(page.locator('.result-row')).toHaveCount(20);
+	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
 	await page.locator('.workspace-tools > summary').click();
 	await page.getByRole('combobox', { name: 'Upload measurement rig' }).selectOption('iem-711');
 	await page.getByLabel('Local reference measurement', { exact: true }).setInputFiles(fixture);
+	await expect(page.getByText(`Local reference: ${fixture.name}`, { exact: true })).toBeVisible();
 	await expect(page.locator('.results > .distance-note').first()).toContainText('711-family coupler');
+	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
+		'aria-busy',
+		'false'
+	);
+	await expect(page.locator('.result-row')).toHaveCount(20);
 	await page.locator('.refine > summary').click();
 	const rig = page.getByRole('combobox', { name: 'Measurement rig', exact: true });
 	if (await rig.isEnabled()) await rig.selectOption('iem-5128');
 	await expect(page.locator('.results > .distance-note').first()).toContainText('711-family coupler');
 	await expect(rig).toBeDisabled();
+	await expect(rig).toHaveValue('iem-711');
 	await expect(page.getByText(/Rig is locked to your upload/)).toBeVisible();
 });
 
 test('source-only reviewer Reset returns to coverage atomically instead of failing the query', async ({
 	page
 }) => {
-	await page.goto(`/?ref=${reference}&rig=iem-711&sources=aden-iems-f0687e07&sourceMode=only`);
+	const reviewer = reviewerForReference(reference);
+	await page.goto(
+		`/?${new URLSearchParams({ ref: reference, rig: reviewer.partition, sources: reviewer.id, sourceMode: 'only' })}`
+	);
 	await expect(page.locator('.result-row')).toHaveCount(20);
 	await page.locator('.refine > summary').click();
+	await expect(page.getByRole('combobox', { name: 'Reviewer scoring mode' })).toHaveValue('only');
+	await expect(page.locator('.result-row').first().locator('.sources a')).toHaveText([
+		`${reviewer.name} database`
+	]);
 	await page.getByRole('button', { name: 'Reset reviewers', exact: true }).click();
 	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
 		'aria-busy',
@@ -44,17 +61,25 @@ test('source-only reviewer Reset returns to coverage atomically instead of faili
 	await expect(page.getByRole('combobox', { name: 'Reviewer scoring mode' })).toHaveValue('coverage');
 	await expect(page.locator('option[value="only"]')).toHaveJSProperty('disabled', true);
 	await expect(page).not.toHaveURL(/sourceMode=only/);
+	await expect(page).not.toHaveURL(/sources=/);
 });
 
 test('reviewer changes clear serialised corrections belonging to the old taste model', async ({ page }) => {
+	const reviewer = reviewerForReference(reference);
 	await page.goto(
 		shared([like(reference)], { view: 'taste', edits: JSON.stringify([{ tasteId: 0, bands: { bass: 2 } }]) })
 	);
 	await expect(page.locator('.result-row')).toHaveCount(20);
 	await page.locator('.refine > summary').click();
-	await page.getByRole('searchbox', { name: 'Search reviewers' }).fill('aden');
-	await page.locator('.source-options').getByRole('checkbox', { name: 'aden', exact: true }).check();
+	await page.getByRole('searchbox', { name: 'Search reviewers' }).fill(reviewer.name);
+	await page.locator('.source-options').getByRole('checkbox', { name: reviewer.name, exact: true }).check();
 	await expect(page).not.toHaveURL(/edits=/);
+	await expect.poll(() => new URL(page.url()).searchParams.get('sources')).toBe(reviewer.id);
+	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
+		'aria-busy',
+		'false'
+	);
+	await expect(page.locator('.result-row')).toHaveCount(20);
 });
 
 test('an unknown Neutral product does not block a valid Like', async ({ page }) => {

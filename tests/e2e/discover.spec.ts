@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { expectTradeoffRows } from './tradeoffs.ts';
+import { reviewerForReference } from './catalog.ts';
 
 const reference = 'p-437de4e3e3402077cdc3';
 const volume = 'p-9104c8bb39d66e906811';
@@ -249,7 +250,10 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 test('reviewer coverage versus source-only pooling is explicit, shareable and discloses removed sources', async ({
 	page
 }) => {
-	await page.goto(`/?ref=${reference}&rig=iem-711&sources=aden-iems-f0687e07`);
+	const reviewer = reviewerForReference(reference);
+	await page.goto(
+		`/?${new URLSearchParams({ ref: reference, rig: reviewer.partition, sources: reviewer.id })}`
+	);
 	await expect(page.locator('.result-row').first()).toBeVisible();
 	await page.locator('.refine > summary').click();
 	const selectedReviewer = (
@@ -258,7 +262,7 @@ test('reviewer coverage versus source-only pooling is explicit, shareable and di
 			.filter({ has: page.getByRole('checkbox', { checked: true }) })
 			.innerText()
 	).trim();
-	expect(selectedReviewer).not.toBe('');
+	expect(selectedReviewer).toBe(reviewer.name);
 	const mode = page.getByRole('combobox', { name: 'Reviewer scoring mode', exact: true });
 	await expect(mode).toHaveValue('coverage');
 	await mode.selectOption('only');
@@ -279,8 +283,11 @@ test('reviewer coverage versus source-only pooling is explicit, shareable and di
 	await page.reload();
 	await page.locator('.refine > summary').click();
 	await expect(mode).toHaveValue('only');
-	await page.getByRole('searchbox', { name: 'Search reviewers', exact: true }).fill('aden');
+	await page.getByRole('searchbox', { name: 'Search reviewers', exact: true }).fill(reviewer.name);
 	await expect(page.locator('.source-options').getByRole('checkbox')).toHaveCount(1);
+	await expect(
+		page.locator('.source-options').getByRole('checkbox', { name: reviewer.name, exact: true })
+	).toBeChecked();
 	await page.getByRole('button', { name: 'Reset reviewers', exact: true }).click();
 	await expect(page).not.toHaveURL(/sources=/);
 	await expect(page.getByRole('searchbox', { name: 'Search reviewers', exact: true })).toHaveValue('');

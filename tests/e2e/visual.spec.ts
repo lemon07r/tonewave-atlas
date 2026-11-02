@@ -4,6 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import type { WorkspaceItem } from '../../src/lib/profile/profile.ts';
 import { expectTradeoffRows } from './tradeoffs.ts';
+import { reviewerForReference } from './catalog.ts';
 
 const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
 mkdirSync(shots, { recursive: true });
@@ -90,9 +91,16 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
 			await expectTradeoffRows(page, ['CrinEar Reference', 'Softears Volume S'], 'mean');
 			await capture('discover-multi-evidence', '.result-row');
-			await page.goto(`/?ref=${reference}&rig=iem-711&sources=aden-iems-f0687e07&sourceMode=only`);
+			const reviewer = reviewerForReference(reference);
+			await page.goto(
+				`/?${new URLSearchParams({ ref: reference, rig: reviewer.partition, sources: reviewer.id, sourceMode: 'only' })}`
+			);
 			await ready();
 			await page.locator('.refine > summary').click();
+			await expect(
+				page.locator('.source-options').getByRole('checkbox', { name: reviewer.name, exact: true })
+			).toBeChecked();
+			await expect(page.getByRole('combobox', { name: 'Reviewer scoring mode' })).toHaveValue('only');
 			await capture('discover-reviewers', '.source-filter');
 			await page.goto(
 				ratingsUrl([
