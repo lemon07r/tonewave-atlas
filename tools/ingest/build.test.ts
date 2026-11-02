@@ -101,6 +101,8 @@ describe('cached dataset build safety', () => {
 						phones: [
 							{ name: 'MODEL', file: 'Model' },
 							{ name: 'MODEL', file: 'Missing' },
+							{ name: 'MODEL', file: 'Missing' },
+							{ name: 'MODEL', file: 'Missing' },
 							{ name: 'MODEL', file: 'Model' }
 						]
 					},
@@ -239,10 +241,17 @@ describe('cached dataset build safety', () => {
 				bookUrl,
 				JSON.stringify([
 					{ name: 'Maker Acoustics', phones: [{ name: 'Model MEMS', file: 'Model' }] },
-					{ name: 'Maker', phones: [{ name: 'Model', file: 'Model2' }] }
+					{
+						name: 'MAKER',
+						phones: [
+							{ name: 'MODEL', file: 'Model2' },
+							{ name: 'MODEL', file: 'Model3' }
+						]
+					}
 				])
 			],
-			[`${base}data/Model2%20L.txt`, curve(80)]
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)]
 		]);
 		await writeFile(
 			resolve(paths.root, 'data/products.json'),
@@ -254,8 +263,9 @@ describe('cached dataset build safety', () => {
 		await build(paths);
 		const { catalog } = await result(paths);
 		expect(catalog.products).toHaveLength(1);
-		expect(catalog.products[0]).toMatchObject({ brand: 'Maker', model: 'Model' });
-		expect(catalog.measurements).toHaveLength(2);
+		// The source spelling with the most accepted measurements wins, not the alias target's spelling.
+		expect(catalog.products[0]).toMatchObject({ brand: 'MAKER', model: 'MODEL' });
+		expect(catalog.measurements).toHaveLength(3);
 	});
 	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
 		'reports stale discovery/calibration/measurement %s',

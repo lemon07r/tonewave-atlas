@@ -219,7 +219,7 @@ only identity-dependent IDs and shard paths, the measurement metadata is identic
 
 There are **576 connected near-name groups / 848 pairs** after the rebuild (585 / 858 before).
 Labels can change the order among equally sized groups but do not authorize additional merges.
-Below are the first twenty groups in the rebuilt report, ordered by size then displayed name.
+Below are the first twenty groups in the rebuilt report, ordered by size (ties in report order).
 Each row covers the whole connected group, not a promise that every pair is a genuine duplicate.
 Switch encodings are retained as supplied: no unverified DD ↔ 00 correspondence is assumed.
 
