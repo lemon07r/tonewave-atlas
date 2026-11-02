@@ -17,6 +17,8 @@ import { defaultSpreadDb, makeWeights } from './weights.ts';
 const TASTE_CLUSTER_DISTANCE_DB = 3;
 const DUPLICATE_DISTANCE_DB = 1.5;
 const CONSTRAINT_MARGIN_DB = 0.5;
+const NARROW_RESIDUAL_CAP_DB = 2;
+const NARROW_PENALTY_BUDGET = 0.5;
 export type DislikeReason =
 	| 'too-much-bass'
 	| 'too-little-bass'
@@ -30,6 +32,39 @@ export type DislikeReason =
 	| 'dull-treble'
 	| 'tonal-balance-wrong'
 	| 'other';
+
+/** Stored ids remain compatible with profiles; labels describe measured correlates, not diagnoses. */
+export const DISLIKE_REASON_LABELS: Readonly<Record<DislikeReason, string>> = {
+	'too-much-bass': 'Higher 20–250 Hz level relative to 500 Hz–2 kHz',
+	'too-little-bass': 'Lower 20–250 Hz level relative to 500 Hz–2 kHz',
+	'bass-lacks-punch': 'Lower 20–60 Hz level relative to 80–250 Hz',
+	'too-much-midbass-warmth': 'Higher 80–250 Hz level relative to 500 Hz–2 kHz',
+	'muddy-lower-mids': 'Higher 250–800 Hz level relative to 500 Hz–2 kHz',
+	'thin-or-recessed-vocals': 'Lower 800–2500 Hz level relative to 500 Hz–2 kHz',
+	'shouty-upper-mids': 'Higher 2–5 kHz level relative to 500 Hz–2 kHz',
+	'sharp-fatiguing-treble': 'Higher 2–10 kHz level relative to 500 Hz–2 kHz',
+	sibilance: 'More bounded narrow-residual RMS at 5–9 kHz',
+	'dull-treble': 'Lower 5–10 kHz level relative to 500 Hz–2 kHz',
+	'tonal-balance-wrong': 'Near-duplicate measured response shape',
+	other: 'Near-duplicate measured response shape'
+};
+function constraintStatement(
+	reason: DislikeReason | 'near-duplicate',
+	disliked: string,
+	candidate: number | null,
+	reference: number | null
+): string {
+	if (reason === 'near-duplicate')
+		return `Measured response-shape proximity to ${disliked}; not a perceptual diagnosis.`;
+	const metric = DISLIKE_REASON_LABELS[reason].replace(/^(Higher|Lower|More) /, '');
+	if (candidate === null || reference === null)
+		return `Insufficient measured coverage of ${metric} for comparison with ${disliked}.`;
+	const delta = candidate - reference;
+	return `${delta === 0 ? 'Equal' : delta > 0 ? 'Higher' : 'Lower'} measured ${metric} than ${disliked} (${Math.abs(delta).toFixed(2)} dB).`;
+}
+function boundedNarrow(residual: number): number {
+	return Math.min(NARROW_RESIDUAL_CAP_DB, Math.max(0, residual));
+}
 export interface RatedItem {
 	id: string;
 	curve: Curve;
@@ -158,7 +193,7 @@ export function dislikeTrait(
 				n = 0;
 			for (let i = 0; i < curve.length; i++)
 				if ((f[i] ?? 0) >= 5000 && (f[i] ?? Infinity) <= 9000 && Number.isFinite(narrow[i])) {
-					sum += Math.max(0, narrow[i] ?? 0) ** 2;
+					sum += boundedNarrow(narrow[i] ?? 0) ** 2;
 					n++;
 				}
 			return { value: n ? Math.sqrt(sum / n) : NaN, direction: 1 };
@@ -473,6 +508,8 @@ interface ConstraintExplanation {
 	status: 'satisfied' | 'violated' | 'unknown';
 	candidateTrait: number | null;
 	dislikedTrait: number | null;
+	/** Measured correlate only; legacy reason ids are not perceptual diagnoses. */
+	statement: string;
 }
 export interface TasteFit {
 	score: number;
@@ -505,6 +542,7 @@ export function scoreTasteCandidate(curve: Curve, model: TasteModel): TasteFit |
 				nearestLiked = { id: liked.id, distanceDb: d.distance };
 		}
 	const constraints: ConstraintExplanation[] = [];
+	let narrowBudget = NARROW_PENALTY_BUDGET;
 	for (const constraint of model.scoring.constraints) {
 		const { disliked, reason } = constraint;
 		if (reason === 'near-duplicate') {
@@ -516,20 +554,32 @@ export function scoreTasteCandidate(curve: Curve, model: TasteModel): TasteFit |
 				penalty,
 				status: d ? (penalty > 0.1 ? 'violated' : 'satisfied') : 'unknown',
 				candidateTrait: null,
-				dislikedTrait: null
+				dislikedTrait: null,
+				statement: constraintStatement(reason, disliked.id, null, null)
 			});
 		} else {
 			const a = dislikeTrait(curve, reason, f);
 			const observed = a && Number.isFinite(a.value) && Number.isFinite(constraint.trait);
 			const z = observed ? a.direction * (a.value - constraint.trait) - CONSTRAINT_MARGIN_DB : -Infinity;
-			const penalty = directionalPenalty(z, disliked.strength);
+			const rawPenalty = directionalPenalty(z, disliked.strength);
+			const penalty =
+				reason === 'sibilance'
+					? Math.min(narrowBudget, disliked.strength * NARROW_PENALTY_BUDGET, rawPenalty)
+					: rawPenalty;
+			if (reason === 'sibilance') narrowBudget -= penalty;
 			constraints.push({
 				disliked: disliked.id,
 				reason,
 				penalty,
 				status: !observed ? 'unknown' : z > 0 ? 'violated' : 'satisfied',
 				candidateTrait: observed ? a.value : null,
-				dislikedTrait: observed ? constraint.trait : null
+				dislikedTrait: observed ? constraint.trait : null,
+				statement: constraintStatement(
+					reason,
+					disliked.id,
+					observed ? a.value : null,
+					observed ? constraint.trait : null
+				)
 			});
 		}
 	}
@@ -629,7 +679,7 @@ function packedTrait(
 		}
 		const narrow = centre - smooth / weight;
 		if (Number.isFinite(narrow)) {
-			sum += Math.max(0, narrow) ** 2;
+			sum += boundedNarrow(narrow) ** 2;
 			n++;
 		}
 	}
@@ -652,7 +702,8 @@ function packedTasteScore(matrix: Float32Array, start: number, model: TasteModel
 	}
 	// The explanatory scorer also requires sufficient ordinary-weight overlap with the best taste.
 	if (!bestTaste || !enoughOverlap(matrix, start, bestTaste.centre, prepared.baseIndices)) return NaN;
-	let penalty = 0;
+	let penalty = 0,
+		narrowBudget = NARROW_PENALTY_BUDGET;
 	for (const constraint of prepared.constraints) {
 		if (constraint.reason === 'near-duplicate') {
 			const d = packedDistance(matrix, start, constraint.disliked.curve, model.weights, prepared.baseIndices);
@@ -664,7 +715,13 @@ function packedTasteScore(matrix: Float32Array, start: number, model: TasteModel
 				Number.isFinite(value) && Number.isFinite(constraint.trait)
 					? constraint.direction * (value - constraint.trait) - CONSTRAINT_MARGIN_DB
 					: -Infinity;
-			penalty += directionalPenalty(z, constraint.disliked.strength);
+			const raw = directionalPenalty(z, constraint.disliked.strength);
+			const increment =
+				constraint.reason === 'sibilance'
+					? Math.min(narrowBudget, constraint.disliked.strength * NARROW_PENALTY_BUDGET, raw)
+					: raw;
+			if (constraint.reason === 'sibilance') narrowBudget -= increment;
+			penalty += increment;
 		}
 	}
 	return best + penalty;
