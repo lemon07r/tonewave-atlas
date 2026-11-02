@@ -29,8 +29,28 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect(page.getByTestId('comparison-row')).toHaveCount(2);
 			for (const row of await page.getByTestId('comparison-row').all()) {
 				await expect(row).toContainText('711-family');
-				await expect(row.getByRole('link').first()).toHaveAttribute('href', /^https?:\/\//);
+				const sources = row.locator('details.sources');
+				const disclosure = sources.locator('summary');
+				await expect(sources.getByRole('link')).toHaveCount(0);
+				await disclosure.press('Enter');
+				await expect(sources).toHaveAttribute('open', '');
+				const links = await sources.getByRole('link').all();
+				expect(links.length).toBeGreaterThan(0);
+				await expect(disclosure).toHaveText(
+					`${links.length} ${links.length === 1 ? 'reviewer' : 'reviewers'}`
+				);
+				for (const link of links) {
+					await page.keyboard.press('Tab');
+					await expect(link).toBeFocused();
+					await expect(link).toHaveAttribute('href', /^https?:\/\//);
+				}
+				await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+				await disclosure.press('Enter');
+				await expect(sources).not.toHaveAttribute('open', '');
 			}
+			await search.focus();
+			await search.press('Escape');
+			await expect(search).toHaveAttribute('aria-expanded', 'false');
 			await expect(page.getByRole('button', { name: 'Export chart as PNG' })).toBeEnabled();
 			await expect(page).toHaveURL(/[?&]p=p-/);
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

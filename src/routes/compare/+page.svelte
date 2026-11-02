@@ -301,10 +301,13 @@
 					<div class="legend-row" data-testid="comparison-row">
 						<h3>{row.label}</h3>
 						<p class="small">{rigLabel(row.partition)} · {row.variant}</p>
-						<p class="sources small muted">
-							{#each row.sources as source (source.id)}<a href={source.url} rel="external">{source.name}</a>
-							{/each}
-						</p>
+						<details class="sources small muted">
+							<summary>{row.sources.length} {row.sources.length === 1 ? 'reviewer' : 'reviewers'}</summary>
+							<div class="source-links">
+								{#each row.sources as source (source.id)}<a href={source.url} rel="external">{source.name}</a>
+								{/each}
+							</div>
+						</details>
 						<label class="field-label" for={`measurement-${row.id}`}>Measurement for {row.label}</label
 						><select
 							id={`measurement-${row.id}`}
@@ -418,10 +421,16 @@
 		min-width: 0;
 	}
 	.sources {
+		margin-top: 8px;
+	}
+	.sources summary {
+		cursor: pointer;
+	}
+	.source-links {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px 12px;
-		margin-top: 8px;
+		margin: 8px 0;
 	}
 	.sources a {
 		overflow-wrap: anywhere;
