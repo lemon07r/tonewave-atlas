@@ -109,6 +109,11 @@ form-specific URL evidence and restores the appropriate local profile. Uploads a
 
 ## Review
 
+Method validation figures are read from the active form’s published catalog metadata, labelled with
+the dataset version/build date and partition. Missing statistics are reported, never replaced with
+figures from an older build. Source support, held-out pair/fold counts, pooled mean before/after,
+available median and fold improvements remain distinct.
+
 Unit/component checks cover search, migration, query races, chart values and controls, diagnostics,
 band/price wording and contrast. Browser journeys and axe cover the real dataset. Visual review uses
 1440×900, 834×1112 and 390×844, in both themes, including expanded evidence and EQ. Automated checks

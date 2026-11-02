@@ -8,6 +8,7 @@
 	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
+	import ValidationFigures from '#lib/method/ValidationFigures.svelte';
 	let summary = $state.raw<AtlasSummary | null>(null);
 	let error = $state('');
 	let targets = $state.raw<ReferenceTarget[]>([]);
@@ -128,10 +129,12 @@
 					correction stays off; explicit correction requests without sufficient support are rejected. Detail
 					charts and EQ use uncorrected curves.
 				</p>
+				{#if summary}<ValidationFigures {summary} {form} />{:else if !error}<p role="status">
+						Loading dataset validation…
+					</p>{/if}
 				<p>
-					In the 2026-11 dataset build, five-fold validation on iem-711 reduced held-out same-product pair
-					distance from 1.781 to 1.588 dB (−10.9%) across 50,823 pairs; fold improvements were 0.184–0.202 dB.
-					This is not physical calibration, rig conversion or evidence of listener preference.
+					This is not physical calibration, rig conversion or evidence of listener preference. Missing
+					validation metadata is reported as unavailable.
 				</p>
 			</section>
 			<section id="uncertainty">
