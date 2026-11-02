@@ -67,6 +67,9 @@ not a recommendation to enable harmonisation. Empty support yields null bins and
 Every partition runs deterministic **five-fold product-held-out validation**, shrinkage 10. Its
 `harmonisation` includes each fold's training/held-out product counts, valid pair counts, mean
 before/after distances and mean/median improvements, plus a pooled (not average-of-folds) summary.
+The baseline includes `meanBefore` and `medianBefore` over all valid uncorrected held-out pair
+distances, not medians of fold means. Each product is held out once; finite corrections preserve the
+same missing-data support, and ingestion checks that baseline and validation pair counts agree.
 Positive improvement means reduced same-product response distance in dB, not improved perceptual
 accuracy. The same statistics and median spread per methodology frequency band are written to
 `report.json` and printed per partition.
@@ -127,6 +130,11 @@ untouched. `data/products.json` contains only explicit, terminal brand/model ali
 entries are permitted at the top level and inside `aliases`. Malformed,
 duplicate, cyclic or chained mappings stop ingestion. Initial Roman/Arabic numeral aliases were
 verified against catalog/file names in dataset `3c9d923462f8b79c98aa4ef9` (evidence in the input note).
-Tuning/fit/sample suffixes are not stripped. The report records pre/post identity counts, merged
-name groups and remaining suspicious near-name pairs for manual review, never fuzzy auto-merging.
+Two explicit collaboration-spelling aliases were verified in dataset `82c0a5df23cc64e5d7268caa`
+against model/file names and nearby cross-source response shapes (evidence in the nested alias note).
+Tuning/fit/sample suffixes are not stripped. `identityMerges.productsBefore` counts globally unique
+original keys; `productsAfter` is the final count and `merged` is their net difference. Separately,
+`groupwiseMerges` lists each many-to-one group's original keys and reduction plus their total; this
+can differ from net reduction when an original key also splits across final products. The report also
+records remaining suspicious near-name pairs for manual review, never fuzzy auto-merging.
 Near-name audit candidates are separated by form, and known forms are labelled in collision groups.

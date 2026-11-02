@@ -29,6 +29,22 @@ function rows(products: number, tilt = 0) {
 }
 
 describe('rank-grid statistics integration', () => {
+	it('records the pooled uncorrected held-out median against an independent linear-slope expectation', () => {
+		const input = rows(3);
+		for (const row of input) {
+			const product = Number(row.measurement.productId.slice('product-'.length));
+			const slope = product === 2 ? 3 : product;
+			if (row.measurement.sourceId === 'b')
+				row.rank.values = Float64Array.from(RANK_GRID, (_, i) => 85 + product + (slope * i) / 12);
+		}
+		const stats = rankStatistics(input);
+		// Uniformly spaced log-Hz indices 0..n-1 have variance (n²-1)/12.
+		// Pair slopes are 0, 1 and 3 dB/oct: median RMS is this SD; mean is 4/3 times it.
+		const expected = Math.sqrt((RANK_SIZE ** 2 - 1) / 12) / 12;
+		expect(stats.harmonisation?.pairs).toBe(3);
+		expect(stats.harmonisation?.meanBefore).toBeCloseTo((4 * expected) / 3, 12);
+		expect(stats.harmonisation?.medianBefore).toBeCloseTo(expected, 12);
+	});
 	it('uses one default per product/source, excludes single-source products and does not weight variants', () => {
 		const original = rows(20),
 			first = original[0];
@@ -86,6 +102,7 @@ describe('rank-grid statistics integration', () => {
 		expect(stats.support).toMatchObject({ status: 'low', multiSourceProducts: 0, minimumProducts: 20 });
 		expect(stats.spread).toEqual(Array(RANK_SIZE).fill(null));
 		expect(stats.harmonisation?.meanImprovement).toBeNull();
+		expect(stats.harmonisation?.medianBefore).toBeNull();
 		expect(rankStatistics(rows(19)).support?.status).toBe('low');
 		const bytes = encodePack({
 			kind: 'rank',
@@ -95,10 +112,20 @@ describe('rank-grid statistics integration', () => {
 			statistics: stats
 		});
 		expect(decodePack(bytes).statistics).toEqual(stats);
-		if (!stats.harmonisation) throw new Error('Missing validation');
-		const invalid = { ...stats, harmonisation: { ...stats.harmonisation, meanImprovement: NaN } };
+		const harmonisation = stats.harmonisation;
+		if (!harmonisation) throw new Error('Missing validation');
+		const invalid = { ...stats, harmonisation: { ...harmonisation, meanImprovement: NaN } };
 		expect(() =>
 			encodePack({ kind: 'rank', partition: 'iem-711', points: RANK_SIZE, curves: [], statistics: invalid })
+		).toThrow('statistics');
+		expect(() =>
+			encodePack({
+				kind: 'rank',
+				partition: 'iem-711',
+				points: RANK_SIZE,
+				curves: [],
+				statistics: { ...stats, harmonisation: { ...harmonisation, medianBefore: NaN } }
+			})
 		).toThrow('statistics');
 	});
 });

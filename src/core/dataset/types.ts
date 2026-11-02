@@ -80,7 +80,10 @@ export interface PartitionStatistics {
 		sourceProducts: Record<string, number>;
 		sourceBins: Record<string, number[]>;
 	};
-	harmonisation?: HarmonisationValidation;
+	harmonisation?: HarmonisationValidation & {
+		/** Pooled uncorrected held-out pair-distance median; optional for earlier TWFR v1 metadata. */
+		medianBefore?: number | null;
+	};
 }
 
 export interface Partition {

@@ -80,6 +80,10 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		groupwiseMerges: {
+			merged: number;
+			groups: { productId: string; originalKeys: string[]; merged: number }[];
+		};
 		statistics: { partition: string; statistics: unknown }[];
 		targets: ({ id: string } & ReferenceTarget['provenance'])[];
 	};
@@ -87,6 +91,39 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('counts unique original keys and net reduction separately from groupwise merges when a key splits', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: 'Model' },
+							{ name: 'Brand Model', file: 'Model2' },
+							{ name: 'BrandModel', file: 'Model3' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)]
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products).toHaveLength(2);
+		expect(report.identityMerges).toEqual({ productsBefore: 2, productsAfter: 2, merged: 0 });
+		expect(report.groupwiseMerges).toEqual({
+			merged: 1,
+			groups: [
+				{
+					productId: expect.any(String) as unknown,
+					originalKeys: ['iem:brand:brandmodel', 'iem:brand:model'],
+					merged: 1
+				}
+			]
+		});
+	});
 	it('records successful target parse warnings in both the report and published target provenance', async () => {
 		const { paths } = await fixture();
 		const file = resolve(paths.root, 'data/targets/Harman in-ear 2019.csv');

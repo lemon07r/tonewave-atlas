@@ -9,6 +9,7 @@ import {
 	measurementUrl,
 	parseOptOuts,
 	phoneBook,
+	readInputs,
 	validateProducts,
 	supportedChannels,
 	unwanted
@@ -208,6 +209,20 @@ describe('source transforms', () => {
 		expect(a.id).not.toBe(identity('MOONDROP', 'Aria II DSP', 'iem', {}, aliases).id);
 		expect(a.id).not.toBe(identity('MOONDROP', 'Aria II', 'headphone', {}, aliases).id);
 	});
+	it.each([
+		['QKZ', 'QKZ x HBB', 'QKZxHBB'],
+		['BLON', 'Blon x HBB Z300', 'BLONxHBB Z300']
+	])(
+		'joins only the audited %s collaboration spellings through checked-in explicit aliases',
+		async (brand, spaced, compact) => {
+			const { productAliases } = await readInputs();
+			const canonical = identity(brand, spaced, 'iem', {}, productAliases);
+			expect(identity(brand, compact, 'iem', {}, productAliases).id).toBe(canonical.id);
+			expect(identity(brand, `${compact} DSP`, 'iem', {}, productAliases).id).not.toBe(canonical.id);
+			expect(identity(brand, compact, 'headphone', {}, productAliases).id).not.toBe(canonical.id);
+			expect(identity(brand, compact, 'iem', {}).id).not.toBe(canonical.id);
+		}
+	);
 	it.each([
 		['Balanced cable', 'setup'],
 		['sample 2', 'unit'],

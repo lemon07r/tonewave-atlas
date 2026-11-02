@@ -522,7 +522,15 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		});
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
-	const productsBefore = [...originalIdentities.values()].reduce((n, ids) => n + ids.size, 0);
+	const productsBefore = new Set([...originalIdentities.values()].flatMap((ids) => [...ids])).size;
+	const identityMergeGroups = [...originalIdentities]
+		.filter(([, ids]) => ids.size > 1)
+		.map(([productId, ids]) => ({ productId, originalKeys: [...ids].sort(), merged: ids.size - 1 }))
+		.sort((a, b) => a.productId.localeCompare(b.productId, 'en'));
+	const groupwiseMerges = {
+		merged: identityMergeGroups.reduce((n, group) => n + group.merged, 0),
+		groups: identityMergeGroups
+	};
 	const remainingCollisionGroups = collisionGroups(sortedProducts);
 	const identityMerges = {
 		productsBefore,
@@ -575,6 +583,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				sourcesIncluded: sources.length,
 				products: products.size,
 				identityMerges,
+				groupwiseMerges,
 				remainingCollisionGroups,
 				measurements: partitionMetadata.map((p) => ({ partition: p.id, count: p.measurementCount })),
 				files: manifest.files,
@@ -592,7 +601,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		`Built ${version}: ${products.size} products, ${sources.length} databases, ${files.length} files, ${files.reduce((n, f) => n + f.bytes, 0)} compressed bytes. Report: ${resolve(paths.cache, 'report.json')}`
 	);
 	console.log(
-		`Identity: ${identityMerges.merged} products merged (${productsBefore} before, ${products.size} after)`
+		`Identity: net reduction ${identityMerges.merged} products (${productsBefore} unique original keys before, ${products.size} after); ${groupwiseMerges.merged} groupwise merges`
 	);
 	console.log(
 		`Top remaining identity collision candidates (not merged): ${JSON.stringify(remainingCollisionGroups.slice(0, 5))}`

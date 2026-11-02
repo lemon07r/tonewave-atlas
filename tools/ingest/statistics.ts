@@ -1,5 +1,6 @@
 import { RANK_GRID } from '#core/grid.ts';
 import { BANDS, median } from '#core/analysis/common.ts';
+import { responseDistance } from '#core/analysis/distance.ts';
 import {
 	estimatePartitionStatistics,
 	validateSourceOffsets,
@@ -37,10 +38,32 @@ export function statisticsProducts(curves: readonly RankMeasurement[]): ProductM
 const finite = (values: ArrayLike<number>): (number | null)[] =>
 	Array.from(values, (value) => (Number.isFinite(value) ? value : null));
 
+/** Every product is held out once; finite source corrections preserve pairwise missing-data support. */
+function heldOutBaseline(products: readonly ProductMeasurements[]): {
+	pairs: number;
+	medianBefore: number | null;
+} {
+	const distances: number[] = [];
+	for (const product of products)
+		for (let i = 0; i < product.measurements.length; i++)
+			for (let j = i + 1; j < product.measurements.length; j++) {
+				const a = product.measurements[i]?.curve,
+					b = product.measurements[j]?.curve;
+				if (!a || !b) continue;
+				const distance = responseDistance(a, b, { frequencies: RANK_GRID });
+				if (distance) distances.push(distance.distance);
+			}
+	const value = median(distances);
+	return { pairs: distances.length, medianBefore: Number.isFinite(value) ? value : null };
+}
+
 export function rankStatistics(curves: readonly RankMeasurement[]): PartitionStatistics {
 	const products = statisticsProducts(curves);
 	const estimate = estimatePartitionStatistics(products, RANK_GRID);
 	const harmonisation = validateSourceOffsets(products, RANK_GRID, 10, 5);
+	const baseline = heldOutBaseline(products);
+	if (baseline.pairs !== harmonisation.pairs)
+		throw new Error('Held-out baseline pair support differs from harmonisation validation');
 	const reason =
 		products.length < MIN_STATISTICS_PRODUCTS
 			? `Only ${products.length} multi-source products; at least ${MIN_STATISTICS_PRODUCTS} required for sufficient support`
@@ -61,7 +84,7 @@ export function rankStatistics(curves: readonly RankMeasurement[]): PartitionSta
 			sourceProducts: Object.fromEntries(estimate.sourceOffsets.map((s) => [s.source, s.products])),
 			sourceBins: Object.fromEntries(estimate.sourceOffsets.map((s) => [s.source, [...s.support]]))
 		},
-		harmonisation
+		harmonisation: { ...harmonisation, medianBefore: baseline.medianBefore }
 	};
 }
 

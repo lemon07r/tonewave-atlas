@@ -124,6 +124,7 @@ function statistics(value: unknown, points: number): value is PartitionStatistic
 		if (
 			!object(h) ||
 			!summary(h) ||
+			(h.medianBefore !== undefined && !optionalNumber(h.medianBefore)) ||
 			!count(h.foldCount) ||
 			h.foldCount < 2 ||
 			!Array.isArray(h.folds) ||
