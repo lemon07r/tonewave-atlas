@@ -16,13 +16,13 @@
 	/></svelte:head
 >
 <div class="page discover">
-	<div class="page-heading">
-		<p class="eyebrow">A listening atlas, not a leaderboard</p>
-		<h1>Find {headphones ? 'headphones' : 'IEMs'} that<br />sound like…</h1>
-		<p>Start with something you know. Find what shares its character — and see where it differs.</p>
-	</div>
 	<div class="discover-grid">
 		<section class="discovery-column" aria-label="Discover measured matches">
+			<div class="page-heading">
+				<p class="eyebrow">A listening atlas, not a leaderboard</p>
+				<h1>Find {headphones ? 'headphones' : 'IEMs'} that<br />sound like…</h1>
+				<p>Start with something you know. Find what shares its character — and see where it differs.</p>
+			</div>
 			<DiscoverySearch {headphones} bind:mode />
 			<p class="search-note">Your reference is the starting point. Your ears have the final say.</p>
 			{#if mode === 'similar'}<div class="results">
@@ -95,7 +95,6 @@
 	.chart-column {
 		position: sticky;
 		top: 24px;
-		margin-top: -158px;
 	}
 	.chart-note {
 		display: flex;
@@ -131,9 +130,6 @@
 		.discover-grid {
 			gap: 32px;
 		}
-		.chart-column {
-			margin-top: -140px;
-		}
 	}
 	@media (max-width: 900px) {
 		.discover-grid {
@@ -142,7 +138,6 @@
 		}
 		.chart-column {
 			position: static;
-			margin-top: 0;
 		}
 		.discover .page-heading {
 			margin-bottom: 32px;

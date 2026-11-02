@@ -57,7 +57,8 @@ Uncertainty shading is supplementary, not a separate clickable series.
 ## Layout
 
 Maximum page width 1440 px, with 48 px desktop gutters and a 64 px Discover column gap. Discover uses
-roughly 1:1 columns and a sticky chart. Compare uses a 300 px selection rail; Explore and Method use
+roughly 1:1 columns and a sticky chart aligned with the top of the left heading block, without negative
+offsets. Compare uses a 300 px selection rail; Explore and Method use
 228 px rails. Method prose is limited to 720 px.
 
 - At 1150 px: tighten navigation and column gaps.
