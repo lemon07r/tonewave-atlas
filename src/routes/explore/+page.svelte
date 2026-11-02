@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
-	import { catalogIdentity, productFor, priceListings } from '#lib/product/data.ts';
+	import { migrationCatalogs, productFor, priceListings } from '#lib/product/data.ts';
 	import { migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
 	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
@@ -71,18 +71,23 @@
 			products = list;
 			summary = data;
 			if (id) {
-				const identity = await catalogIdentity(selectedForm, data.version).catch(() => undefined);
+				const catalogs = await migrationCatalogs(selectedForm, data.version, new URL(href));
+				const identity = catalogs[selectedForm];
 				abort.signal.throwIfAborted();
-				const migrated = identity ? migrateUrl(new URL(href), identity) : undefined;
+				const migrated = identity
+					? migrateUrl(new URL(href), identity, catalogs[selectedForm === 'iem' ? 'headphone' : 'iem'])
+					: undefined;
 				const fresh = migrationMessages(migrated?.messages ?? []);
 				if (fresh.length) migrationNote = [...migrationNote, ...fresh];
-				if (migrated?.changed)
+				if (migrated?.changed) {
 					await goto(
 						resolve(
 							`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
 						),
-						{ state: page.state, shallow: true, replace: true, reset: false }
+						{ state: page.state, replace: true, reset: false }
 					);
+					return;
+				}
 				const canonical = migrated?.url.searchParams.get('product') ?? id;
 				if (!productFor(list, canonical, identity))
 					throw new Error(

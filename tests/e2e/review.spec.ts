@@ -130,15 +130,14 @@ test('a product without defaults retains its measurement selector and remove act
 	await expect(row).toHaveCount(0);
 });
 
-test('Discover rejects a known IEM reference in headphone mode', async ({ page }) => {
+test('Discover returns a known IEM reference to its catalog from headphone mode', async ({ page }) => {
 	await page.goto(`/?ref=${hexa}&form=headphones`);
-	await expect(
-		page.getByText('A rated reference is not in this form-factor catalog. Remove it or switch form factor.', {
-			exact: true
-		})
-	).toBeVisible();
-	await expect(page.locator('.result-row')).toHaveCount(0);
-	await expect(page.getByRole('combobox', { name: 'Reference measurement', exact: true })).toHaveCount(0);
+	await expect.poll(() => new URL(page.url()).searchParams.has('form')).toBe(false);
+	await expect(page.locator('.profile-row')).toContainText('Truthear Hexa');
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
+		'Truthear Hexa: opened in IEMs'
+	);
 	await accessible(page);
 });
 

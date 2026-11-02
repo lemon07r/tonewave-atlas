@@ -25,10 +25,11 @@
 	import { latestQuery, queryDiscovery, type DiscoveryResult, type QuerySpec } from './query.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { sourceInForm, sourceOnPartition } from '#lib/sources.ts';
-	import { catalogIdentity, productFor } from '#lib/product/data.ts';
+	import { catalogIdentity, migrationCatalogs, productFor } from '#lib/product/data.ts';
 	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	import { canonicalItem, migrateProfile, migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
+	import { handoffMigration, takeMigration } from '#lib/catalog/handoff.ts';
 	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { bandLabels } from './describe.ts';
 	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
@@ -54,6 +55,7 @@
 	let migrationNote = $state<string[]>([]);
 	let migrationBefore = $state.raw<{ profile: Profile; url: string }>();
 	let migrationUndone = false;
+	let locationVersion = 0;
 	let catalogLoading = $state(true);
 	let catalogError = $state('');
 	let ready = $state(false);
@@ -162,19 +164,22 @@
 		);
 		return product ? `${product.brand} ${product.model}` : 'Unavailable product';
 	}
-	async function migrateLocation(href: string, current: CatalogIdentity) {
+	async function migrateLocation(href: string, current: CatalogIdentity, other?: CatalogIdentity) {
 		if (migrationUndone) return;
-		const migrated = migrateUrl(new URL(href), current);
+		const migrated = migrateUrl(new URL(href), current, other);
 		const fresh = migrationMessages(migrated.messages);
 		if (fresh.length) migrationNote = [...migrationNote, ...fresh];
 		if (migrated.droppedRating && !migrationBefore) migrationBefore = { profile, url: href };
-		if (migrated.changed)
+		if (migrated.changed) {
+			if ((migrated.url.searchParams.get('form') === 'headphones' ? 'headphone' : 'iem') !== form)
+				handoffMigration({ target: migrated.url.href, messages: migrationNote, before: migrationBefore });
 			await goto(
 				resolve(
 					`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
 				),
-				{ state: page.state, shallow: true, replace: true, reset: false }
+				{ state: page.state, replace: true, reset: false }
 			);
+		}
 	}
 	function undoMigration() {
 		if (!migrationBefore || !store) return;
@@ -183,9 +188,10 @@
 		profile = store.value;
 		storageError = store.error;
 		const restored = new URL(migrationBefore.url, page.url.href);
+		if ((restored.searchParams.get('form') === 'headphones' ? 'headphone' : 'iem') !== form)
+			handoffMigration({ target: restored.href, messages: [], restored: profile, undone: true });
 		void goto(resolve(`${restored.pathname}${restored.search}${restored.hash}` as PathnameWithSearchOrHash), {
 			state: page.state,
-			shallow: true,
 			replace: true,
 			reset: false
 		});
@@ -194,6 +200,7 @@
 		undoMessage = 'Pre-migration profile restored for this session.';
 	}
 	function navigate(params: URLSearchParams, replace = true) {
+		locationVersion++;
 		void goto(resolve(`/?${params}` as PathnameWithSearchOrHash), { reset: false, replace });
 	}
 	function change(changes: Record<string, string | undefined>) {
@@ -317,6 +324,11 @@
 				localStorage.setItem(key, value);
 			}
 		});
+		const pending = takeMigration(page.url.href);
+		if (pending?.restored) store.restoreSession(pending.restored);
+		migrationBefore = pending?.before;
+		migrationUndone = pending?.undone ?? false;
+		migrationNote = pending?.messages ?? [];
 		profile = store.value;
 		storageError = store.error;
 		ready = true;
@@ -329,26 +341,19 @@
 				products = list;
 				summary = info;
 				catalogLoading = false;
-				const catalogs: Partial<Record<Form, CatalogIdentity>> = {};
-				const other = form === 'iem' ? 'headphone' : 'iem';
-				await Promise.all(
-					([form, ...(profile.profiles[other].length ? [other] : [])] as Form[]).map(async (selectedForm) => {
-						const current = await catalogIdentity(selectedForm, info.version).catch(() => undefined);
-						if (current) catalogs[selectedForm] = current;
-					})
-				);
+				const catalogs = await migrationCatalogs(form, info.version, new URL(page.url.href), profile);
 				if (!cancelled()) {
 					const before = profile;
-					const migrated = migrateProfile(profile, catalogs);
-					migrationNote = migrationMessages(migrated.messages);
-					if (migrated.droppedRating) migrationBefore = { profile: before, url: page.url.href };
+					const migrated = migrateProfile(profile, migrationUndone ? {} : catalogs);
+					migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
+					if (migrated.droppedRating && !migrationBefore)
+						migrationBefore = { profile: before, url: page.url.href };
 					if (migrated.changed && store) {
 						store.change(migrated.profile);
 						profile = store.value;
 						storageError = store.error;
 					}
 					identity = catalogs[form];
-					if (identity) await migrateLocation(page.url.href, identity);
 				}
 			})
 			.catch((cause: unknown) => {
@@ -364,11 +369,20 @@
 	});
 	$effect(() => {
 		const href = page.url.href,
-			current = identity;
-		if (catalogLoading || !current) return;
+			current = identity,
+			version = summary?.version;
+		if (catalogLoading || !current || !version) return;
+		const abort = new AbortController();
 		untrack(() => {
-			void migrateLocation(href, current);
+			const revision = locationVersion;
+			void migrationCatalogs(form, version, new URL(href)).then((catalogs) => {
+				if (!abort.signal.aborted && revision === locationVersion)
+					return migrateLocation(href, current, catalogs[form === 'iem' ? 'headphone' : 'iem']);
+			});
 		});
+		return () => {
+			abort.abort();
+		};
 	});
 	$effect(() => {
 		const cached = scopedEdits[modelKey];

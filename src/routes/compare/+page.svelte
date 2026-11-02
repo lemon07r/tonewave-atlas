@@ -15,7 +15,13 @@
 	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import { analysis, productList, formFromUrl } from '#lib/atlas.ts';
-	import { catalogIdentity, productFor, channelSpread, mainPartition } from '#lib/product/data.ts';
+	import {
+		catalogIdentity,
+		migrationCatalogs,
+		productFor,
+		channelSpread,
+		mainPartition
+	} from '#lib/product/data.ts';
 	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	import { migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
@@ -114,20 +120,33 @@
 	}
 	$effect(() => {
 		const href = page.url.href,
-			current = identity;
-		if (!current) return;
+			current = identity,
+			version = summary?.version,
+			selectedForm = form;
+		if (!current || !version) return;
+		const abort = new AbortController();
 		untrack(() => {
-			const migrated = migrateUrl(new URL(href), current);
-			const fresh = migrationMessages(migrated.messages);
-			if (fresh.length) migrationNote = [...migrationNote, ...fresh];
-			if (migrated.changed)
-				void goto(
-					resolve(
-						`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
-					),
-					{ state: page.state, shallow: true, replace: true, reset: false }
+			void migrationCatalogs(selectedForm, version, new URL(href)).then((catalogs) => {
+				if (abort.signal.aborted) return;
+				const migrated = migrateUrl(
+					new URL(href),
+					current,
+					catalogs[selectedForm === 'iem' ? 'headphone' : 'iem']
 				);
+				const fresh = migrationMessages(migrated.messages);
+				if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+				if (migrated.changed)
+					return goto(
+						resolve(
+							`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+						),
+						{ state: page.state, replace: true, reset: false }
+					);
+			});
 		});
+		return () => {
+			abort.abort();
+		};
 	});
 	$effect(() => {
 		const selectedForm = form;

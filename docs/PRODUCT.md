@@ -44,6 +44,7 @@ details, fit/comfort flag and explicit variant; an active rating beats Neutral o
 active ratings prefer the already-current product entry and explain the dropped older rating by name.
 Undo restores the pre-migration profile for the session, leaving the saved canonical profile intact.
 Mixed reviewer databases remain available in each form and measurement rig they actually cover.
+Cross-form redirects check the other catalog: unambiguous links switch form and saved items move to that form’s profile; mixed or unresolved links remain intact with a quiet note.
 
 ## Core flows
 
