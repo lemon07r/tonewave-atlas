@@ -309,6 +309,7 @@
 			ctx.drawImage(source, 0, chartTop, width, chartHeight);
 			let y = chartTop + chartHeight + 24;
 			series.forEach((item, index) => {
+				ctx.lineWidth = item.reference ? 1.5 : 2;
 				ctx.strokeStyle = style.getPropertyValue(item.reference ? '--muted' : `--curve-${(index % 7) + 1}`);
 				ctx.setLineDash(dash(index, item.reference));
 				ctx.beginPath();
