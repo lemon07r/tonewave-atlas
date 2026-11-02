@@ -91,6 +91,47 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('votes only accepted measurements, with global brand spelling and unchanged provenance', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'BRAND',
+						phones: [
+							{ name: 'MODEL', file: 'Model' },
+							{ name: 'MODEL', file: 'Missing' },
+							{ name: 'MODEL', file: 'Model' }
+						]
+					},
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: ['Model2', 'Model3'] },
+							{ name: 'Other', file: 'Model4' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)],
+			[`${base}data/Model4%20L.txt`, curve(80)]
+		]);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.products.map((p) => `${p.brand} ${p.model}`).sort()).toEqual([
+			'Brand Model',
+			'Brand Other'
+		]);
+		expect(catalog.measurements).toHaveLength(4);
+		expect(catalog.measurements.map((m) => m.variant.file).sort()).toEqual([
+			'Model',
+			'Model2',
+			'Model3',
+			'Model4'
+		]);
+		expect(catalog.measurements.every((m) => m.provenance.originalUrls[0]?.startsWith(base))).toBe(true);
+	});
 	it('counts unique original keys and net reduction separately from groupwise merges when a key splits', async () => {
 		const { paths } = await fixture('', [
 			[

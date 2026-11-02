@@ -16,6 +16,7 @@ import {
 } from './common.ts';
 import {
 	collisionGroups,
+	DisplayNames,
 	identity,
 	normalise,
 	sourceFor,
@@ -35,6 +36,40 @@ const db = {
 };
 
 describe('source transforms', () => {
+	it.each([
+		[['NOVA', 'Nova', 'NOVA'], 'NOVA'],
+		[['nova', 'NOVA', 'Nova'], 'Nova'],
+		[['Nova', 'NoVa'], 'NoVa'],
+		[['nova', 'NOVA'], 'NOVA'],
+		[['POLARIS DDUU'], 'POLARIS DDUU'],
+		[['éclair', 'ÉCLAIR', 'Éclair'], 'Éclair']
+	])('selects observed model spelling from %j without manufacturing title case', (spellings, expected) => {
+		for (const order of [spellings, [...spellings].reverse()]) {
+			const names = new DisplayNames();
+			const product = identity('Brand', order[0] ?? '', 'iem', {});
+			const id = product.id;
+			for (const spelling of order) names.observe(identity('Brand', spelling, 'iem', {}));
+			names.apply([product]);
+			expect(product.model).toBe(expected);
+			expect(product.id).toBe(id);
+		}
+	});
+	it('votes brands across products and forms, preserving source spellings before aliases', () => {
+		const names = new DisplayNames();
+		const aliases = { crinears: 'CrinEar', crinear: 'CrinEar' };
+		const products = [
+			identity('CRINEARS', 'CRINEARS Reference II', 'iem', aliases, {
+				'crinear|referenceii': 'CrinEar|Reference 2'
+			}),
+			identity('CrinEars', 'Other', 'iem', aliases),
+			identity('CrinEars', 'Headphone', 'headphone', aliases)
+		];
+		for (const product of products) names.observe(product);
+		names.apply(products);
+		expect(products.map((p) => p.brand)).toEqual(['CrinEars', 'CrinEars', 'CrinEars']);
+		expect(products[0]?.model).toBe('Reference II');
+		expect(products[0]?.key).toBe('iem:crinear:reference2');
+	});
 	it('reads only literals, respects channel config and numbered repetitions', () => {
 		const config = `const DIR = 'curves/', default_channels = ['R'], num_samples = 3, rig_description = "clone IEC 711";`;
 		expect(configString(config, 'rig_description')).toBe('clone IEC 711');

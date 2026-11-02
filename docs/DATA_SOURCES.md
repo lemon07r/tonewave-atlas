@@ -126,7 +126,16 @@ and inter-source differences require caution.
 
 Product identity removes complete leading raw or canonical brand names using the same case, accent,
 spacing and punctuation normalization as identity, with a nonempty remainder; partial words remain
-untouched. `data/products.json` contains only explicit, terminal brand/model aliases; string `_note`
+untouched. Display labels are separate from identity: every accepted measurement contributes one vote
+for its source-index brand and its model after complete leading-brand removal, before product aliasing.
+Rejected/duplicate measurements do not vote; multiple files from a source each vote once, not once per
+channel. Models vote within the merged product; brands vote across the entire catalog (both forms) for
+each canonical normalized brand key. Highest frequency wins, then a spelling containing both uppercase
+and lowercase Unicode letters, then lexicographic UTF-16 order. Only observed spellings are eligible;
+singleton all-caps labels stay all-caps, and alias-table casing never supplies a display vote. IDs,
+variant labels and original URLs are unaffected by display voting.
+
+`data/products.json` contains only explicit, terminal brand/model aliases; string `_note`
 entries are permitted at the top level and inside `aliases`. Malformed,
 duplicate, cyclic or chained mappings stop ingestion. Initial Roman/Arabic numeral aliases were
 verified against catalog/file names in dataset `3c9d923462f8b79c98aa4ef9` (evidence in the input note).
