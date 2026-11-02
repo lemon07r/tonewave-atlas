@@ -39,7 +39,8 @@ local ingestion state, never part of the published dataset. Discovery must succe
   databases. Reclassifications keep all channels and original URLs. Mixed-source `forms`/`partitions`
   list actual membership; a source can appear in both form catalogs. Explicit 5128, 4128 and miniDSP
   EARS families can share their own headphone partition (EARS Pro remains separate); other headphone
-  rigs remain source-specific. `data/sources.json` owns overrides.
+  rigs remain source-specific. AKG detection uses established full-size model families, not all K/Q
+  numbers: K319 earbuds and K391 NC/Q350 in-ears are not headphone matches. `data/sources.json` owns overrides.
 - The parser ignores phase, drops nonfinite rows, averages duplicate Hz in dB, sorts and validates.
   Curves are linearly interpolated in log Hz on the canonical 240-bin 1/24-octave grid, never
   extrapolated. Flat raw curves (<0.05 dB range), >100 dB ranges, calibrated values outside ±200 dB,
@@ -100,8 +101,9 @@ source decision. No unverified source trains this test; evidenced sources do not
 ### Partition statistics
 
 Statistics use only products with at least two distinct sources. Each product/source contributes one
-default rank curve (lowest stable measurement ID breaks ties); non-default tuning/fit/unit variants
-never gain population weight. Products without a default from two sources do not train statistics.
+unique default rank curve, shared with the engine; unreconciled duplicate defaults stop statistics.
+Non-default tuning/fit/unit variants never gain population weight. Products without a default from
+two sources do not train statistics.
 The engine aligns overall level, so the population median's absolute SPL is not a calibration.
 `support` records product/source counts, per-bin spread support and each source offset's product/bin
 support. The [methodology's partition support rule](METHODOLOGY.md#partition-statistics-support)
@@ -163,8 +165,8 @@ auto-merging; adjacent-name heuristics are not exhaustive, particularly across u
 
 ### Variant kinds and initial defaults
 
-Variant classification uses descriptors rather than the stock model's words and retains descriptive
-labels: explicit replacement samples (sample/unit 2) take precedence as `unit`; tips, foam, insertion
+Variant classification strips only maker/model prefixes, never shared descriptor words such as ANC
+or Sample, and retains descriptive labels: explicit replacement samples (sample/unit 2) take precedence as `unit`; tips, foam, insertion
 and pads are `fit`; switches, filters, impedance, nozzles and DSP are `tuning`; cables and adapters
 are `setup`. Default selection prefers explicit default/stock, neutral EQ/normal/standard/original,
 then ANC-off states; ties use source order. Without an obvious stock state, the first non-excluded,
@@ -177,6 +179,8 @@ labels such as Pi7 S2, Px7 S3 and Px8 S2 are not replacement-sample labels. Pare
 `(by person)`, `(measured by person)` and similar credits are neutral attribution: stripped from variant
 labels/descriptors, retained verbatim in original filenames. Heuristic kinds can be wrong; labels and
 processing provenance retain the evidence rather than claiming a verified physical configuration.
+Every non-default measurement must have a non-empty label, using its filename when an originally
+unlabelled default is demoted; an empty non-default label stops publication.
 
 ### Switch and accessory folding
 
@@ -211,8 +215,10 @@ states are non-default tuning. Existing defaults break within-source ties, then 
 Replacement units, ambiguous EQ and impedance-adapter loads cannot become the bare switch-state default.
 A different switch state wins over incidental tip/fit metadata; same-state tip changes remain `fit`.
 Unlabelled defaults are preserved, not acoustically assigned. Tied pluralities remain unresolved.
-DU and 00, or named modes and impedance positions, are **not** equated without evidence. Multiple
-defaults without an eligible selected labelled state remain unchanged and are reported as unresolved.
+DU and 00, or named modes and impedance positions, are **not** equated without evidence. When multiple
+defaults cannot be reconciled to an eligible selected state, the source's original phone-book/file order
+selects one default (lowest stable ID only if that order is unavailable); the rest become non-default
+`tuning`. This selects a source reference, not an inferred switch equivalence; unresolved states remain reported.
 
 ### Final default coverage
 
@@ -223,9 +229,10 @@ Singleton unit/fit/unknown groups always become default. Otherwise missing defau
 numbered sample (or first unit), stock/neutral fit first, or the existing tuning/default tie-break and
 source order. Every selected default has **`kind: 'default'` and `isDefault: true`**, retaining its
 label and recording the previous kind in provenance. This makes a measurement usable without claiming
-it is stock. Multiple defaults are reduced only when the selected labelled state is present; no
-encoding is guessed. The build enforces `isDefault === (kind === 'default')` for every measurement;
-kind/flag mismatch, missing product coverage or unjustified missing source coverage stops publication.
+it is stock. Every (product, source, partition) has **at most one default**, including unresolved state
+groups; no encoding is guessed. The build enforces `isDefault === (kind === 'default')` for every
+measurement; kind/flag mismatch, multiple source defaults, missing product coverage or unjustified
+missing source coverage stops publication.
 Coverage counts use `kind`, consumed by the engine, UI and rig evidence; statistics uses the equivalent
 `isDefault` flag. Rig evidence receives kind-correct provisional defaults, then those choices are
 restored before final selection so final partitions determine published fallbacks. App compatibility
@@ -279,7 +286,7 @@ category/marker changes, variant corrections and per-database form counts are re
 lists products with state/accessory descriptors, including every source variant's ID, partition,
 filename, label and kind;
 `switchIdentity`/`switchDefaults` contain moves, ambiguities, votes and source choices; `defaultCoverage`
-contains before/after counts, selections, exceptions and `unresolvedMultipleDefaults`, with provisional
+contains before/after counts, selections, exceptions, `unresolvedStates` and `unresolvedMultipleDefaults`, with provisional
 coverage in `rigDefaultCoverage`; `unknownVariants`, `rigEvidence`, `sourceEvidence`, `quality`,
 `quarantineSummary`, `remainingCollisionGroups`, `remainingFormConflicts`, `statistics` and `files`
 retain the remaining labels, rig decisions, exclusions, conflicts, fold statistics and artifact hashes.
@@ -287,7 +294,7 @@ retain the remaining labels, rig decisions, exclusions, conflicts, fold statisti
 ### Known unresolved cases
 
 Switch-state ties and incompatible encodings (including Quartet, Canon Pro and Butastur cases) can
-leave inherited multiple defaults or justified source-level gaps; these are not successful state
+leave unresolved state choices or justified source-level gaps; source-order selection is not successful state
 reconciliations. Opaque colors, positions and multi-position codes remain uninterpreted, and suffixes
 without an accepted exact parent remain separate. Abbreviations, real model families, revisions and
 samples are not fuzzy aliases. Cross-form names can genuinely name both forms, as with 1MORE Triple
