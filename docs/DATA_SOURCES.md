@@ -272,8 +272,9 @@ processing steps and every successful parse warning (including dropped rows or m
 
 ### Commands and reports
 
-Manual updates use `pnpm data:crawl`, then `pnpm data:build`. The Deploy workflow also re-crawls weekly
-on Monday at 06:17 UTC (`17 6 * * 1`) before rebuilding and deploying.
+Manual updates use `pnpm data:crawl`, then `pnpm data:build`. The Deploy workflow restores the
+published dataset before refresh builds, preserving its catalog and redirect history, then re-crawls
+weekly on Monday at 06:17 UTC (`17 6 * * 1`) before rebuilding and deploying. A failed pull stops deployment.
 Use `--sites superreview,elrics --limit 10` for a partial crawl (limit is filename stems per database).
 The crawler uses an identifying User-Agent, four global request slots (never more than six),
 conditional ETag/Last-Modified requests, persistent content-addressed cache, and exponential backoff.
@@ -324,11 +325,12 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `93daa00a38311f657bc31ce4`: **9,610 products / 40,821 measurements / 138 databases / 118 publishers**.
+Build `47e17d0fbadf1919b2caade0`: **9,614 products / 40,821 measurements / 138 databases / 118 publishers**.
 Its **286 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 100 invalid identities/markers/unidentified customs, 24 target/calibration/delta/sandbox and two population
-averages; these are candidates, not counts of previously published removals. **93 unresolved state
+averages; these are candidates, not counts of previously published removals. **86 unresolved state
 groups** now have one source-order default each; **zero duplicate source defaults** remain. Against
-published `ba2578bd5a41b28acce7e040`, catalogs retain **613 product / 872 measurement redirects**;
-LOCO correctly classifies **37/37 scored controls**. Missing/invalid channels and source-level failures
+published `ba2578bd5a41b28acce7e040`, catalogs resolve **600 retired product / 862 retired measurement IDs**;
+their complete inherited maps contain **622 product / 887 measurement redirects**. LOCO reports
+**37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.
