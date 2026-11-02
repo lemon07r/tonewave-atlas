@@ -18,18 +18,23 @@ import {
 	parseOptOuts,
 	phoneBook,
 	record,
+	ROOT,
+	supportedChannels,
 	unwanted,
 	type CrawlSnapshot
 } from './common.ts';
 
-export async function crawl(args = process.argv.slice(2)): Promise<void> {
+export async function crawl(
+	args = process.argv.slice(2),
+	paths = { root: ROOT, cache: CACHE }
+): Promise<void> {
 	const { values } = parseArgs({ args, options: { limit: { type: 'string' }, sites: { type: 'string' } } });
 	const limit = values.limit === undefined ? Infinity : Number(values.limit);
 	if (!(limit > 0) || (Number.isFinite(limit) && !Number.isInteger(limit)))
 		throw new Error('--limit must be a positive integer (variants per database)');
-	const sites = values.sites?.split(',');
-	const { excluded } = await readInputs();
-	const http = new HttpCache();
+	const sites = values.sites?.split(',').map((site) => site.trim());
+	const { excluded } = await readInputs(paths.root);
+	const http = new HttpCache(paths.cache);
 	const [directory, script] = await Promise.all([http.fetch(DIRECTORY_URL), http.fetch(OPT_OUT_URL)]);
 	if (
 		directory.entry.status !== 200 ||
@@ -40,6 +45,10 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 		throw new Error('Live source discovery/opt-out retrieval failed');
 	const optOuts = parseOptOuts(new TextDecoder().decode(script.body));
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
+	const databases = discover(raw);
+	for (const site of sites ?? [])
+		if (!site || !databases.some((db) => db.username === site || db.id === site))
+			throw new Error(`Unknown --sites entry: ${JSON.stringify(site)}`);
 	const snapshot: CrawlSnapshot = {
 		startedAt: new Date().toISOString(),
 		finishedAt: null,
@@ -54,7 +63,7 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 			if (record(site) && (site.urlType === 'altDomain' || site.username === 'crinacle'))
 				snapshot.excluded.push({ id: String(site.username), reason: 'altDomain/crinacle' });
 		}
-	for (const db of discover(raw)) {
+	for (const db of databases) {
 		const reason = optOuts.includes(db.username)
 			? 'upstream opt-out'
 			: excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
@@ -67,7 +76,7 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 		if (reason) snapshot.excluded.push({ id: db.id, reason });
 		else snapshot.sources.push(db);
 	}
-	const save = () => atomicWrite(resolve(CACHE, 'crawl.json'), JSON.stringify(snapshot, null, 2));
+	const save = () => atomicWrite(resolve(paths.cache, 'crawl.json'), JSON.stringify(snapshot, null, 2));
 	await save();
 	for (const [i, db] of snapshot.sources.entries()) {
 		console.log(`[${i + 1}/${snapshot.sources.length}] ${db.id}: ${db.url}`);
@@ -89,10 +98,19 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 						error: `Using last-good ${response.entry.url}: ${response.entry.lastFailure.error}`
 					});
 			const dir = dataDirectory(db, config);
+			supportedChannels(config);
 			const channels = fileChannels(config);
-			if (!channels.length) throw new Error('Empty/unsupported default_channels');
 			const cal = configString(config, 'measurement_calibration_file');
-			if (cal) await http.fetch(calibrationUrl(dir, cal));
+			if (cal) {
+				const response = await http.fetch(calibrationUrl(dir, cal));
+				if (response.entry.status !== 200)
+					throw new Error(`Configured calibration HTTP ${response.entry.status}; source excluded`);
+				if (response.entry.lastFailure)
+					snapshot.errors.push({
+						id: db.id,
+						error: `Using last-good calibration: ${response.entry.lastFailure.error}`
+					});
+			}
 			const book = phoneBook(
 				JSON.parse(new TextDecoder().decode(bookResponse.body).replace(/^\uFEFF/, '')) as unknown
 			);
@@ -137,7 +155,7 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 	snapshot.finishedAt = new Date().toISOString();
 	await save();
 	console.log(
-		`Crawl complete: ${snapshot.sources.length} databases selected, ${snapshot.excluded.length} excluded, ${snapshot.errors.length} issues. ${resolve(CACHE, 'crawl.json')}`
+		`Crawl complete: ${snapshot.sources.length} databases selected, ${snapshot.excluded.length} excluded, ${snapshot.errors.length} issues. ${resolve(paths.cache, 'crawl.json')}`
 	);
 }
 

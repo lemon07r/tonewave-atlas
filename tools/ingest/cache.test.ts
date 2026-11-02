@@ -32,6 +32,23 @@ afterEach(async () => {
 });
 
 describe('HTTP cache', () => {
+	it.each([NaN, Infinity, 0, 1.5, 7])('rejects invalid request concurrency %s', (concurrency) => {
+		expect(() => new HttpCache('unused', concurrency)).toThrow('Concurrency');
+	});
+	it('refetches a missing cached body without sending stale validators', async () => {
+		const path = await root(),
+			url = 'https://test.squig.link/missing-body';
+		const request = vi
+			.fn<typeof fetch>()
+			.mockImplementation(() => Promise.resolve(new Response('body', { headers: { etag: '"old"' } })));
+		vi.stubGlobal('fetch', request);
+		const first = await new HttpCache(path).fetch(url);
+		if (!first.entry.bodyHash) throw new Error('Missing fixture cache body');
+		await rm(resolve(path, 'bodies', first.entry.bodyHash));
+		expect(await cached(url, path)).toBeNull();
+		expect(new TextDecoder().decode((await new HttpCache(path).fetch(url)).body)).toBe('body');
+		expect(request.mock.calls[1]?.[1]?.headers).not.toHaveProperty('If-None-Match');
+	});
 	it.each(['config.js', 'data/phone_book.json'])(
 		'keeps last-good %s and validators after a 404, and clears the failure on 304',
 		async (name) => {
@@ -117,17 +134,27 @@ describe('HTTP cache', () => {
 	it('retries transient server failures with backoff instead of caching failures as curves', async () => {
 		const path = await root();
 		vi.useFakeTimers();
+		const sleeping = Promise.withResolvers<undefined>();
+		vi.mocked(backoff).mockImplementationOnce(
+			(delay) =>
+				new Promise<void>((done) => {
+					setTimeout(done, delay);
+					sleeping.resolve(undefined);
+				})
+		);
 		const request = vi
 			.fn<typeof fetch>()
 			.mockResolvedValueOnce(new Response(null, { status: 503 }))
 			.mockResolvedValueOnce(new Response('recovered'));
 		vi.stubGlobal('fetch', request);
 		const promise = new HttpCache(path).fetch('https://test.squig.link/retry');
-		// Filesystem reads finish in real time; timer advancement starts after the first request.
-		await vi.waitFor(() => {
-			expect(request).toHaveBeenCalledTimes(1);
-		});
-		await vi.runAllTimersAsync();
+		// Wait until the delay is scheduled, not merely until fetch starts.
+		await sleeping.promise;
+		expect(backoff).toHaveBeenCalledWith(2000);
+		expect(request).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1999);
+		expect(request).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
 		expect(new TextDecoder().decode((await promise).body)).toBe('recovered');
 		expect(request).toHaveBeenCalledTimes(2);
 	});

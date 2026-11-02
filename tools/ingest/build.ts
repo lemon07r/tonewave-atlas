@@ -22,9 +22,10 @@ import {
 	atomicWrite,
 	CACHE,
 	calibrationUrl,
-	configChannels,
+	supportedChannels,
 	fileChannels,
 	dataDirectory,
+	datasetVersion,
 	DIRECTORY_URL,
 	discover,
 	errorMessage,
@@ -153,12 +154,6 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					file: response.entry.url,
 					reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
 				});
-		const source = sourceFor(
-			db,
-			config,
-			bookCache.entry.fetchedAt,
-			overrides[db.url] ?? overrides[db.username]
-		);
 		const counts: SourceCount = {
 			phones: 0,
 			variants: 0,
@@ -176,21 +171,16 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		};
 		let dir: string;
 		let calUrl: string | null;
+		let source: Source;
+		let channels: string[];
 		try {
+			source = sourceFor(db, config, bookCache.entry.fetchedAt, overrides[db.url] ?? overrides[db.username]);
+			supportedChannels(config);
+			channels = fileChannels(config);
 			dir = dataDirectory(db, config);
 			calUrl = source.calibration ? calibrationUrl(dir, source.calibration) : null;
 		} catch (e) {
 			report.excluded.push({ id: db.id, reason: errorMessage(e) });
-			continue;
-		}
-		const configuredChannels = configChannels(config);
-		const channels = fileChannels(config);
-		if (
-			configuredChannels.some((c) => !['L', 'R', ''].includes(c)) ||
-			configuredChannels.length > 2 ||
-			!channels.length
-		) {
-			report.excluded.push({ id: db.id, reason: `Unsupported channels: ${JSON.stringify(channels)}` });
 			continue;
 		}
 		// The live squig graphtool subtracts measurement_calibration_file from measurements (not targets).
@@ -204,8 +194,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					minEndHz: 0
 				});
 				if (p.ok) {
-					calibration = resample(p.points);
-					useTime(c.entry.fetchedAt);
+					const values = resample(p.points);
+					if (values.some(Number.isFinite)) {
+						calibration = values;
+						useTime(c.entry.fetchedAt);
+					}
 				}
 			}
 			if (!calibration) {
@@ -267,8 +260,12 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						warnings.push(`${channel}: ${parsed.error}`);
 						continue;
 					}
-					const low = Math.min(...parsed.points.db),
-						high = Math.max(...parsed.points.db);
+					let low = Infinity,
+						high = -Infinity;
+					for (const db of parsed.points.db) {
+						low = Math.min(low, db);
+						high = Math.max(high, db);
+					}
 					if (high - low < 0.05 || high - low > 100) {
 						warnings.push(`${channel}: ${high - low < 0.05 ? 'flat line' : 'absurd dynamic range'}`);
 						continue;
@@ -467,9 +464,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			}
 		}
 		flush();
+		const product = products.get(curves[0]?.measurement.productId ?? '');
+		if (!product) throw new Error(`Missing product for partition ${id}`);
 		partitionMetadata.push({
 			id,
-			form: id.startsWith('iem-') ? 'iem' : 'headphone',
+			form: product.form,
 			measurementCount: curves.length,
 			rankFile,
 			detailFiles,
@@ -497,7 +496,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		.map(([path, bytes]): DatasetFile => ({ path, bytes: bytes.length, sha256: sha256(bytes) }));
 	if (files.length >= 19000 || files.some((f) => f.bytes >= 25 * 1024 * 1024))
 		throw new Error('Dataset exceeds Cloudflare Pages limits');
-	const version = sha256(JSON.stringify({ formatVersion: 1, files, sources })).slice(0, 24);
+	const version = datasetVersion(files, sources);
 	const manifest: Manifest = {
 		formatVersion: 1,
 		version,

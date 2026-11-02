@@ -68,9 +68,15 @@ export async function cached(
 			? { status: failure.status as number | null, at: failure.at as string, error: failure.error as string }
 			: null
 	};
-	const body = entry.bodyHash
-		? Uint8Array.from(await readFile(resolve(root, 'bodies', entry.bodyHash)))
-		: new Uint8Array();
+	let body: Uint8Array;
+	try {
+		body = entry.bodyHash
+			? Uint8Array.from(await readFile(resolve(root, 'bodies', entry.bodyHash)))
+			: new Uint8Array();
+	} catch (error) {
+		if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+		throw error;
+	}
 	if (entry.bodyHash && sha256(body) !== entry.bodyHash) throw new Error(`Cache body hash mismatch: ${url}`);
 	return { entry, body };
 }
@@ -83,7 +89,8 @@ export class HttpCache {
 	private inFlight = new Map<string, Promise<Awaited<ReturnType<HttpCache['fetch']>>>>();
 	constructor(privateRoot = CACHE, concurrency = 4) {
 		this.root = privateRoot;
-		if (concurrency < 1 || concurrency > 6) throw new Error('Concurrency must be 1…6');
+		if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 6)
+			throw new Error('Concurrency must be 1…6');
 		this.concurrency = concurrency;
 	}
 	private root: string;

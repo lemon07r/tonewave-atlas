@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Form, Source } from '#core/dataset/types.ts';
+import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CACHE = resolve(ROOT, '.cache/ingest');
@@ -13,6 +13,45 @@ export const OPT_OUT_URL = 'https://squig.link/squigsites.js';
 
 export function sha256(value: string | Uint8Array): string {
 	return createHash('sha256').update(value).digest('hex');
+}
+
+/** Same canonical field order as the v1 builder; paths here are version-relative filenames. */
+export function datasetVersion(files: DatasetFile[], sources: Source[]): string {
+	return sha256(
+		JSON.stringify({
+			formatVersion: 1,
+			files: files.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
+			sources: sources.map(
+				({
+					id,
+					username,
+					name,
+					url,
+					dbType,
+					form,
+					partition,
+					rig,
+					rigInferred,
+					permission,
+					crawledAt,
+					calibration
+				}) => ({
+					id,
+					username,
+					name,
+					url,
+					dbType,
+					form,
+					partition,
+					rig,
+					rigInferred,
+					permission,
+					crawledAt,
+					calibration
+				})
+			)
+		})
+	).slice(0, 24);
 }
 
 export async function atomicWrite(path: string, value: string | Uint8Array): Promise<void> {
@@ -37,8 +76,8 @@ function string(value: unknown): string | null {
 function strings(value: unknown): string[] {
 	return typeof value === 'string'
 		? [value]
-		: Array.isArray(value)
-			? value.filter((s): s is string => typeof s === 'string')
+		: Array.isArray(value) && value.every((s: unknown) => typeof s === 'string')
+			? value
 			: [];
 }
 
@@ -207,6 +246,14 @@ export function configChannels(config: string): string[] {
 	return [...list.matchAll(/["']([^"']*)["']/g)].map((m) => m[1] ?? '');
 }
 
+/** Supported physical channels; numbered repetitions are expanded only after this check. */
+export function supportedChannels(config: string): string[] {
+	const channels = configChannels(config);
+	if (!channels.length || channels.length > 2 || channels.some((c) => !['L', 'R', ''].includes(c)))
+		throw new Error(`Unsupported channels: ${JSON.stringify(channels)}`);
+	return channels;
+}
+
 /** Numbered files represent repeated samples; preserve their identities in detail packs. */
 export function fileChannels(config: string): string[] {
 	const channels = configChannels(config);
@@ -337,7 +384,7 @@ export function discover(value: unknown): Database[] {
 }
 
 export function parseOptOuts(script: string): string[] {
-	const content = /\b(?:let|const|var)\s+optedOut\s*=\s*\[([^\]]*)\]/.exec(script)?.[1];
+	const content = /\b(?:let|const|var)\s+optedOut\s*=\s*\[([^\]]*)\]/.exec(withoutComments(script))?.[1];
 	if (content === undefined) throw new Error('Could not read upstream opt-outs; refusing to crawl/build');
 	return [...content.matchAll(/["']([^"']+)["']/g)].map((m) => m[1] ?? '');
 }

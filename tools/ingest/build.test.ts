@@ -8,7 +8,7 @@ import { decodePack } from '#core/dataset/codec.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
-import { DIRECTORY_URL, OPT_OUT_URL } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL } from './common.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -24,7 +24,7 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function fixture(configBody: string | null = config) {
+async function fixture(configBody: string | null = config, extraBodies: [string, string][] = []) {
 	const temp = resolve(homedir(), '.local/tmp');
 	await mkdir(temp, { recursive: true });
 	const root = await mkdtemp(resolve(temp, 'tonewave-build-test-'));
@@ -51,6 +51,7 @@ async function fixture(configBody: string | null = config) {
 		[`${base}data/Model%20R.txt`, curve(80)]
 	]);
 	if (configBody !== null) bodies.set(configUrl, configBody);
+	for (const [url, body] of extraBodies) bodies.set(url, body);
 	vi.stubGlobal(
 		'fetch',
 		vi.fn<typeof fetch>().mockImplementation((url) => {
@@ -130,6 +131,72 @@ describe('cached dataset build safety', () => {
 		await build(paths);
 		expect((await result(paths)).manifest).toEqual(before.manifest);
 		expect((await stat(resolve(paths.output, before.manifest.version))).ino).toBe(inode);
+		expect(
+			datasetVersion(
+				before.manifest.files.map((f) => ({ ...f, path: f.path.slice(before.manifest.version.length + 1) })),
+				before.manifest.sources
+			)
+		).toBe(before.manifest.version);
+	});
+	it('reports an unsafe derived partition without aborting publication', async () => {
+		const { paths } = await fixture('', [
+			[
+				DIRECTORY_URL,
+				JSON.stringify([
+					{
+						username: 'reviewer',
+						name: 'Reviewer',
+						urlType: 'subdomain',
+						dbs: [{ type: 'Headphones_unsafe', folder: '/' }]
+					}
+				])
+			]
+		]);
+		await writeFile(
+			resolve(paths.root, 'data/sources.json'),
+			JSON.stringify({ overrides: { reviewer: { form: 'headphone' } } })
+		);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.measurements).toEqual([]);
+		expect(report.excluded[0]?.reason).toContain('Unsafe partition id');
+	});
+	it.each(['default_channels = [];', 'default_channels = ["A"];', 'default_channels = ["L", "R", "C"];'])(
+		'reports unsupported channels: %s',
+		async (config) => {
+			const { paths } = await fixture(config);
+			await build(paths);
+			const { catalog, report } = await result(paths);
+			expect(catalog.measurements).toEqual([]);
+			expect(report.excluded[0]?.reason).toContain('Unsupported channels');
+		}
+	);
+	it('excludes a calibration entirely outside the canonical grid', async () => {
+		const { paths } = await fixture(config, [[`${base}data/offset.txt`, '1 10\n2 20']]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.measurements).toEqual([]);
+		expect(report.excluded[0]?.reason).toContain('calibration missing/invalid');
+	});
+	it('retains a custom IEM partition in its actual form catalog', async () => {
+		const { paths } = await fixture();
+		await writeFile(
+			resolve(paths.root, 'data/sources.json'),
+			JSON.stringify({ overrides: { reviewer: { partition: 'custom-rig' } } })
+		);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.partitions[0]).toMatchObject({ id: 'custom-rig', form: 'iem', measurementCount: 1 });
+		expect(catalog.measurements[0]?.partition).toBe('custom-rig');
+	});
+	it('accepts dense raw measurements without spreading them as call arguments', async () => {
+		const dense = Array.from({ length: 200000 }, (_, i) => `${20 + i / 10} ${80 + Math.sin(i / 1000)}`).join(
+			'\n'
+		);
+		const { paths } = await fixture('', [[`${base}data/Model%20L.txt`, dense]]);
+		await build(paths);
+		const { catalog } = await result(paths);
+		expect(catalog.measurements[0]?.channels).toContain('L');
 	});
 	it.each(['exclusions', 'aliases', 'sources'])(
 		'fails before publishing when %s.json is malformed',

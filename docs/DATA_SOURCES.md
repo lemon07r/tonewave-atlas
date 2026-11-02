@@ -25,14 +25,16 @@ an unrecognisable opt-out list fails closed.
 
 ## Rigs and processing
 
-- IEMs on 711-family couplers and B&K 5128 are separate partitions. An IEM directory entry without a
-  rig description is inferred to be 711-family and marked as inferred, not verified hardware.
+- IEMs on 711-family couplers and B&K 5128 are separate partitions. An IEM entry without a recognised
+  rig defaults to 711-family and is marked as inferred, not verified hardware; explicit partition
+  overrides are curator decisions.
 - Headphones never share an IEM partition, including databases labelled “5128” under `/headphones/`.
   Explicit 5128, 4128 and miniDSP EARS families can share their own headphone partition (EARS Pro
   remains separate); other headphone rigs remain source-specific. `data/sources.json` owns overrides.
 - The parser ignores phase, drops nonfinite rows, averages duplicate Hz in dB, sorts and validates.
   Curves are linearly interpolated in log Hz on the canonical 240-bin 1/24-octave grid, never
-  extrapolated. Flat/absurd curves and target, calibration, delta and EQ sandbox names are rejected.
+  extrapolated. Flat/absurd curves and target, calibration, delta-symbol (∆/Δ) and EQ sandbox names are
+  rejected. The word “Delta” alone is ambiguous with product names and is not an exclusion.
 - Detail packs retain each available channel and numbered repetition. Ranking uses finite dB means
   within repeated channels, then the L/R dB mean (or available channel), 1/12-octave smoothing and
   every second canonical bin. Missing data stays missing. Channel contribution masks and paired-bin
@@ -66,8 +68,9 @@ the default `https://tonewave.lr7.dev/data/`.
 Builds are deterministic for unchanged cache/inputs; build time is the newest relevant cached content
 fetch time, not the current wall clock. Output versions hash the artifacts and source attribution.
 Verified existing versions stay in place on repeat publication; repairs use a recoverable backup and
-commit the manifest last. Generated old versions are removed only after successful publication. Reports distinguish uncached
-variants in partial crawls from rejected measurements and list parsing failures, HTTP gaps, unaliased
+commit the manifest last. Generated old versions are removed only after successful local publication.
+Reports count missing channel HTTP responses and distinguish uncached
+variants in partial crawls from rejected measurements, and list parsing failures, unaliased
 brands, duplicate index rows, normalised identity collisions, and suspicious adjacent near-names. Exact
 duplicate index rows are removed; duplicate measurement identities retain the first accepted entry
 with a report entry. Fuzzy names are never
