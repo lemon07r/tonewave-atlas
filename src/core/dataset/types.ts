@@ -32,7 +32,7 @@ export interface Variant {
 	isDefault: boolean;
 }
 
-export interface Provenance {
+interface Provenance {
 	sourceId: string;
 	databaseUrl: string;
 	originalUrls: string[];

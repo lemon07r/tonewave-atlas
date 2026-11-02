@@ -2,7 +2,7 @@ import { smoothOctave } from '../smooth.ts';
 import { frequenciesFor, median, sameLength, type Curve } from './common.ts';
 import { responseDistance } from './distance.ts';
 
-export interface SourceMeasurement {
+interface SourceMeasurement {
 	source: string;
 	curve: Curve;
 }
@@ -11,7 +11,7 @@ export interface ProductMeasurements {
 	measurements: readonly SourceMeasurement[];
 	fitVariants?: readonly Curve[];
 }
-export interface SourceOffset {
+interface SourceOffset {
 	source: string;
 	curve: Float64Array;
 	products: number;
@@ -160,7 +160,7 @@ export function estimatePartitionStatistics(
 	};
 }
 
-export interface HarmonisationSummary {
+interface HarmonisationSummary {
 	pairs: number;
 	meanBefore: number | null;
 	meanAfter: number | null;
@@ -169,7 +169,7 @@ export interface HarmonisationSummary {
 	medianImprovement: number | null;
 	improved: boolean | null;
 }
-export interface HarmonisationFold extends HarmonisationSummary {
+interface HarmonisationFold extends HarmonisationSummary {
 	fold: number;
 	trainingProducts: number;
 	heldOutProducts: number;

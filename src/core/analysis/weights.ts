@@ -1,6 +1,6 @@
 import { bandIndex, BANDS, clamp, type Band, type Curve } from './common.ts';
 
-export const RELIABILITY_FLOOR_DB = 1;
+const RELIABILITY_FLOOR_DB = 1;
 export type Focus = 'balanced' | 'bass' | 'vocals' | 'treble';
 export interface WeightOptions {
 	spread?: Curve;

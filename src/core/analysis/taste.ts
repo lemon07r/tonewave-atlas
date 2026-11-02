@@ -14,9 +14,9 @@ import { responseDistance, type DistanceResult } from './distance.ts';
 import { detectNarrowPeaks } from './peaks.ts';
 import { defaultSpreadDb, makeWeights } from './weights.ts';
 
-export const TASTE_CLUSTER_DISTANCE_DB = 3;
-export const DUPLICATE_DISTANCE_DB = 1.5;
-export const CONSTRAINT_MARGIN_DB = 0.5;
+const TASTE_CLUSTER_DISTANCE_DB = 3;
+const DUPLICATE_DISTANCE_DB = 1.5;
+const CONSTRAINT_MARGIN_DB = 0.5;
 export type DislikeReason =
 	| 'too-much-bass'
 	| 'too-little-bass'
@@ -45,7 +45,7 @@ export interface PreferenceStatement {
 	magnitudeDb: [number, number];
 	support: number;
 }
-export interface Taste {
+interface Taste {
 	id: number;
 	members: RatedItem[];
 	centre: Float64Array;
@@ -466,7 +466,7 @@ export function buildTasteModel(items: readonly RatedItem[], options: TasteOptio
 	};
 }
 
-export interface ConstraintExplanation {
+interface ConstraintExplanation {
 	disliked: string;
 	reason: DislikeReason | 'near-duplicate';
 	penalty: number;

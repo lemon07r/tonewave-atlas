@@ -141,7 +141,7 @@ export function responseDistance(a: Curve, b: Curve, options: DistanceOptions = 
 	};
 }
 
-export interface RankedMatch {
+interface RankedMatch {
 	index: number;
 	stats: DistanceResult;
 }

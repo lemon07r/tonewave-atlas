@@ -30,13 +30,13 @@ export interface AtlasError {
 		| 'insufficient-data';
 	message: string;
 }
-export interface PartitionSummary {
+interface PartitionSummary {
 	id: string;
 	form: Form;
 	measurementCount: number;
 	productCount: number;
 }
-export interface SourceSummary extends Source {
+interface SourceSummary extends Source {
 	/** Accepted measurements from this source in the published catalog. */
 	measurementCount: number;
 }
@@ -170,7 +170,7 @@ export interface CompareResult {
 	results: { candidate: CandidateInfo; tradeoff: MultiReferenceResult }[];
 	caveats: string[];
 }
-export interface DetailMeasurement {
+interface DetailMeasurement {
 	measurement: Measurement;
 	source: Source;
 	curves: { channel: string; values: Float64Array }[];

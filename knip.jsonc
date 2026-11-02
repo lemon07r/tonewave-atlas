@@ -1,0 +1,7 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	// Manually invoked dataset benchmark, documented in docs/VALIDATION.md.
+	"entry": ["benchmarks/atlas.ts"],
+	// These live font dependencies are imported via CSS @import in src/lib/styles/app.css.
+	"ignoreDependencies": ["@fontsource-variable/dm-sans", "@fontsource/ibm-plex-mono"]
+}
