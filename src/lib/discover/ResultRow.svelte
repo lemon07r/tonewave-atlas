@@ -8,6 +8,7 @@
 	import { reasonLabels } from '#lib/profile/profile.ts';
 	import { detail, curveSources, type CurveSource } from './display.ts';
 	import Notice from '#lib/components/Notice.svelte';
+	import { compareQuery } from './actions.ts';
 	let {
 		candidate,
 		rank,
@@ -41,7 +42,10 @@
 		let current = true;
 		void detail(candidate.product.id).then(
 			(product) => {
-				if (current) sources = curveSources(product, candidate.measurementIds);
+				if (current) {
+					sources = curveSources(product, candidate.measurementIds);
+					error = '';
+				}
 			},
 			(cause: unknown) => {
 				if (current) error = cause instanceof Error ? cause.message : 'Could not load measurement sources.';
@@ -52,6 +56,7 @@
 		};
 	});
 	let prices = $derived(priceLines(candidate));
+	let formQuery = $derived(candidate.product.form === 'headphone' ? '&form=headphones' : '');
 	let matched = $derived(
 		bands.filter((b) => b.meanDb !== null && Math.abs(b.meanDb) < 0.75).map((b) => bandLabels[b.band])
 	);
@@ -70,6 +75,9 @@
 			><span class="sr-only">Response distance:&nbsp;</span>{distance.toFixed(1)}&nbsp;<span>dB</span></span
 		>
 	</div>
+	{#if fit}<p class="ranking-score mono">
+			Ranking score: {fit.score.toFixed(1)} (not dB; lower is closer; includes dislike penalties)
+		</p>{/if}
 	{#if match}<p class="reviewers">
 			{reviewerSummary(match.perSourceRange, match.sourceCount)}
 		</p>{/if}
@@ -79,10 +87,10 @@
 		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
 			>{selected ? 'Remove from chart' : 'Show on chart'}</button
 		>{#if selected}<a class="chart-jump" href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
-				href={resolve(
-					`/compare?p=${encodeURIComponent(referenceProductId)},${encodeURIComponent(candidate.product.id)}`
-				)}>Compare</a
-			>{/if}<a href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}`)}>Product page</a>
+				href={resolve(`/compare?${compareQuery(candidate, referenceProductId)}`)}>Compare</a
+			>{/if}<a href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}${formQuery}`)}
+			>Product page</a
+		>
 	</div>
 	<details bind:open>
 		<summary>Measured differences &amp; sources</summary>
@@ -134,7 +142,7 @@
 		<ul class="sources">
 			{#each sources as source (source.url)}<li>
 					<a href={source.url} target="_blank" rel="external noreferrer">{source.label} database</a>
-				</li>{/each}{#if !sources.length && !error}{#each candidate.sources as source (source.id)}<li>
+				</li>{/each}{#if !sources.length}{#each candidate.sources as source (source.id)}<li>
 						<a href={source.url} target="_blank" rel="external noreferrer">{source.name} database</a>
 					</li>{/each}{/if}
 		</ul>
@@ -174,6 +182,7 @@
 		font-size: 12px;
 	}
 	.description,
+	.ranking-score,
 	.reviewers,
 	.price,
 	.metrics,

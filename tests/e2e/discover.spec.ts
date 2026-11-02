@@ -103,7 +103,9 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 		page.locator('.results').getByText('Reviewer offsets corrected (method)', { exact: true })
 	).toBeVisible();
 	await expect(
-		page.getByText('Not enough agreement yet to describe this taste against typical IEMs.', { exact: true })
+		page.getByText('No supported preference description is available against typical IEMs in this dataset.', {
+			exact: true
+		})
 	).toBeVisible();
 	await expect(page.getByRole('region', { name: 'Taste model summary' })).not.toContainText(
 		/population-relative|conservative default profile|positive examples/
@@ -142,7 +144,12 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 
 test('invalid import and unknown references are errors, not empty successful searches', async ({ page }) => {
 	await page.goto('/?ref=not-a-real-product');
-	await expect(page.getByText('Product is not in the catalog.', { exact: true }).first()).toBeVisible();
+	await expect(
+		page.getByText(
+			'This reference is not in the selected form-factor catalog. Switch modes or choose another product.',
+			{ exact: true }
+		)
+	).toBeVisible();
 	await expect(page.locator('.result-row')).toHaveCount(0);
 	await page.getByRole('radio', { name: 'Match my taste profile', exact: true }).check();
 	await page

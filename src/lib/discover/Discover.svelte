@@ -33,6 +33,7 @@
 	import ProfileEditor from '#lib/profile/ProfileEditor.svelte';
 	import {
 		PROFILE_KEY,
+		PROFILE_LIMIT,
 		emptyProfile,
 		parseProfile,
 		reasonLabels,
@@ -115,8 +116,8 @@
 		urlState.overlays.filter((id) => activeResult?.results.some((row) => row.candidate.id === id))
 	);
 	let selectedCount = $derived(effectiveOverlays.length);
-	let modelKey = $derived(JSON.stringify(items));
-	// Corrections are scoped to the current set/order of rated evidence, not recycled cluster IDs.
+	let modelKey = $derived(JSON.stringify({ form, rig: urlState.rig, items }));
+	// Cluster IDs are local to the form, requested rig and ordered rated evidence.
 	let correctionBands = $state<Record<string, Partial<Record<number, Partial<Record<Band, number>>>>>>({});
 	let currentCorrections = $derived(correctionBands[modelKey] ?? {});
 	function querySpec() {
@@ -173,10 +174,15 @@
 	}
 	function choose(product: Choice) {
 		if (urlState.mode === 'profile') {
+			if (items.length >= PROFILE_LIMIT) {
+				profileError = `A profile supports at most ${PROFILE_LIMIT} products per form factor. Remove one before adding another.`;
+				return;
+			}
+			profileError = '';
 			updateItems([...items, { productId: product.id, rating: 'love', strength: 1, soundRelated: true }]);
 			query = '';
 		} else {
-			changeUrl({ ref: product.id, m: undefined, rig: undefined, chart: undefined });
+			changeUrl({ ref: product.id, m: undefined, rig: undefined, chart: undefined, sources: undefined });
 		}
 	}
 	function toggleOverlay(id: string) {
@@ -226,7 +232,7 @@
 			const text = localStorage.getItem(PROFILE_KEY);
 			if (text) profile = parseProfile(text);
 		} catch (cause) {
-			storageError = `Saved profile could not be read: ${errorText(cause)} It has not been overwritten.`;
+			storageError = `Saved profile could not be read: ${errorText(cause)} It has not been overwritten. Edits work for this visit; export to keep them if browser storage remains unavailable.`;
 		}
 		ready = true;
 		void Promise.all([productList(form), analysis().then((service) => service.summary())]).then(
@@ -252,7 +258,7 @@
 		const id = referenceId;
 		referenceDetail = undefined;
 		referenceError = '';
-		if (!id) return;
+		if (!id || catalogLoading || catalogError || !selectedProduct) return;
 		let current = true;
 		void detail(id).then(
 			(result) => {
@@ -267,13 +273,19 @@
 		};
 	});
 	$effect(() => {
-		if (!ready) return;
+		if (!ready || catalogLoading || catalogError) return;
 		const { mode, ref, measurement, rig, focus, alpha, filters, ratings, edits } = JSON.parse(
 			queryKey
 		) as ReturnType<typeof querySpec>;
 		queryError = '';
 		similar = undefined;
 		taste = undefined;
+		if (mode === 'similar' && ref && !selectedProduct) {
+			queryError =
+				'This reference is not in the selected form-factor catalog. Switch modes or choose another product.';
+			loading = false;
+			return;
+		}
 		if (
 			(mode === 'similar' && !ref) ||
 			(mode === 'profile' &&
@@ -420,7 +432,12 @@
 				value={urlState.mode}
 				onchange={(value) => {
 					query = '';
-					changeUrl({ mode: value === 'profile' ? 'profile' : undefined, rig: undefined, chart: undefined });
+					changeUrl({
+						mode: value === 'profile' ? 'profile' : undefined,
+						rig: undefined,
+						chart: undefined,
+						sources: undefined
+					});
 				}}
 			/>
 			<div class="search">
@@ -453,7 +470,12 @@
 								class="text-input"
 								value={urlState.rig}
 								onchange={(event) => {
-									changeUrl({ rig: event.currentTarget.value, m: undefined, chart: undefined });
+									changeUrl({
+										rig: event.currentTarget.value,
+										m: undefined,
+										chart: undefined,
+										sources: undefined
+									});
 								}}
 								><option value=""
 									>Automatic{similar ? ` · ${rigLabel(similar.partition, summary?.sources)}` : ''}</option
@@ -590,7 +612,7 @@
 								class="text-input"
 								value={urlState.rig}
 								onchange={(event) => {
-									changeUrl({ rig: event.currentTarget.value, chart: undefined });
+									changeUrl({ rig: event.currentTarget.value, chart: undefined, sources: undefined });
 								}}
 								><option value=""
 									>Automatic{taste ? ` · ${rigLabel(taste.partition, summary.sources)}` : ''}</option

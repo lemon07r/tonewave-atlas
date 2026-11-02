@@ -1,12 +1,12 @@
 import { expect, test } from 'vitest';
 import { confidenceReason, describeTaste, emptyTasteSummary } from './taste-wording.ts';
 
-test('explains missing agreement using the active product form', () => {
+test('describes absent preference statements without inventing a cause', () => {
 	expect(emptyTasteSummary('iem')).toBe(
-		'Not enough agreement yet to describe this taste against typical IEMs.'
+		'No supported preference description is available against typical IEMs in this dataset.'
 	);
 	expect(emptyTasteSummary('headphone')).toBe(
-		'Not enough agreement yet to describe this taste against typical headphones.'
+		'No supported preference description is available against typical headphones in this dataset.'
 	);
 });
 
@@ -38,7 +38,7 @@ test.each([
 	],
 	[
 		'Some cross-source uncertainty uses the conservative default profile.',
-		'Some frequencies use a default uncertainty estimate because few products were measured by several reviewers.'
+		'Some frequencies use a default uncertainty estimate because measured cross-source statistics are unavailable.'
 	],
 	[
 		'Typical cross-source uncertainty exceeds 2 dB below 8 kHz.',

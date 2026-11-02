@@ -3,7 +3,7 @@ import type { Form } from '#core/dataset/types.ts';
 import { bandLabels } from './describe.ts';
 
 export function emptyTasteSummary(form: Form): string {
-	return `Not enough agreement yet to describe this taste against typical ${form === 'iem' ? 'IEMs' : 'headphones'}.`;
+	return `No supported preference description is available against typical ${form === 'iem' ? 'IEMs' : 'headphones'} in this dataset.`;
 }
 
 /** Preserve the service's support, direction and measured range while using reader-facing band names. */
@@ -21,7 +21,7 @@ const confidenceWording: Record<string, string> = {
 	'Positive examples disagree within a taste.':
 		'Some products you Like or Love in the same taste have different measured sound.',
 	'Some cross-source uncertainty uses the conservative default profile.':
-		'Some frequencies use a default uncertainty estimate because few products were measured by several reviewers.',
+		'Some frequencies use a default uncertainty estimate because measured cross-source statistics are unavailable.',
 	'Typical cross-source uncertainty exceeds 2 dB below 8 kHz.':
 		'Estimated uncertainty between reviewers is more than 2 dB below 8 kHz.',
 	'Insufficient overlapping response data in at least one taste.':
