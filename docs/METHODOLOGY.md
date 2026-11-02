@@ -28,8 +28,13 @@ Equal response on a coupler does not establish equal response at a particular pe
 
 Inside each partition, the atlas service gives a product one reference: the per-frequency median of
 its **default-variant** rank measurements across available sources. Each measurement is aligned to
-the first measurement with adequate self-coverage by a uniform-weight LS level offset before taking
-the median. Missing frequencies remain
+an order-invariant overlap medoid by a uniform-weight LS level offset before taking the median.
+Among adequately self-covered measurements, choose the anchor with the most adequately overlapping
+partners, then the smallest median pairwise shape distance, then the most self-covered bins, then
+stable measurement id. Align the anchor first and other eligible measurements in id order, making
+input permutations bit-identical. Pairwise anchor selection costs O(M²·bins) for M measurements of
+one product; it is cached in the partition index. This is an overlap-first medoid, not an iterative
+fit or a guarantee against every outlier configuration. Missing frequencies remain
 missing unless another aligned measurement covers them; measurements with insufficient overlap with
 the anchor do not contribute, and their ids are not claimed as contributors. When requested and
 available, estimated source-offset curves are subtracted before alignment/median pooling. Missing
@@ -37,6 +42,41 @@ source offsets leave that source unchanged; absent statistics do not become zero
 The result records contributing measurement ids and source attribution. This median is a robust
 description of the available measurements, not a physical ground truth or an independent-sample
 estimate. A product with no usable default reference is not given a fabricated consensus.
+
+`filters.sources` has two explicit semantics, echoed as `sourceMode` in similar/taste/compare results:
+
+- `sourceMode: 'coverage'` (default): candidates must have a contributing source in the selected set;
+  references and candidate scores still pool all available sources. No selected sources means no
+  source eligibility restriction.
+- `sourceMode: 'only'`: requires a nonempty `sources` list (otherwise `RangeError`). Filter individual
+  rank-pack measurements before building both reference and candidate consensuses, preserving rig,
+  default/variant and overlap rules. An explicit measurement from an unselected source is unavailable,
+  never replaced. Uploaded references have no source identity and stay unchanged/unharmonised.
+  Result caveats identify excluded reference/candidate measurements. Reliability, population curves
+  and reviewer offsets remain the published **partition-wide** estimates; they are not re-estimated
+  on the selected subset. Selected source sets are deduplicated, sorted and filtered to sources
+  present in that partition for derived-index caching. Source-specific indexes share a four-entry
+  LRU; eviction retains raw rank packs and ordinary, unfiltered indexes. An all-unknown selection
+  remains an empty source-only pool, never an unfiltered fallback.
+
+Rank packs already contain individual measurement ids/channel-averaged curves, so source-only pooling
+requires no dataset schema change or detail fetch. Product detail is unaffected by ranking filters.
+
+Ranking results expose their exact basis: `rankFrequencies` is RANK_GRID, every second bin of the
+smoothed GRID curves; `reference.rankCurve`/compare reference curves and candidate `rankCurve` contain the scored
+float32 values copied to float64 (harmonised iff reported), with the candidate's `offsetDb` subtracted.
+Charts can display this basis rather than a different detail curve. Taste `centre` is the derived,
+corrected rank-basis centre; candidates align to their `tasteId` with ordinary `rankWeights`. Returned
+`rankWeights`, per-taste `fitWeights` and effective `treblePenalty` (similar/compare) reproduce D by
+the LS formula below, refitting the offset for each weighting/reference. Compare overlays align to
+the first reference with adequate query-weight overlap, named by each row's `alignedTo` index;
+other objectives refit independently. Per-reference LS offsets are retained in `tradeoff.offsets`
+from that scoring pass and reused for overlay alignment. If none overlaps adequately, `alignedTo` is null, `offsetDb`
+is zero and `rankCurve` is unaligned: the UI must not overlay it as aligned. NaNs remain gaps.
+Each taste winner also returns `nearestLiked` with the exact scored liked-member curve and an offset
+aligning the **already returned candidate rankCurve** to that member. Its ordinary `rankWeights`
+reproduce `fit.nearestLiked.distanceDb`, even after centre corrections; member curves are not corrected.
+Detail curves remain uncorrected and higher resolution, not the basis of ranking scores.
 
 Ranking indexes contain one default consensus per product and one separate, single-source candidate
 per `tuning` measurement, preserving the verbatim variant label. Tunings are opt-in at query time.
@@ -79,6 +119,9 @@ is overlapping **bin count / eligible bin count**, not weight mass and not the
 union of measured support. Zero-weight bins are ineligible. Insufficient comparisons return `null`.
 These are data-adequacy safeguards, not confidence intervals; range and adequacy limits are options.
 Distance itself defaults to uniform weights; callers opt into `makeWeights` explicitly.
+The service checks explicit reference and compare-rig support using the actual query weights, so a
+measurement confined to a sufficiently covered, nonzero-weight focus region is not rejected merely
+for missing zero-weight regions. Product consensus construction still uses uniform full-grid coverage.
 
 Band boundaries (lower inclusive, upper exclusive) are sub-bass 20–60, bass 60–250, low-mid 250–800,
 mid 800–2500, presence 2500–5000, treble 5000–10000 and air 10000–20000 Hz. Band explanations use the
@@ -146,7 +189,7 @@ Per-source/per-bin counts and actual fold pair counts remain essential; the part
 establish adequate support for every correction bin or source. Low-support estimates are exploratory,
 unsupported bins remain missing (JSON `null`), and this label never enables harmonisation by itself.
 
-Similar/taste requests omitting `harmonise` enable correction only when support is sufficient and
+Similar/taste/compare requests omitting `harmonise` enable correction only when support is sufficient and
 pooled mean improvement is finite and positive both overall and in every reported fold (with a
 complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
 explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
@@ -235,19 +278,22 @@ centre and D to the nearest liked item across tastes.
 
 Reasoned dislikes do **not** form a negative-average target. Most traits are regional dB level
 relative to the 500 Hz–2 kHz mean (uniform log-bin weights). Exceptions are the sub-/mid-bass balance
-for `bass-lacks-punch` and the narrow-residual RMS for `sibilance`, as defined below:
+for the legacy `bass-lacks-punch` id and the bounded narrow-residual RMS for `sibilance`, as defined below.
+`DISLIKE_REASON_LABELS` exports measured-correlate labels for every stored id. In particular, the
+recommended label for `bass-lacks-punch` is **“Lower 20–60 Hz level relative to 80–250 Hz”**. This is
+not a measure of punch, transient behaviour or impact; the stored id remains for profile compatibility.
 
-| Reason                          | Trait; disliked direction                                                  |
-| ------------------------------- | -------------------------------------------------------------------------- |
-| too-much-bass / too-little-bass | 20–250 Hz; higher / lower                                                  |
-| bass-lacks-punch                | 20–60 minus 80–250 Hz; lower                                               |
-| too-much-midbass-warmth         | 80–250 Hz; higher                                                          |
-| muddy-lower-mids                | 250–800 Hz; higher                                                         |
-| thin-or-recessed-vocals         | 800–2500 Hz; lower                                                         |
-| shouty-upper-mids               | 2–5 kHz; higher                                                            |
-| sharp-fatiguing-treble          | 2–10 kHz; higher                                                           |
-| dull-treble                     | 5–10 kHz; lower                                                            |
-| sibilance                       | RMS positive narrow residual (curve minus 1/3-oct smooth), 5–9 kHz; higher |
+| Reason                          | Trait; disliked direction                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| too-much-bass / too-little-bass | 20–250 Hz; higher / lower                                                                              |
+| bass-lacks-punch                | 20–60 minus 80–250 Hz; lower                                                                           |
+| too-much-midbass-warmth         | 80–250 Hz; higher                                                                                      |
+| muddy-lower-mids                | 250–800 Hz; higher                                                                                     |
+| thin-or-recessed-vocals         | 800–2500 Hz; lower                                                                                     |
+| shouty-upper-mids               | 2–5 kHz; higher                                                                                        |
+| sharp-fatiguing-treble          | 2–10 kHz; higher                                                                                       |
+| dull-treble                     | 5–10 kHz; lower                                                                                        |
+| sibilance                       | RMS of positive narrow residuals clipped per bin to 2 dB (curve minus 1/3-oct smooth), 5–9 kHz; higher |
 
 For trait difference in the disliked direction, let z=direction·(candidate−disliked)−0.5 dB. The
 0.5 dB margin ignores tiny differences. Penalty is strength·h(z)², where h=0 for z≤0 and
@@ -257,6 +303,14 @@ there is no incentive to minimise bass without bound. Each supplied directional 
 separately. Missing traits are reported unknown, not a violation. These reason-to-band mappings are
 interpretable hypotheses, not validated diagnoses of muddiness, fatigue or sibilance.
 
+For the narrow 5–9 kHz reason, cap each constraint's contribution at `0.5 × strength` score units,
+and cap their **combined** contribution at 0.5 across all dislikes. The 2 dB residual clip and 0.5
+budget are conservative engineering limits, not perceptual thresholds. Ordinary response distance
+still counts broad excess (and the clipped narrow metric can also respond to band edges). A single
+9 kHz spike cannot add more than this budget through the dislike heuristic; it can still affect
+ordinary distance. This is not a universal top-five ranking guarantee. Published uncertainty weights
+continue to downweight high-frequency distance; the narrow heuristic does not claim insertion immunity.
+
 Without a directional reason (`other`/`tonal-balance-wrong` included), use only near-duplicate
 repulsion `strength·exp(−(D/d₀)²)`, d₀=`DUPLICATE_DISTANCE_DB=1.5 dB`. This provisional noise-scale
 neighbourhood has no global directional push. A dislike within 1.5 dB of a like, or a liked item's
@@ -265,7 +319,10 @@ trait beyond a disliked item's adverse threshold, creates a structured conflict,
 Final lower-is-better score = **best taste fit + sum of dislike penalties**. It is a ranking heuristic,
 **not dB** or a calibrated liking probability. Fit, ordinary dB distances and every penalty stay
 separate. Explanations include closest like, signed band matches/differences, constraint traits and
-satisfaction/violation/unknown status, >8 kHz caution and bands with mean σ>2 dB.
+satisfaction/violation/unknown status, >8 kHz caution and bands with mean σ>2 dB. Each constraint's
+`statement` describes measured relative band levels, bounded narrow RMS or shape proximity to its
+disliked reference, never a perceptual diagnosis. Missing-band statements explicitly say coverage is
+insufficient; machine-readable legacy reason ids are retained.
 
 **Penalty scale is an explicit design choice.** Fit is a tolerance-weighted response distance in dB.
 Directional penalties use the numerical dB value of h and contribute strength·h²: approximately
@@ -282,9 +339,23 @@ For one constraint at strength=1:
 |                                  2 dB |                                  2.5 dB |              2.764 |
 |                                  4 dB |                                  4.5 dB |             13.349 |
 
-Multiply these increments by strength (e.g. half at strength=.5), and sum across constraints. At
+Multiply these increments by strength (e.g. half at strength=.5), and sum across constraints, except
+for the narrow-reason caps above. At
 or below the margin the increment is exactly zero. The UI should show fit in dB and penalties as
 separate **score increments**, rather than label the final score “dB distance.”
+
+For an uncapped directional constraint, penalty is nonnegative and nondecreasing in adverse trait
+excess, with a zero safe-side plateau and linear strength scaling. The narrow contribution saturates
+at its budgets. Arbitrary constant measurement-level shifts do not change traits, fit or score.
+Multiplying all response deviations by a positive scale is different: with a fixed reference,
+weights and support, scaling candidate-minus-reference deviations scales response distance linearly.
+This does not generally hold for fit after rebuilding a taste model: scaling positives changes
+spread-based tolerance weights and can change clustering. The fixed 0.5 dB margin does not scale,
+and uncapped penalties grow roughly quadratically. The mixture is
+therefore **not scale homogeneous** and can reverse candidate order; no global monotonic preference
+claim follows from a single constraint's monotonicity. Tests exercise such a reversal, missing traits,
+one/two-positive limited support and separated conflicting tastes. Real-curve directional sanity
+checks in `VALIDATION.md` use invented profiles, not labelled preference outcomes.
 
 `rankTastePacked` scans an N×120 float32 matrix with scalar two-pass distances and a size-K max-heap.
 `buildTasteModel` prepares taste eligibility, weights, disliked trait levels, regional sample indices
@@ -344,7 +415,7 @@ is not presented as response distance. “Matched” bands means below the edito
 not perceptual equivalence. Confidence and constraints retain the service's evidence; confidence reasons
 use plain language without changing support counts, measured ranges or uncertainty.
 
-Measured product displays use GRID detail curves/consensus. Discover removes arbitrary source levels
+Measured product detail displays use GRID detail curves/consensus. Detail-based Discover overlays remove arbitrary source levels
 by weighted LS alignment of display curves to the first curve on GRID, using the active similar-mode
 focus (balanced in profile mode) and default reliability weights. This display-only offset does not
 change ranking or explanations, which use RANK_GRID and the service's weights. Missing samples stay
@@ -363,9 +434,24 @@ For 2–4 references return each D, arithmetic mean D and minimax D. A candidate
 no other complete candidate is no worse for every reference and strictly better for at least one.
 Tied objective vectors remain non-dominated. Missing any reference makes aggregates null and Pareto
 false; comparisons never quietly drop a difficult reference.
-The current dominance scan is O(N²) in the worst case, separate from the O(N) distance calculations.
-It is not a catalogue-scale packed ranker; the benchmark includes an all-non-dominated 3,000-item
-case to expose that limitation. No 30,000-item latency bound is claimed for this path.
+The dominance pass sorts lexicographically, querying equal vectors together before inserting them.
+Two objectives use a running minimum; three use a compressed prefix-min Fenwick tree; four use
+nested compressed prefix-min trees. Time is O(N log N) for 2–3 and O(N log² N) for 4; auxiliary space
+is O(N) and O(N log N), respectively, including all-non-dominated inputs. Non-finite objectives are
+incomplete, never Pareto. Distance calculation remains O(N·references·120). Benchmarks include 8,000
+candidates with 2/3/4 references and all-non-dominated 3,000-candidate fronts; no latency guarantee is claimed.
+
+`compare` accepts `references: [{productId, measurementId?}, …]` (legacy `productIds` still works).
+Explicit measurements select exact variants, never substitutes. Reference products, including all
+their tunings, are excluded. Default rig selection maximises requested-item coverage with usable
+defaults (or the explicit measurement); ties prefer more measured products, then partition id. A
+missing reference returns `not-measured-on-rig`, names every missing reference, and lists `partitions`
+where all requested references are usable. Candidate filters precede Pareto membership; `sort` is
+`mean` (default) or `minimax`, missing aggregates sort last, then optional `paretoOnly` and `topK`
+(default 20) limit returned rows. `counts` retain candidate/front totals before these output limits.
+An explicitly chosen rig loads only its rank pack on a successful request. Alternative-rig checks
+run only for missing-rig errors, first intersecting measurement metadata (including source-only and
+exact-variant restrictions), then checking query-weight adequacy on those possible rigs.
 
 Targets are edits of a supplied base, not universal prescriptions. Bass shelf defaults to 100 Hz,
 Q=.707; warmth is a 200 Hz peak, Q=.7; treble shelf defaults to 6 kHz, Q=.707. Gains are caller inputs.
@@ -418,9 +504,25 @@ Output includes filters, summed response, level-aligned corrected−target resid
 notches, bands with residual RMS>3 dB, and >10 kHz uncertainty. Preamp is −max(0,summed boost)−0.2 dB,
 using a 4097-point log sweep from 20 Hz to Nyquist to catch inter-GRID maxima. This is digital nominal
 headroom at 48 kHz, not a guarantee against intersample peaks, driver limits or hearing damage.
-APO/AutoEq ParametricEQ text retains shelf Q; Wavelet exports 127 log-spaced 20 Hz–20 kHz GraphicEQ
-points **including preamp**; JSON includes sample rate, filters and preamp. Different EQ implementations
-or sample rates may produce different results; the Wavelet curve approximates the parametric response.
+Equalizer APO text uses `PK`, `LSC` and `HSC` with centre frequency and **Q**, not corner-frequency
+`LS/HS 6dB/12dB` or a shelf-slope parameter. Q shelves require APO ≥1.2.1; see its
+[configuration reference (Filter, Preamp, Channel)](https://sourceforge.net/p/equalizerapo/wiki/Configuration%20reference/).
+`Channel: all` applies the same averaged-curve EQ to all channels, regardless of an enclosing channel
+selection; this is not separate L/R correction. Export rounds filter parameters to 0.01 Hz/dB and
+0.0001 Q, recomputes nominal headroom for those serialized filters, and rounds preamp down to 0.01 dB
+so rounding cannot consume the 0.2 dB sweep margin. Other active filters/preamps still accumulate.
+
+Wavelet GraphicEQ uses the fixed 127-frequency AutoEq grid, **20–19871 Hz**, not a rounded grid ending
+at 20000 Hz. Source: AutoEq commit `7ae0f56d53074872b028649617a22bbb4232feb7`,
+[`DEFAULT_GRAPHIC_EQ_STEP=1.0563`](https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/autoeq/constants.py#L64)
+and [`eqapo_graphic_eq`](https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/autoeq/frequency_response.py#L121-L137):
+floor `20·1.0563^i` for i=0…126, then unique/sort. Gains are the parametric response at those exact
+integer frequencies **plus preamp once**, rounded to 0.01 dB; no separate preamp directive is emitted.
+AutoEq's default normalisation subtracts the sampled maximum plus 0.2 dB (optional extra preamp defaults
+to zero). We retain our conservative dense-sweep preamp instead: sampled gains stay ≤−0.2 dB but need
+not peak at exactly −0.2 dB. This approximates the parametric response, not its exact transfer function.
+JSON includes sample rate, filters and preamp. Different sample rates/implementations may differ;
+none of these exports guarantees protection from intersample peaks or acoustic harm.
 
 ## References and validation status
 

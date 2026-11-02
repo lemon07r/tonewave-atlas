@@ -30,6 +30,8 @@ export interface AtlasError {
 		| 'partition-required'
 		| 'insufficient-data';
 	message: string;
+	/** Partitions supporting every requested reference, including explicitly selected variants. */
+	partitions?: string[];
 }
 interface PartitionSummary {
 	id: string;
@@ -89,10 +91,13 @@ export interface ReferenceInfo {
 	measurementIds: string[];
 	sources: Source[];
 }
+export type SourceMode = 'coverage' | 'only';
 export interface RankFilters {
 	maxPriceUsd?: number;
 	minPriceUsd?: number;
 	sources?: string[];
+	/** coverage (default): eligibility only; only: pool reference/candidate measurements from these sources. */
+	sourceMode?: SourceMode;
 	/** Include tuning candidates, including the reference product's tunings in similar(). */
 	includeTunings?: boolean;
 }
@@ -115,6 +120,10 @@ export type SimilarRequest = SimilarSettings &
 	);
 export interface SimilarMatch extends DistanceResult {
 	candidate: CandidateInfo;
+	/** Scored packed values minus offsetDb, on rankFrequencies; missing bins stay NaN. */
+	rankCurve: Float64Array;
+	/** LS offset subtracted from the candidate (also available as DistanceResult.offset). */
+	offsetDb: number;
 	perSourceRange: [number, number] | null;
 	/** Sources with adequate overlap for this query's per-source distance, not all catalog sources. */
 	sourceCount: number;
@@ -124,7 +133,11 @@ export interface SimilarResult {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
-	reference: ReferenceInfo;
+	sourceMode: SourceMode;
+	rankFrequencies: Float64Array;
+	rankWeights: Float64Array;
+	treblePenalty: number;
+	reference: ReferenceInfo & { rankCurve: Float64Array };
 	results: SimilarMatch[];
 	caveats: string[];
 }
@@ -149,11 +162,16 @@ export interface TasteResult {
 	ok: true;
 	partition: string;
 	harmonised: boolean;
+	sourceMode: SourceMode;
+	rankFrequencies: Float64Array;
+	rankWeights: Float64Array;
 	model: {
 		tastes: {
 			id: number;
 			members: string[];
+			/** Derived rank-basis centre, including requested corrections; not a detail measurement. */
 			centre: Float64Array;
+			fitWeights: Float64Array;
 			summary: PreferenceStatement[];
 			statements: string[];
 		}[];
@@ -161,19 +179,47 @@ export interface TasteResult {
 		conflicts: TasteConflict[];
 	};
 	unusedItems: UnusedTasteItem[];
-	results: { candidate: CandidateInfo; fit: TasteFit }[];
+	results: {
+		candidate: CandidateInfo;
+		fit: TasteFit;
+		/** Exact scored liked-member curve; offsetDb aligns this row's returned rankCurve to it. */
+		nearestLiked: { id: string; rankCurve: Float64Array; offsetDb: number } | null;
+		tasteId: number;
+		/** Scored packed values aligned to this taste centre with ordinary rankWeights. */
+		rankCurve: Float64Array;
+		offsetDb: number;
+	}[];
 	caveats: string[];
 }
-export interface CompareRequest {
-	productIds: string[];
-	partition?: string;
-	focus?: Focus;
-}
+export type CompareRequest = SimilarSettings &
+	(
+		| { references: { productId: string; measurementId?: string }[]; productIds?: never }
+		| { references?: never; /** Legacy product-only references. */ productIds: string[] }
+	) & {
+		sort?: 'mean' | 'minimax';
+		paretoOnly?: boolean;
+	};
 export interface CompareResult {
 	ok: true;
 	partition: string;
-	references: ReferenceInfo[];
-	results: { candidate: CandidateInfo; tradeoff: MultiReferenceResult }[];
+	harmonised: boolean;
+	sourceMode: SourceMode;
+	rankFrequencies: Float64Array;
+	rankWeights: Float64Array;
+	treblePenalty: number;
+	references: (ReferenceInfo & { rankCurve: Float64Array })[];
+	results: {
+		candidate: CandidateInfo;
+		tradeoff: MultiReferenceResult;
+		/** Scored packed values aligned to references[alignedTo]; unaligned when alignedTo is null. Each objective refits its own LS offset. */
+		rankCurve: Float64Array;
+		/** Zero when alignedTo is null; this does not claim that the raw curve is aligned. */
+		offsetDb: number;
+		/** Index into references; null means rankCurve is unaligned and must not be overlaid as aligned. */
+		alignedTo: number | null;
+	}[];
+	/** Counts before paretoOnly/topK, after candidate filters and reference-product exclusion. */
+	counts: { candidates: number; pareto: number };
 	caveats: string[];
 }
 interface DetailMeasurement {

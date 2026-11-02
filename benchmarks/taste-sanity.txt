@@ -1,0 +1,94 @@
+Dataset ef7ead8fc680aae919189e39; 8067 usable iem-711 defaults; no tuning candidates or source correction; top20; invented profiles, no labelled listener data
+{
+  "reason": "too-much-bass",
+  "liked": "7Hz Legato",
+  "disliked": "QKZ HBB Hades",
+  "likedTraitDb": 9.327050353541509,
+  "dislikedTraitDb": 12.270151629592434,
+  "inputCandidates": 8065,
+  "candidates": 8065,
+  "excludedCandidates": 0,
+  "violators": 48,
+  "demoted": 46,
+  "meanViolatorRank": {
+    "plain": 4951.354166666667,
+    "positiveOnly": 4874.895833333333,
+    "reason": 6145.520833333333
+  },
+  "top20": {
+    "plain": {
+      "meanTraitDb": 8.87585102367603,
+      "violations": 0
+    },
+    "positiveOnly": {
+      "meanTraitDb": 9.088793012018858,
+      "violations": 0
+    },
+    "reason": {
+      "meanTraitDb": 9.088793012018858,
+      "violations": 0
+    }
+  }
+}
+{
+  "reason": "too-little-bass",
+  "liked": "Moondrop Chu",
+  "disliked": "Etymotic ER2SE",
+  "likedTraitDb": 2.087431358568594,
+  "dislikedTraitDb": -3.0679105122884067,
+  "inputCandidates": 8065,
+  "candidates": 8065,
+  "excludedCandidates": 0,
+  "violators": 196,
+  "demoted": 137,
+  "meanViolatorRank": {
+    "plain": 7690.280612244898,
+    "positiveOnly": 7683.5204081632655,
+    "reason": 7752.867346938776
+  },
+  "top20": {
+    "plain": {
+      "meanTraitDb": 2.30889429916707,
+      "violations": 0
+    },
+    "positiveOnly": {
+      "meanTraitDb": 2.221014070662079,
+      "violations": 0
+    },
+    "reason": {
+      "meanTraitDb": 2.221014070662079,
+      "violations": 0
+    }
+  }
+}
+{
+  "reason": "bass-lacks-punch",
+  "liked": "7Hz Legato",
+  "disliked": "QKZ HBB Hades",
+  "likedTraitDb": 5.939050292968744,
+  "dislikedTraitDb": 1.8250003814697209,
+  "inputCandidates": 8065,
+  "candidates": 8065,
+  "excludedCandidates": 0,
+  "violators": 1720,
+  "demoted": 1049,
+  "meanViolatorRank": {
+    "plain": 6420.132558139535,
+    "positiveOnly": 6400.952906976744,
+    "reason": 6704.311627906976
+  },
+  "top20": {
+    "plain": {
+      "meanTraitDb": 5.822364422647575,
+      "violations": 0
+    },
+    "positiveOnly": {
+      "meanTraitDb": 5.951456652189554,
+      "violations": 0
+    },
+    "reason": {
+      "meanTraitDb": 5.951456652189554,
+      "violations": 0
+    }
+  }
+}

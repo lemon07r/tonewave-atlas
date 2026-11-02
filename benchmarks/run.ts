@@ -45,6 +45,12 @@ const multiN = 3000,
 		Float64Array.from(RANK_GRID, (_, i) => ((i < 60 ? -1 : 1) * 6 * row) / (multiN - 1))
 	);
 const multiReferences = [multiCandidates[0] ?? reference, multiCandidates[multiN - 1] ?? reference];
+const catalogCandidates = Array.from({ length: 8000 }, (_, row) =>
+	matrix.subarray(row * RANK_SIZE, (row + 1) * RANK_SIZE)
+);
+const catalogReferences = [0, 300, 700, 1700].map((row) =>
+	matrix.subarray(row * RANK_SIZE, (row + 1) * RANK_SIZE)
+);
 let checksum = 0;
 function time(name: string, operations: number, run: () => number): void {
 	const start = performance.now();
@@ -58,7 +64,9 @@ console.log(
 // Warm up each distinct path outside the measured region.
 rankPacked(matrix, reference, 20, { weights });
 rankTastePacked(matrix, model);
-compareReferences(multiCandidates.slice(0, 100), multiReferences);
+for (const count of [2, 3, 4]) compareReferences(catalogCandidates, catalogReferences.slice(0, count));
+compareReferences(multiCandidates, multiReferences);
+compareReferences(multiCandidates, [...multiReferences, multiCandidates[1500] ?? reference]);
 fitPeq(flat, target);
 time(
 	'single-reference rank (30000 candidates)',
@@ -75,6 +83,21 @@ time(
 	multiN,
 	() => compareReferences(multiCandidates, multiReferences).filter((r) => r.pareto).length
 );
+time(
+	'multi-reference Pareto (3000 candidates, 3 refs, all non-dominated)',
+	multiN,
+	() =>
+		compareReferences(multiCandidates, [...multiReferences, multiCandidates[1500] ?? reference]).filter(
+			(r) => r.pareto
+		).length
+);
+for (const count of [2, 3, 4])
+	time(
+		`multi-reference Pareto (8000 candidates, ${count} refs)`,
+		8000,
+		() =>
+			compareReferences(catalogCandidates, catalogReferences.slice(0, count)).filter((r) => r.pareto).length
+	);
 time('PEQ fit (1 curve)', 1, () => fitPeq(flat, target)?.residualDistanceDb ?? 0);
 time('PEQ fit (50 curves)', 50, () => {
 	let sum = 0;
