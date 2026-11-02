@@ -5,9 +5,9 @@ test('retains recent requests and evicts the least recently used one', async () 
 	const cache = new AsyncLru<string, string>(2);
 	let calls = 0;
 	const get = (id: string) =>
-		cache.get(id, async () => {
+		cache.get(id, () => {
 			calls++;
-			return id;
+			return Promise.resolve(id);
 		});
 	const a = get('a');
 	await get('b');
@@ -28,19 +28,15 @@ test('an evicted rejection cannot delete its newer replacement', async () => {
 				reject = no;
 			})
 	);
-	await cache.get('b', async () => 'b');
-	const replacement = cache.get('a', async () => 'new');
+	await cache.get('b', () => Promise.resolve('b'));
+	const replacement = cache.get('a', () => Promise.resolve('new'));
 	reject(new Error('old failure'));
 	await expect(old).rejects.toThrow('old failure');
-	expect(cache.get('a', async () => 'wrong')).toBe(replacement);
+	expect(cache.get('a', () => Promise.resolve('wrong'))).toBe(replacement);
 });
 
 test('retries a failed request', async () => {
 	const cache = new AsyncLru<string, string>(1);
-	await expect(
-		cache.get('a', async () => {
-			throw new Error('network');
-		})
-	).rejects.toThrow('network');
-	expect(await cache.get('a', async () => 'recovered')).toBe('recovered');
+	await expect(cache.get('a', () => Promise.reject(new Error('network')))).rejects.toThrow('network');
+	expect(await cache.get('a', () => Promise.resolve('recovered'))).toBe('recovered');
 });

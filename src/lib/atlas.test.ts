@@ -3,12 +3,12 @@ import type { ProductListItem } from '#core/atlas/types.ts';
 import { productList } from './atlas.ts';
 
 const rpc = vi.hoisted(() => ({
-	current: Promise.resolve({ products: async (_form: string): Promise<ProductListItem[]> => [] })
+	current: Promise.resolve({ products: (): Promise<ProductListItem[]> => Promise.resolve([]) })
 }));
 vi.mock('./analysis/client.ts', () => ({ getAnalysis: () => rpc.current }));
 
 test('shares lists only within one worker generation and retries failures', async () => {
-	const products = vi.fn(async (): Promise<ProductListItem[]> => []);
+	const products = vi.fn((): Promise<ProductListItem[]> => Promise.resolve([]));
 	rpc.current = Promise.resolve({ products });
 	const first = productList('iem');
 	expect(productList('iem')).toBe(first);

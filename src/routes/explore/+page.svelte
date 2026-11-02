@@ -40,8 +40,12 @@
 			)
 	);
 	let visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+	let searchForm = '';
 	$effect(() => {
-		if (form === 'iem' || form === 'headphone') query = '';
+		if (searchForm !== form) {
+			searchForm = form;
+			query = '';
+		}
 	});
 	$effect(() => {
 		const selectedForm = form,
