@@ -77,6 +77,9 @@ not the surrounding layout. The fixture page has no production counterpart: use
   form-factor radios reflected in `?form=headphones`. Theme cycles system → light → dark, persists
   locally when storage is available and follows system changes in system mode. The document applies
   theme before paint. Query state is browser-only so the four routes remain prerenderable.
+- Discover presents single-reference and taste-profile modes together above the search. The empty
+  profile explains adding, rating and optional reasons without a wizard; controls remain disabled
+  until a real product can be added. It does not manufacture a saved profile or recommendation.
 - Search: input retains focus while `aria-activedescendant` follows grouped listbox options. Arrows
   wrap, Home/End jump within an open list, Enter selects, Escape/Tab dismiss. Literal substring
   highlights are text nodes, never injected HTML. Loading and empty feedback are announced. Callers

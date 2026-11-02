@@ -2,12 +2,11 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
 	import { resolve } from '$app/paths';
-	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
+	import DiscoverySearch from '#lib/components/DiscoverySearch.svelte';
 	import FrChart from '#lib/components/FrChart.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import Disclosure from '#lib/components/Disclosure.svelte';
-	import Notice from '#lib/components/Notice.svelte';
 	let headphones = $derived(browser && page.url.searchParams.get('form') === 'headphones');
+	let mode = $state<'similar' | 'profile'>('similar');
 </script>
 
 <svelte:head
@@ -23,44 +22,23 @@
 		<p>Start with something you know. Find what shares its character — and see where it differs.</p>
 	</div>
 	<div class="discover-grid">
-		<section class="discovery-column" aria-label="Find similar products">
-			<SearchCombobox
-				items={[]}
-				label={`An ${headphones ? 'over-ear headphone' : 'IEM'} you enjoy`}
-				placeholder="Search by brand or model"
-				shortcut
-				emptyText="The measurement catalog is not connected yet. No products are available to search."
-				onselect={() => {
-					/* Phase 2 connects the catalog and analysis worker. */
-				}}
-			/>
+		<section class="discovery-column" aria-label="Discover measured matches">
+			<DiscoverySearch {headphones} bind:mode />
 			<p class="search-note">Your reference is the starting point. Your ears have the final say.</p>
-			<div class="results">
-				<div class="section-heading">
-					<h2>Similar sound</h2>
-					<span class="eyebrow">No reference selected</span>
-				</div>
-				<div class="empty-state">
-					<Icon name="search" size={32} />
-					<h3>Start with a familiar sound.</h3>
-					<p>
-						Search for {headphones ? 'a headphone' : 'an IEM'} to begin. Matches and their measured differences
-						will appear here.
-					</p>
-				</div>
-			</div>
-			<Disclosure label="Build a taste profile"
-				><div class="stack">
-					<p class="small muted">
-						One reference is enough to start. Later, add things you love, like or dislike to describe more
-						than one side of your taste.
-					</p>
-					<Notice
-						>Profiles will stay in your browser, with no account required. Profile controls will be available
-						when the catalog is connected.</Notice
-					>
-				</div></Disclosure
-			>
+			{#if mode === 'similar'}<div class="results">
+					<div class="section-heading">
+						<h2>Similar sound</h2>
+						<span class="eyebrow">No reference selected</span>
+					</div>
+					<div class="empty-state">
+						<Icon name="search" size={32} />
+						<h3>Start with a familiar sound.</h3>
+						<p>
+							Search for {headphones ? 'a headphone' : 'an IEM'} to begin. Matches and their measured differences
+							will appear here.
+						</p>
+					</div>
+				</div>{/if}
 			<div class="principles">
 				<div>
 					<span class="eyebrow">01 / Evidence</span>
