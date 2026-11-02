@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { encodePack, type CurvePack } from '../dataset/codec.ts';
 import type {
 	Catalog,
@@ -10,10 +10,20 @@ import type {
 	VariantKind
 } from '../dataset/types.ts';
 import { GRID, RANK_GRID, RANK_SIZE } from '../grid.ts';
-import { buildPartitionIndex } from './index.ts';
+import { buildPartitionIndex, consensus } from './index.ts';
 import { AtlasService } from './service.ts';
+import type { SimilarRequest } from './types.ts';
 
-function fixture(cacheSize = 8) {
+interface ExtraMeasurement {
+	id: string;
+	productId: string;
+	kind: VariantKind;
+	partition: string;
+	offset?: number;
+	shape?: number;
+}
+
+function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 	const sources: Source[] = ['s1', 's2', 's3'].map((id) => ({
 		id,
 		username: id,
@@ -103,6 +113,7 @@ function fixture(cacheSize = 8) {
 	add('c-fit', 'c', 's3', 0, 30, 'fit', 1);
 	add('d1', 'd', 's1', 0, 0, 'default', 20, 'iem-5128');
 	add('e-fit', 'e', 's1', 0, 0, 'fit', null);
+	for (const m of extra) add(m.id, m.productId, 's1', m.offset ?? 0, m.shape ?? 0, m.kind, 100, m.partition);
 	const partitions: Partition[] = ['iem-711', 'iem-5128'].map((id) => ({
 		id,
 		form: 'iem',
@@ -179,6 +190,149 @@ function fixture(cacheSize = 8) {
 }
 
 describe('atlas service', () => {
+	it('requires a typed reference identity while preserving product and explicit-measurement calls', () => {
+		expectTypeOf<{ productId: string }>().toExtend<SimilarRequest>();
+		expectTypeOf<{ measurementId: string }>().toExtend<SimilarRequest>();
+		expectTypeOf<{ productId: string; measurementId: string }>().toExtend<SimilarRequest>();
+		expectTypeOf<{ uploadId: string }>().toExtend<SimilarRequest>();
+		expectTypeOf<{ topK: number }>().not.toExtend<SimilarRequest>();
+		expectTypeOf<{ productId: string; uploadId: string }>().not.toExtend<SimilarRequest>();
+		expectTypeOf<{ measurementId: string; uploadId: string }>().not.toExtend<SimilarRequest>();
+		expect({ productId: 'a' } satisfies SimilarRequest).toEqual({ productId: 'a' });
+	});
+	it.each([RANK_GRID, GRID])(
+		'selects an adequately covered anchor and drops only individually failing curves (%#)',
+		(frequencies) => {
+			const { catalog } = fixture();
+			const metadata = catalog.measurements.slice(0, 4);
+			const curves = [20, frequencies.length, Math.ceil(frequencies.length * 0.75), 30].map((support, i) => {
+				const measurement = metadata[i];
+				if (!measurement) throw new Error('fixture');
+				return {
+					measurement,
+					values: Float64Array.from(frequencies, (_, bin) =>
+						bin < support ? (bin < frequencies.length / 2 ? 0 : 2) + i * 8 : NaN
+					)
+				};
+			});
+			const pooled = consensus(curves, frequencies);
+			expect(pooled?.aligned.map((c) => c.measurement.id)).toEqual(['a2', 'a-tune']);
+			expect(pooled?.values[0]).toBeCloseTo(8, 8);
+			expect(pooled?.values.at(-1)).toBeCloseTo(10, 8);
+			expect(pooled?.values.every(Number.isFinite)).toBe(true);
+			expect(curves[0]?.values[0]).toBe(0);
+			expect(
+				consensus(
+					[curves[0], curves[3]].filter((c) => c !== undefined),
+					frequencies
+				)
+			).toBeNull();
+		}
+	);
+	it('chooses a default rig from default measurements rather than fit/setup/unit counts', async () => {
+		const { service } = fixture(
+			8,
+			['fit', 'setup', 'unit'].map((kind, i) => ({
+				id: `variant-${i}`,
+				productId: 'a',
+				kind: kind as VariantKind,
+				partition: 'iem-5128'
+			}))
+		);
+		const result = await service.similar({ productId: 'a' });
+		expect(result.ok && result.partition).toBe('iem-711');
+		expect(result.ok && result.reference.measurementIds).toEqual(['a1', 'a2']);
+		const explicit = await service.similar({ measurementId: 'variant-0' });
+		expect(explicit.ok && explicit.partition).toBe('iem-5128');
+		expect(explicit.ok && explicit.reference.measurementIds).toEqual(['variant-0']);
+	});
+	it('counts rankable defaults, not sparse metadata rows, when choosing a default rig', async () => {
+		const { service, packs, files } = fixture(
+			8,
+			[0, 1, 2].map((i) => ({ id: `default-${i}`, productId: 'a', kind: 'default', partition: 'iem-5128' }))
+		);
+		const pack = packs.find((p) => p.partition === 'iem-5128');
+		if (!pack) throw new Error('fixture');
+		for (const curve of pack.curves)
+			if (['default-0', 'default-1'].includes(curve.measurementId)) curve.values.fill(NaN, 20);
+		files.set('v1/rank-iem-5128.bin.gz', encodePack(pack));
+		const result = await service.similar({ productId: 'a' });
+		expect(result.ok && result.partition).toBe('iem-711');
+		const explicit = await service.similar({ productId: 'a', partition: 'iem-5128' });
+		expect(explicit.ok && explicit.reference.measurementIds).toEqual(['default-2']);
+	});
+	it('uses rankable item coverage for default taste and compare rigs', async () => {
+		const { service, packs, files } = fixture(
+			8,
+			['a', 'b'].map((productId) => ({
+				id: `${productId}-sparse`,
+				productId,
+				kind: 'default',
+				partition: 'iem-5128'
+			}))
+		);
+		const pack = packs.find((p) => p.partition === 'iem-5128');
+		if (!pack) throw new Error('fixture');
+		for (const curve of pack.curves) if (curve.measurementId.endsWith('-sparse')) curve.values.fill(NaN, 20);
+		files.set('v1/rank-iem-5128.bin.gz', encodePack(pack));
+		const taste = await service.taste({
+			items: ['a', 'b', 'd'].map((productId) => ({
+				productId,
+				rating: 'like',
+				strength: 1,
+				soundRelated: true
+			}))
+		});
+		expect(taste.ok && taste.partition).toBe('iem-711');
+		expect(taste.ok && taste.model.tastes[0]?.members).toEqual(['a', 'b']);
+		const comparison = await service.compare({ productIds: ['a', 'b'] });
+		expect(comparison.ok && comparison.partition).toBe('iem-711');
+	});
+	it('retains a product whose first default is too sparse to anchor the rank consensus', async () => {
+		const { service, packs, files } = fixture();
+		const pack = packs[0];
+		const sparse = pack?.curves.find((c) => c.measurementId === 'a1');
+		if (!pack || !sparse) throw new Error('fixture');
+		sparse.values.fill(NaN, 20);
+		files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+		const result = await service.similar({ productId: 'a' });
+		expect(result.ok && result.reference.measurementIds).toEqual(['a2']);
+		expect(result.ok && result.results[0]?.candidate.id).toBe('b');
+		expect(result.ok && result.results[0]?.distance).toBeCloseTo(0, 8);
+		expect(result.ok && result.results[0]?.offset).toBeCloseTo(-5, 8);
+	});
+	it('excludes an explicit tuning reference but retains other own-product tunings', async () => {
+		const { service } = fixture(8, [
+			{ id: 'a-tune-other', productId: 'a', kind: 'tuning', partition: 'iem-711', offset: 3, shape: 1 }
+		]);
+		const result = await service.similar({ measurementId: 'a-tune', filters: { includeTunings: true } });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.results.map((r) => r.candidate.id).sort()).toEqual(['a-tune-other', 'b', 'b-tune', 'c']);
+		expect(result.results[0]?.candidate.id).toBe('a-tune-other');
+		expect(result.results[0]?.distance).toBeCloseTo(0, 8);
+		expect(result.results[0]?.offset).toBeCloseTo(3, 8);
+		const first = await service.similar({
+			measurementId: 'a-tune',
+			filters: { includeTunings: true },
+			topK: 1
+		});
+		expect(first.ok && first.results[0]?.candidate.id).toBe('a-tune-other');
+	});
+	it.each([NaN, Infinity, -Infinity, -1, 0, 0.5])(
+		'rejects treble penalties outside the finite documented range: %s',
+		async (treblePenalty) => {
+			const { service, calls } = fixture();
+			await expect(service.similar({ productId: 'a', treblePenalty })).rejects.toThrow(RangeError);
+			expect(calls).toHaveLength(0);
+		}
+	);
+	it.each([1, 2, 4])('keeps valid treble penalties finite: %s', async (treblePenalty) => {
+		const { service } = fixture();
+		const result = await service.similar({ productId: 'a', treblePenalty });
+		expect(result.ok && result.results.length).toBeGreaterThan(0);
+		expect(result.ok && result.results.every((r) => Number.isFinite(r.distance))).toBe(true);
+	});
 	it('loads only the requested catalog for search and attributes counts, variants and prices', async () => {
 		const { service, calls } = fixture();
 		const list = await service.products('iem');
@@ -200,6 +354,35 @@ describe('atlas service', () => {
 				{ id: 'iem-5128', productCount: 1 }
 			]
 		});
+	});
+	it('lists per-source prices, per-source measurement counts and measurement metadata', async () => {
+		const { service } = fixture();
+		const c = (await service.products('iem')).find((p) => p.id === 'c');
+		expect(c?.prices.map((p) => [p.sourceId, p.usd]).sort()).toEqual([
+			['s1', 150],
+			['s2', 180],
+			['s3', 1]
+		]);
+		const summary = await service.summary();
+		expect(summary.sources.map((s) => [s.id, s.measurementCount])).toEqual([
+			['s1', 7],
+			['s2', 2],
+			['s3', 1]
+		]);
+		expect(await service.measurements(['b-tune', 'missing', 'd1'])).toEqual([
+			{
+				id: 'b-tune',
+				productId: 'b',
+				brand: 'Brand',
+				model: 'B',
+				partition: 'iem-711',
+				sourceId: 's1',
+				sourceName: 's1',
+				variantLabel: 'Verbatim (b-tune)',
+				variantKind: 'tuning'
+			},
+			expect.objectContaining({ id: 'd1', partition: 'iem-5128', variantKind: 'default' })
+		]);
 	});
 	it('ranks an exact +3 dB shape first, excludes the reference, and never mixes rigs', async () => {
 		const { service, calls } = fixture();

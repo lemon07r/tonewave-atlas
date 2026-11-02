@@ -5,6 +5,7 @@ import { makeWeights } from '../src/core/analysis/weights.ts';
 import { buildTasteModel, rankTastePacked, type RatedItem } from '../src/core/analysis/taste.ts';
 import { equalizerResponse, type Filter } from '../src/core/analysis/biquad.ts';
 import { fitPeq } from '../src/core/analysis/peq.ts';
+import { compareReferences } from '../src/core/analysis/multi-reference.ts';
 
 const n = 30000,
 	matrix = new Float32Array(n * RANK_SIZE);
@@ -35,6 +36,15 @@ const syntheticFilters: Filter[] = [
 ];
 const target = equalizerResponse(syntheticFilters),
 	flat = new Float64Array(GRID.length);
+const targets50 = Array.from({ length: 50 }, (_, i) =>
+	Float64Array.from(target, (v, j) => v + 0.1 * Math.sin(j / 17 + i))
+);
+// Deliberate Pareto worst case: every candidate trades distance to one endpoint for the other.
+const multiN = 3000,
+	multiCandidates = Array.from({ length: multiN }, (_, row) =>
+		Float64Array.from(RANK_GRID, (_, i) => ((i < 60 ? -1 : 1) * 6 * row) / (multiN - 1))
+	);
+const multiReferences = [multiCandidates[0] ?? reference, multiCandidates[multiN - 1] ?? reference];
 let checksum = 0;
 function time(name: string, operations: number, run: () => number): void {
 	const start = performance.now();
@@ -48,6 +58,7 @@ console.log(
 // Warm up each distinct path outside the measured region.
 rankPacked(matrix, reference, 20, { weights });
 rankTastePacked(matrix, model);
+compareReferences(multiCandidates.slice(0, 100), multiReferences);
 fitPeq(flat, target);
 time(
 	'single-reference rank (30000 candidates)',
@@ -59,15 +70,15 @@ time(
 	n,
 	() => rankTastePacked(matrix, model)[0]?.fit.score ?? 0
 );
+time(
+	'multi-reference Pareto (3000 candidates, 2 refs, all non-dominated)',
+	multiN,
+	() => compareReferences(multiCandidates, multiReferences).filter((r) => r.pareto).length
+);
 time('PEQ fit (1 curve)', 1, () => fitPeq(flat, target)?.residualDistanceDb ?? 0);
 time('PEQ fit (50 curves)', 50, () => {
 	let sum = 0;
-	for (let i = 0; i < 50; i++)
-		sum +=
-			fitPeq(
-				flat,
-				Float64Array.from(target, (v, j) => v + 0.1 * Math.sin(j / 17 + i))
-			)?.residualDistanceDb ?? 0;
+	for (const curve of targets50) sum += fitPeq(flat, curve)?.residualDistanceDb ?? 0;
 	return sum;
 });
 console.log(`checksum ${checksum.toFixed(6)}`);

@@ -1,0 +1,88 @@
+import { lstat, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+import type { Manifest } from '#core/dataset/types.ts';
+import { atomicWrite, sha256 } from './common.ts';
+
+function missing(error: unknown): boolean {
+	return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+async function exists(path: string): Promise<boolean> {
+	try {
+		await lstat(path);
+		return true;
+	} catch (error) {
+		if (missing(error)) return false;
+		throw error;
+	}
+}
+
+async function matches(path: string, manifest: Manifest): Promise<boolean> {
+	for (const file of manifest.files) {
+		try {
+			const bytes = await readFile(resolve(path, file.path.slice(manifest.version.length + 1)));
+			if (bytes.length !== file.bytes || sha256(bytes) !== file.sha256) return false;
+		} catch (error) {
+			if (missing(error)) return false;
+			throw error;
+		}
+	}
+	return true;
+}
+
+/**
+ * Keep verified live versions in place. Repairs use a recoverable backup, never rm(live).
+ * After a process interruption, the next publication restores a missing target from backup
+ * or completes an already-installed, hash-verified target. The manifest is committed last.
+ * This serial publisher is shared by crawl builds and pulls; do not publish concurrently.
+ */
+export async function publishDataset(
+	output: string,
+	staging: string,
+	manifest: Manifest,
+	manifestText: string
+): Promise<void> {
+	const target = resolve(output, manifest.version);
+	const backup = resolve(output, `.backup-${manifest.version}`);
+	if (await matches(target, manifest)) {
+		await atomicWrite(resolve(output, 'manifest.json'), manifestText);
+	} else {
+		// Recover a crash between old→backup and staging→target before starting a new repair.
+		if (await exists(backup)) {
+			const displaced = resolve(output, `.interrupted-${randomUUID()}`);
+			const hadTarget = await exists(target);
+			if (hadTarget) await rename(target, displaced);
+			try {
+				await rename(backup, target);
+			} catch (error) {
+				if (hadTarget) await rename(displaced, target);
+				throw error;
+			}
+			if (hadTarget) await rm(displaced, { recursive: true });
+		}
+		if (!(await matches(staging, manifest))) throw new Error('Staged dataset does not match manifest');
+		let backedUp = false;
+		let installed = false;
+		try {
+			if (await exists(target)) {
+				await rename(target, backup);
+				backedUp = true;
+			}
+			await rename(staging, target);
+			installed = true;
+			await atomicWrite(resolve(output, 'manifest.json'), manifestText);
+		} catch (error) {
+			if (installed) await rename(target, staging);
+			if (backedUp) await rename(backup, target);
+			throw error;
+		}
+	}
+	// Cleanup is after the commit: failures here must never roll back a published manifest.
+	await rm(backup, { recursive: true, force: true });
+	await rm(staging, { recursive: true, force: true });
+	for (const entry of await readdir(output, { withFileTypes: true })) {
+		if (entry.isDirectory() && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== manifest.version)
+			await rm(resolve(output, entry.name), { recursive: true });
+	}
+}

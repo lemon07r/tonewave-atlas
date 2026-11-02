@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Form } from '#core/dataset/types.ts';
+import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CACHE = resolve(ROOT, '.cache/ingest');
@@ -13,6 +13,45 @@ export const OPT_OUT_URL = 'https://squig.link/squigsites.js';
 
 export function sha256(value: string | Uint8Array): string {
 	return createHash('sha256').update(value).digest('hex');
+}
+
+/** Same canonical field order as the v1 builder; paths here are version-relative filenames. */
+export function datasetVersion(files: DatasetFile[], sources: Source[]): string {
+	return sha256(
+		JSON.stringify({
+			formatVersion: 1,
+			files: files.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
+			sources: sources.map(
+				({
+					id,
+					username,
+					name,
+					url,
+					dbType,
+					form,
+					partition,
+					rig,
+					rigInferred,
+					permission,
+					crawledAt,
+					calibration
+				}) => ({
+					id,
+					username,
+					name,
+					url,
+					dbType,
+					form,
+					partition,
+					rig,
+					rigInferred,
+					permission,
+					crawledAt,
+					calibration
+				})
+			)
+		})
+	).slice(0, 24);
 }
 
 export async function atomicWrite(path: string, value: string | Uint8Array): Promise<void> {
@@ -37,8 +76,8 @@ function string(value: unknown): string | null {
 function strings(value: unknown): string[] {
 	return typeof value === 'string'
 		? [value]
-		: Array.isArray(value)
-			? value.filter((s): s is string => typeof s === 'string')
+		: Array.isArray(value) && value.every((s: unknown) => typeof s === 'string')
+			? value
 			: [];
 }
 
@@ -65,10 +104,103 @@ export interface Exclusions {
 	products: string[];
 }
 
-export async function exclusions(): Promise<Exclusions> {
-	const value = await readJson(resolve(ROOT, 'data/exclusions.json'));
-	if (!record(value)) throw new Error('Invalid exclusions');
-	return { sources: strings(value.sources), files: strings(value.files), products: strings(value.products) };
+function keys(value: unknown, allowed: string[], required: string[], label: string): Record<string, unknown> {
+	if (
+		!record(value) ||
+		required.some((key) => !Object.hasOwn(value, key)) ||
+		Object.keys(value).some((key) => key !== '_note' && !allowed.includes(key)) ||
+		(value._note !== undefined && typeof value._note !== 'string')
+	)
+		throw new Error(`Invalid ${label}: missing/unknown keys or invalid _note`);
+	return value;
+}
+
+function stringArray(value: unknown, label: string): string[] {
+	if (!Array.isArray(value) || !value.every((item: unknown) => typeof item === 'string'))
+		throw new Error(`Invalid ${label}: expected an array of strings`);
+	return value;
+}
+
+export function validateExclusions(value: unknown): Exclusions {
+	const v = keys(
+		value,
+		['sources', 'files', 'products'],
+		['sources', 'files', 'products'],
+		'exclusions.json'
+	);
+	return {
+		sources: stringArray(v.sources, 'exclusions.sources'),
+		files: stringArray(v.files, 'exclusions.files'),
+		products: stringArray(v.products, 'exclusions.products')
+	};
+}
+
+export function validateAliases(value: unknown): Record<string, string> {
+	const v = keys(value, ['brands'], ['brands'], 'aliases.json');
+	if (!record(v.brands)) throw new Error('Invalid aliases.brands: expected a string map');
+	const brands: Record<string, string> = Object.create(null) as Record<string, string>;
+	for (const [name, alias] of Object.entries(v.brands)) {
+		if (typeof alias !== 'string') throw new Error(`Invalid aliases.brands.${name}: expected a string`);
+		if (name !== '_note') brands[name] = alias;
+	}
+	return brands;
+}
+
+export interface SourceOverride {
+	form?: Form;
+	partition?: string;
+	rig?: string;
+	permission?: Source['permission'];
+}
+
+export function validateSources(value: unknown): Record<string, SourceOverride> {
+	const v = keys(value, ['overrides'], ['overrides'], 'sources.json');
+	if (!record(v.overrides)) throw new Error('Invalid sources.overrides: expected a map');
+	const overrides: Record<string, SourceOverride> = Object.create(null) as Record<string, SourceOverride>;
+	for (const [name, override] of Object.entries(v.overrides)) {
+		if (name === '_note') {
+			if (typeof override !== 'string') throw new Error('Invalid sources.overrides._note');
+			continue;
+		}
+		const o = keys(override, ['form', 'partition', 'rig', 'permission'], [], `sources.overrides.${name}`);
+		const parsed: SourceOverride = {};
+		if (Object.hasOwn(o, 'form')) {
+			if (o.form !== 'iem' && o.form !== 'headphone') throw new Error(`Invalid source form: ${name}`);
+			parsed.form = o.form;
+		}
+		if (Object.hasOwn(o, 'partition')) {
+			if (typeof o.partition !== 'string' || !/^[a-z0-9-]+$/.test(o.partition))
+				throw new Error(`Invalid source partition: ${name}`);
+			parsed.partition = o.partition;
+		}
+		if (Object.hasOwn(o, 'rig')) {
+			if (typeof o.rig !== 'string') throw new Error(`Invalid source rig: ${name}`);
+			parsed.rig = o.rig;
+		}
+		if (Object.hasOwn(o, 'permission')) {
+			if (o.permission !== 'permission granted' && o.permission !== 'public, not explicitly licensed')
+				throw new Error(`Invalid source permission: ${name}`);
+			parsed.permission = o.permission;
+		}
+		overrides[name] = parsed;
+	}
+	return overrides;
+}
+
+/** Validate every hand-maintained input before either command does any work. */
+export async function readInputs(root = ROOT): Promise<{
+	excluded: Exclusions;
+	brands: Record<string, string>;
+	overrides: Record<string, SourceOverride>;
+}> {
+	const [excluded, brands, overrides] = await Promise.all(
+		['exclusions', 'aliases', 'sources'].map((name) => readJson(resolve(root, `data/${name}.json`)))
+	);
+	return {
+		excluded: validateExclusions(excluded),
+		brands: validateAliases(brands),
+		overrides: validateSources(overrides)
+	};
 }
 
 /** Remove comments without damaging quoted URLs. Remote scripts are never evaluated. */
@@ -114,6 +246,14 @@ export function configChannels(config: string): string[] {
 	return [...list.matchAll(/["']([^"']*)["']/g)].map((m) => m[1] ?? '');
 }
 
+/** Supported physical channels; numbered repetitions are expanded only after this check. */
+export function supportedChannels(config: string): string[] {
+	const channels = configChannels(config);
+	if (!channels.length || channels.length > 2 || channels.some((c) => !['L', 'R', ''].includes(c)))
+		throw new Error(`Unsupported channels: ${JSON.stringify(channels)}`);
+	return channels;
+}
+
 /** Numbered files represent repeated samples; preserve their identities in detail packs. */
 export function fileChannels(config: string): string[] {
 	const channels = configChannels(config);
@@ -126,7 +266,23 @@ export function fileChannels(config: string): string[] {
 
 export function dataDirectory(db: Database, config: string): string {
 	const dir = configString(config, 'DIR') ?? 'data/';
-	return new URL(dir.endsWith('/') ? dir : `${dir}/`, db.url).href;
+	const url = sameOriginUrl(dir, db.url);
+	if (!url.pathname.endsWith('/')) url.pathname += '/';
+	return url.href;
+}
+
+function sameOriginUrl(value: string, base: string): URL {
+	const source = new URL(base);
+	const url = new URL(value, source);
+	if (
+		!['http:', 'https:'].includes(source.protocol) ||
+		!['http:', 'https:'].includes(url.protocol) ||
+		url.origin !== source.origin ||
+		url.username ||
+		url.password
+	)
+		throw new Error(`Rejected remote config path (same-origin HTTP(S) required): ${value}`);
+	return url;
 }
 
 export function measurementUrl(dir: string, file: string, channel: string): string {
@@ -134,17 +290,9 @@ export function measurementUrl(dir: string, file: string, channel: string): stri
 }
 
 export function calibrationUrl(dir: string, stem: string): string {
-	if (/^https?:\/\//i.test(stem)) {
-		const url = new URL(stem);
-		if (!/\.txt$/i.test(url.pathname))
-			url.pathname += url.pathname.endsWith('/') ? 'calibration.txt' : '.txt';
-		return url.href;
-	}
-	return new URL(
-		stem.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/') +
-			(/\.txt$/i.test(stem) ? '' : '.txt'),
-		dir
-	).href;
+	const url = sameOriginUrl(stem, dir);
+	if (!/\.txt$/i.test(url.pathname)) url.pathname += url.pathname.endsWith('/') ? 'calibration.txt' : '.txt';
+	return url.href;
 }
 
 export interface Phone {
@@ -236,7 +384,7 @@ export function discover(value: unknown): Database[] {
 }
 
 export function parseOptOuts(script: string): string[] {
-	const content = /\b(?:let|const|var)\s+optedOut\s*=\s*\[([^\]]*)\]/.exec(script)?.[1];
+	const content = /\b(?:let|const|var)\s+optedOut\s*=\s*\[([^\]]*)\]/.exec(withoutComments(script))?.[1];
 	if (content === undefined) throw new Error('Could not read upstream opt-outs; refusing to crawl/build');
 	return [...content.matchAll(/["']([^"']+)["']/g)].map((m) => m[1] ?? '');
 }

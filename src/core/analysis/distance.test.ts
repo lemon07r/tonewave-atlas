@@ -92,6 +92,48 @@ describe('response distance', () => {
 		// 120 equally weighted consecutive positions 1/12 octave apart have variance (120²−1)/(12·12²).
 		expect(plain?.distance).toBeCloseTo(1.25 * Math.sqrt((120 ** 2 - 1) / (12 * 12 ** 2)), 10);
 	});
+	it('selects and explains winners on the same custom frequency grid', () => {
+		const frequencies = Float64Array.from(RANK_GRID, (f) => f * 8),
+			reference = new Float64Array(RANK_SIZE);
+		const matrix = new Float32Array(3 * RANK_SIZE);
+		for (let i = 0; i < RANK_SIZE; i++) {
+			matrix[i] = (i % 2 ? 1 : -1) * (i < 32 ? 0.5 : 20);
+			matrix[RANK_SIZE + i] = i % 2 ? 1 : -1;
+			matrix[2 * RANK_SIZE + i] = i < 32 ? (i % 2 ? 0.25 : -0.25) : NaN;
+		}
+		// 160·2^(i/12) <= 1000 for exactly 32 bins, versus 68 bins on the default grid.
+		const ranked = rankPacked(matrix, reference, 2, { frequencies, maxHz: 1000 });
+		expect(ranked.matches.map((m) => m.index)).toEqual([2, 0]);
+		expect(ranked.matches.map((m) => m.stats.distance)).toEqual([0.25, 0.5]);
+		for (const match of ranked.matches) {
+			expect(match.stats.points).toBe(32);
+			expect(match.stats.coverage).toBe(1);
+			expect(match.stats).toEqual(
+				responseDistance(matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE), reference, {
+					frequencies,
+					maxHz: 1000
+				})
+			);
+		}
+		// A default-grid rescore would discard the best winner for insufficient overlap.
+		expect(responseDistance(matrix.subarray(2 * RANK_SIZE), reference, { maxHz: 1000 })).toBeNull();
+	});
+	it('excludes NaN frequencies consistently from distance, tilt and band energy', () => {
+		const frequencies = RANK_GRID.slice(),
+			a = Float64Array.from(RANK_GRID, (_, i) => (i % 2 ? 1 : -1)),
+			b = new Float64Array(120);
+		frequencies[10] = NaN;
+		frequencies[11] = NaN;
+		a[10] = 100;
+		a[11] = 100;
+		const result = responseDistance(a, b, { frequencies });
+		expect(result?.points).toBe(118);
+		expect(result?.coverage).toBe(1);
+		expect(result?.distance).toBeCloseTo(1, 12);
+		expect(Number.isFinite(result?.tilt)).toBe(true);
+		expect(result?.bands.reduce((sum, band) => sum + band.contribution, 0)).toBeCloseTo(1, 12);
+		expect(rankPacked(Float32Array.from(a), b, 1, { frequencies }).matches[0]?.stats).toEqual(result);
+	});
 });
 
 describe('weighting and peak diagnostics', () => {
@@ -111,6 +153,10 @@ describe('weighting and peak diagnostics', () => {
 		expect(Array.from(makeWeights(f, { spread, focus: 'treble', bandMultipliers: { treble: 2 } }))).toEqual([
 			1, 1, 6
 		]);
+	});
+	it('validates custom multipliers even when their band is absent from the grid', () => {
+		for (const value of [-1, NaN, Infinity])
+			expect(() => makeWeights([100], { bandMultipliers: { air: value } })).toThrow(RangeError);
 	});
 	it('separates a narrow peak from broad level and flags >8k', () => {
 		const error = new Float64Array(240).fill(5);

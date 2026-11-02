@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
 	configChannels,
 	configString,
+	calibrationUrl,
 	dataDirectory,
 	discover,
 	fileChannels,
 	measurementUrl,
 	parseOptOuts,
 	phoneBook,
+	supportedChannels,
 	unwanted
 } from './common.ts';
 import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
@@ -36,9 +38,41 @@ describe('source transforms', () => {
 		expect(() => parseOptOuts('something changed')).toThrow();
 	});
 	it('ignores commented sample/channel settings without stripping URLs', () => {
-		const config = `// num_samples = 5;\n/* default_channels = ['R']; */\nconst default_channels = ['L', 'R'], DIR = 'https://example.invalid/data/';`;
+		const config = `// num_samples = 5;\n/* default_channels = ['R']; */\nconst default_channels = ['L', 'R'], DIR = 'https://reviewer.squig.link/data/';`;
 		expect(fileChannels(config)).toEqual(['L', 'R']);
-		expect(dataDirectory(db, config)).toBe('https://example.invalid/data/');
+		expect(dataDirectory(db, config)).toBe('https://reviewer.squig.link/data/');
+		expect(
+			parseOptOuts(`// let optedOut = [];\n/* const optedOut = ['stale']; */\nlet optedOut = ['live'];`)
+		).toEqual(['live']);
+	});
+	it.each(['[]', '["A"]', '["L", "R", "C"]'])('rejects unsupported physical channels %s', (list) => {
+		expect(() => supportedChannels(`default_channels = ${list}`)).toThrow('Unsupported channels');
+	});
+	it.each(['["L"]', '["R"]', '["L", "R"]', '[""]'])('accepts supported physical channels %s', (list) => {
+		expect(supportedChannels(`default_channels = ${list}`)).toEqual(JSON.parse(list));
+	});
+	it.each([
+		'http://127.0.0.1/data/',
+		'https://other.squig.link/data/',
+		'//other.squig.link/data/',
+		'file:///etc/',
+		'data:text/plain,raw',
+		'javascript:alert(1)',
+		'http://reviewer.squig.link/data/',
+		'https://reviewer.squig.link:444/data/',
+		'https://user:pass@reviewer.squig.link/data/'
+	])('rejects a remote config redirect to %s', (path) => {
+		expect(() => dataDirectory(db, `const DIR = '${path}';`)).toThrow('same-origin');
+		expect(() => calibrationUrl(dataDirectory(db, ''), path)).toThrow('same-origin');
+	});
+	it('resolves relative, root-relative and same-origin absolute calibration paths', () => {
+		const dir = dataDirectory(db, "DIR = '/measurements'");
+		expect(dir).toBe('https://reviewer.squig.link/measurements/');
+		expect(calibrationUrl(dir, 'IEF Cal')).toBe('https://reviewer.squig.link/measurements/IEF%20Cal.txt');
+		expect(calibrationUrl(dir, '/data/cal.txt')).toBe('https://reviewer.squig.link/data/cal.txt');
+		expect(calibrationUrl(dir, 'https://reviewer.squig.link/cal/')).toBe(
+			'https://reviewer.squig.link/cal/calibration.txt'
+		);
 	});
 	it('discovers root/subdomain/lab URLs but never altDomain/crinacle', () => {
 		const entries = ['root', 'subdomain', 'labFolder', 'altDomain'].map((urlType) => ({
@@ -83,6 +117,27 @@ describe('source transforms', () => {
 			])
 		).toEqual([{ left: 'b', right: 'a' }]);
 	});
+	it.each([
+		['Balanced cable', 'setup'],
+		['sample 2', 'unit'],
+		['ANC', 'tuning'],
+		['amp', 'setup']
+	])('classifies %s without substring collisions', (label, kind) => {
+		const phone = {
+			brand: 'Brand',
+			name: 'Model',
+			file: ['stock', label],
+			suffix: [],
+			price: null,
+			reviewLink: null
+		};
+		expect(variant(phone, 1, 'm-test').kind).toBe(kind);
+	});
+	it('rejects mixed file arrays with an audit warning instead of truncating them', () => {
+		const result = phoneBook([{ name: 'Brand', phones: [{ name: 'Model', file: ['a', 42, 'b'] }] }]);
+		expect(result.phones).toEqual([]);
+		expect(result.warnings).toEqual(['Unsupported/missing file list: Brand Model']);
+	});
 	it('reports and removes exact duplicate index rows rather than duplicating measurement IDs', () => {
 		const phone = { name: 'ZS10 PRO', file: 'KZ ZS10 PRO' };
 		const result = phoneBook([{ name: 'KZ', phones: [phone, phone] }]);
@@ -117,7 +172,19 @@ describe('source transforms', () => {
 	it('rejects target/sandbox/delta entries by name and leaves statistics explicitly absent', () => {
 		expect(['Harman Target', 'EQ sandbox', '∆ Reference', 'IEF Calibration'].every(unwanted)).toBe(true);
 		expect(unwanted('CrinEar Reference')).toBe(false);
+		expect(unwanted('Brainwavz Delta')).toBe(false);
 		expect(computePartitionStatistics([])).toBeNull();
+	});
+	it.each([
+		['unknown coupler', true],
+		['IEC 60318-4', false],
+		['IEC 60711', false],
+		['clone 711', false]
+	])('qualifies the default 711 partition for %s', (rig, rigInferred) => {
+		expect(sourceFor(db, `rig_description = "${rig}";`, 'date', {})).toMatchObject({
+			partition: 'iem-711',
+			rigInferred
+		});
 	});
 	it('chooses the measured smaller gzip layout and decodes it', async () => {
 		const result = compressPack({

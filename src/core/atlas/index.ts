@@ -28,9 +28,11 @@ export interface PartitionIndex {
 	matrix: Float32Array;
 }
 
-/** Align to the first curve by uniform-weight LS level, then median each finite frequency. */
+/** Align to the first adequately covered curve by uniform-weight LS level, then median each bin. */
 export function consensus(curves: readonly IndexedCurve[], frequencies: Curve): Consensus | null {
-	const anchor = curves[0];
+	const anchor = curves.find(
+		(curve) => responseDistance(curve.values, curve.values, { frequencies }) !== null
+	);
 	if (!anchor) return null;
 	const aligned: IndexedCurve[] = [];
 	for (const curve of curves) {

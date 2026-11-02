@@ -28,6 +28,7 @@ import type {
 	AtlasOptions,
 	AtlasError,
 	AtlasSummary,
+	MeasurementInfo,
 	ProductListItem,
 	SimilarRequest,
 	SimilarResult,
@@ -126,6 +127,17 @@ function spreadFor(curves: IndexedCurve[], partition: string): ProductSpread | n
 }
 
 /** Framework-free, partition-local dataset facade. All returned values are structured-clone friendly. */
+function listedPrices(measurements: readonly Measurement[]): NonNullable<Measurement['price']>[] {
+	const seen = new Map<string, NonNullable<Measurement['price']>>();
+	for (const m of measurements) {
+		const price = m.price;
+		if (price?.usd == null || !Number.isFinite(price.usd)) continue;
+		const key = `${price.sourceId}|${price.usd}`;
+		if (!seen.has(key)) seen.set(key, price);
+	}
+	return [...seen.values()];
+}
+
 export class AtlasService {
 	private readonly baseUrl: string;
 	private readonly fetcher: typeof globalThis.fetch;
@@ -260,17 +272,33 @@ export class AtlasService {
 	private async detailCurves(m: Measurement): Promise<PackedCurve[]> {
 		return (await this.detailPack(m.detailFile, m.partition)).curves.filter((c) => c.measurementId === m.id);
 	}
-	private choosePartition(
+	private async choosePartition(
 		catalog: Catalog,
 		measurements: readonly Measurement[],
-		requested?: string
-	): Partition | undefined {
+		requested?: string,
+		defaultProductId?: string,
+		harmonise = false
+	): Promise<Partition | undefined> {
 		if (requested) return catalog.partitions.find((p) => p.id === requested);
 		const counts = new Map<string, number>();
-		for (const m of measurements) counts.set(m.partition, (counts.get(m.partition) ?? 0) + 1);
-		return catalog.partitions
-			.filter((p) => counts.has(p.id))
-			.sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) || a.id.localeCompare(b.id))[0];
+		for (const m of measurements) {
+			if (!defaultProductId || m.variant.kind === 'default')
+				counts.set(m.partition, (counts.get(m.partition) ?? 0) + 1);
+		}
+		const available = await Promise.all(
+			catalog.partitions
+				.filter((p) => counts.has(p.id))
+				.map(async (partition) => ({
+					partition,
+					count: defaultProductId
+						? ((await this.index(catalog, partition, harmonise)).products.get(defaultProductId)?.info
+								.measurementIds.length ?? 0)
+						: (counts.get(partition.id) ?? 0)
+				}))
+		);
+		return available
+			.filter((p) => p.count > 0)
+			.sort((a, b) => b.count - a.count || a.partition.id.localeCompare(b.partition.id))[0]?.partition;
 	}
 	private async reference(
 		input: Pick<SimilarRequest, 'productId' | 'measurementId' | 'uploadId' | 'partition' | 'harmonise'>
@@ -311,7 +339,13 @@ export class AtlasService {
 		const measurements = found.catalog.measurements.filter(
 			(m) => m.productId === found.product.id && (!selected || m.id === selected.id)
 		);
-		const partition = this.choosePartition(found.catalog, measurements, input.partition);
+		const partition = await this.choosePartition(
+			found.catalog,
+			measurements,
+			input.partition,
+			selected ? undefined : found.product.id,
+			input.harmonise
+		);
 		if (!partition || !measurements.some((m) => m.partition === partition.id))
 			return failure('not-measured-on-rig', 'Reference is not measured on this rig.');
 		const index = await this.index(found.catalog, partition, input.harmonise);
@@ -365,7 +399,8 @@ export class AtlasService {
 		index: PartitionIndex,
 		filters: RankFilters = {},
 		excluded = new Set<string>(),
-		ownTunings = false
+		ownTunings = false,
+		excludedMeasurementId?: string
 	): { candidates: AtlasCandidate[]; matrix: Float32Array } {
 		for (const price of [filters.minPriceUsd, filters.maxPriceUsd])
 			if (price !== undefined && (!Number.isFinite(price) || price < 0))
@@ -379,6 +414,7 @@ export class AtlasService {
 		const candidates: AtlasCandidate[] = [],
 			indices: number[] = [];
 		index.candidates.forEach((c, i) => {
+			if (excludedMeasurementId && c.info.measurementIds.includes(excludedMeasurementId)) return;
 			if (c.info.kind === 'tuning' && !filters.includeTunings) return;
 			if (
 				excluded.has(c.info.product.id) &&
@@ -412,10 +448,16 @@ export class AtlasService {
 			this.catalog('iem'),
 			this.catalog('headphone')
 		]);
+		const counts = new Map<string, number>();
+		for (const m of catalogs.flatMap((c) => c.measurements))
+			counts.set(m.sourceId, (counts.get(m.sourceId) ?? 0) + 1);
 		return {
 			version: manifest.version,
 			builtAt: manifest.builtAt,
-			sources: manifest.sources,
+			sources: manifest.sources.map((source) => ({
+				...source,
+				measurementCount: counts.get(source.id) ?? 0
+			})),
 			partitions: catalogs.flatMap((c) =>
 				c.partitions.map((p) => ({
 					id: p.id,
@@ -447,12 +489,40 @@ export class AtlasService {
 				variantLabels: [
 					...new Set(measurements.filter((m) => m.variant.kind === 'tuning').map((m) => m.variant.label))
 				],
-				priceUsd: priceRange(measurements.map((m) => m.price))
+				priceUsd: priceRange(measurements.map((m) => m.price)),
+				prices: listedPrices(measurements)
 			};
 		});
 	}
+	async measurements(ids: readonly string[]): Promise<MeasurementInfo[]> {
+		const output: MeasurementInfo[] = [];
+		for (const id of ids) {
+			const located = await this.locateMeasurement(id);
+			if (!located) continue;
+			const { catalog, measurement } = located;
+			const product = catalog.products.find((p) => p.id === measurement.productId);
+			const source = catalog.sources.find((s) => s.id === measurement.sourceId);
+			output.push({
+				id,
+				productId: measurement.productId,
+				brand: product?.brand ?? '',
+				model: product?.model ?? '',
+				partition: measurement.partition,
+				sourceId: measurement.sourceId,
+				sourceName: source?.name ?? measurement.sourceId,
+				variantLabel: measurement.variant.label,
+				variantKind: measurement.variant.kind
+			});
+		}
+		return output;
+	}
 	async similar(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
 		const k = topK(request.topK);
+		if (
+			request.treblePenalty !== undefined &&
+			(!Number.isFinite(request.treblePenalty) || request.treblePenalty < 1)
+		)
+			throw new RangeError('treblePenalty must be finite and at least 1');
 		const reference = await this.reference(request);
 		if (!reference.ok) return reference;
 		const { index } = reference;
@@ -467,7 +537,8 @@ export class AtlasService {
 			index,
 			request.filters,
 			new Set(reference.info.productId ? [reference.info.productId] : []),
-			true
+			true,
+			request.measurementId
 		);
 		const ranked = rankPacked(selected.matrix, reference.values, k, options);
 		return {
@@ -516,7 +587,15 @@ export class AtlasService {
 					)
 					.map((m) => m.partition)
 			);
-			for (const partition of partitions) counts.set(partition, (counts.get(partition) ?? 0) + 1);
+			for (const id of partitions) {
+				const partition = found.catalog.partitions.find((p) => p.id === id);
+				if (!partition) continue;
+				const index = await this.index(found.catalog, partition);
+				const usable = item.measurementId
+					? index.measurements.has(item.measurementId)
+					: index.products.has(item.productId);
+				if (usable) counts.set(id, (counts.get(id) ?? 0) + 1);
+			}
 		}
 		return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
 	}
@@ -808,6 +887,7 @@ export type Analysis = Pick<
 	AtlasService,
 	| 'summary'
 	| 'products'
+	| 'measurements'
 	| 'similar'
 	| 'taste'
 	| 'compare'

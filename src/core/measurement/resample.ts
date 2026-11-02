@@ -32,6 +32,7 @@ export interface ChannelAverage {
 	contributions: Uint8Array;
 	/** RMS(L−R) over finite paired samples on the log grid, 100 Hz–10 kHz; null without overlap. */
 	imbalanceDb: number | null;
+	/** Finite paired bins inside 100 Hz–10 kHz used for imbalanceDb, not the full-grid paired count. */
 	pairedBins: number;
 }
 

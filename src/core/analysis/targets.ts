@@ -43,7 +43,7 @@ export function buildTarget(base: Curve, options: TargetOptions = {}): Float64Ar
 			v +
 			(response[i] ?? 0) +
 			(options.tiltDbPerOctave ?? 0) * Math.log2(f / 1000) +
-			(scale !== 1 && presence > 0 ? (scale - 1) * (v - mid) * presence : 0)
+			(scale !== 1 && presence > 0 && Number.isFinite(mid) ? (scale - 1) * (v - mid) * presence : 0)
 		);
 	});
 }

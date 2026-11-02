@@ -24,13 +24,15 @@ export interface CurvePack {
 }
 
 export type PackLayout = 'curve-major' | 'frequency-major';
-export const DB_STEP = 0.02;
+const STEP_MILLI_DB = 20;
+export const DB_STEP = STEP_MILLI_DB / 1000;
 const HEADER = 24;
 const SENTINEL = -32768;
 
 export function encodePack(pack: CurvePack, layout: PackLayout = 'curve-major'): Uint8Array {
 	if (!Number.isInteger(pack.points) || pack.points < 1 || pack.points > 65535)
 		throw new Error('Invalid point count');
+	if (!statistics(pack.statistics, pack.points)) throw new Error('Invalid pack statistics');
 	const metadata = new TextEncoder().encode(
 		JSON.stringify({
 			partition: pack.partition,
@@ -42,7 +44,7 @@ export function encodePack(pack: CurvePack, layout: PackLayout = 'curve-major'):
 	const view = new DataView(bytes.buffer);
 	bytes.set([84, 87, 70, 82, 1, pack.kind === 'rank' ? 1 : 2, layout === 'curve-major' ? 0 : 1, 0]);
 	view.setUint16(8, pack.points, true);
-	view.setUint16(10, 20, true);
+	view.setUint16(10, STEP_MILLI_DB, true);
 	view.setUint32(12, pack.curves.length, true);
 	view.setUint32(16, metadata.length, true);
 	bytes.set(metadata, HEADER);
@@ -98,7 +100,7 @@ export function decodePack(bytes: Uint8Array): CurvePack {
 		(kind !== 1 && kind !== 2) ||
 		layout > 1 ||
 		!points ||
-		v.getUint16(10, true) !== 20 ||
+		v.getUint16(10, true) !== STEP_MILLI_DB ||
 		v.getUint8(7) ||
 		v.getUint32(20, true)
 	)
