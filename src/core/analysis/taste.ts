@@ -1,3 +1,4 @@
+import { RANK_SIZE } from '../grid.ts';
 import {
 	BANDS,
 	bandIndex,
@@ -69,6 +70,22 @@ export interface TasteModel {
 	dislikes: RatedItem[];
 	conflicts: TasteConflict[];
 	confidence: { level: 'limited' | 'moderate' | 'strong'; reasons: string[] };
+	/** Prepared once by buildTasteModel; treat models and their input curves as immutable. */
+	scoring: PreparedTasteScoring;
+}
+interface PreparedConstraint {
+	disliked: RatedItem;
+	reason: DislikeReason | 'near-duplicate';
+	trait: number;
+	direction: 1 | -1;
+	region: Uint16Array;
+	baseline: Uint16Array;
+}
+interface PreparedTasteScoring {
+	tasteIndices: Uint16Array[];
+	baseIndices: Uint16Array;
+	constraints: PreparedConstraint[];
+	narrowKernel: Float64Array;
 }
 export interface TasteOptions {
 	frequencies?: Curve;
@@ -195,6 +212,108 @@ function makeSummary(
 		});
 	}
 	return statements;
+}
+
+function frequencyIndices(f: Curve, low: number, high: number, inclusiveHigh = false): Uint16Array {
+	const indices: number[] = [];
+	for (let i = 0; i < f.length; i++)
+		if ((f[i] ?? NaN) >= low && (inclusiveHigh ? (f[i] ?? NaN) <= high : (f[i] ?? NaN) < high))
+			indices.push(i);
+	return Uint16Array.from(indices);
+}
+
+function eligibleIndices(f: Curve, weights: Curve): Uint16Array {
+	return frequencyIndices(f, 20, 20000, true).filter(
+		(i) => (weights[i] ?? 0) > 0 && Number.isFinite(weights[i])
+	);
+}
+
+function prepareScoring(
+	tastes: Taste[],
+	dislikes: RatedItem[],
+	f: Curve,
+	weights: Curve
+): PreparedTasteScoring {
+	const constraints: PreparedConstraint[] = [];
+	for (const disliked of dislikes) {
+		const start = constraints.length;
+		for (const reason of disliked.dislikeReasons ?? []) {
+			const trait = dislikeTrait(disliked.curve, reason, f);
+			if (!trait) continue;
+			let low = 20,
+				high = 250,
+				baseLow = 500,
+				baseHigh = 2000;
+			switch (reason) {
+				case 'bass-lacks-punch':
+					high = 60;
+					baseLow = 80;
+					baseHigh = 250;
+					break;
+				case 'too-much-midbass-warmth':
+					low = 80;
+					break;
+				case 'muddy-lower-mids':
+					low = 250;
+					high = 800;
+					break;
+				case 'thin-or-recessed-vocals':
+					low = 800;
+					high = 2500;
+					break;
+				case 'shouty-upper-mids':
+					low = 2000;
+					high = 5000;
+					break;
+				case 'sharp-fatiguing-treble':
+					low = 2000;
+					high = 10000;
+					break;
+				case 'dull-treble':
+					low = 5000;
+					high = 10000;
+					break;
+				case 'sibilance':
+					low = 5000;
+					high = 9000;
+					break;
+			}
+			constraints.push({
+				disliked,
+				reason,
+				trait: trait.value,
+				direction: trait.direction,
+				region: frequencyIndices(f, low, high, reason === 'sibilance'),
+				baseline: frequencyIndices(f, baseLow, baseHigh)
+			});
+		}
+		if (constraints.length === start)
+			constraints.push({
+				disliked,
+				reason: 'near-duplicate',
+				trait: NaN,
+				direction: 1,
+				region: new Uint16Array(),
+				baseline: new Uint16Array()
+			});
+	}
+	const ppo = 1 / Math.log2((f[1] ?? 40) / (f[0] ?? 20)),
+		sigma = ppo / 3 / Math.sqrt(2 * Math.PI);
+	const radius = Math.max(1, Math.ceil(3 * sigma));
+	return {
+		tasteIndices: tastes.map((t) => eligibleIndices(f, t.weights)),
+		baseIndices: eligibleIndices(f, weights),
+		constraints,
+		narrowKernel: Float64Array.from({ length: 2 * radius + 1 }, (_, i) =>
+			Math.exp(-0.5 * ((i - radius) / sigma) ** 2)
+		)
+	};
+}
+
+function directionalPenalty(z: number, strength: number): number {
+	// The shifted softplus is squared so the safe-side join has zero slope.
+	const h = z > 0 ? (Math.max(0, 2 * z) + Math.log1p(Math.exp(-Math.abs(2 * z))) - Math.log(2)) * 0.5 : 0;
+	return strength * h * h;
 }
 
 export function buildTasteModel(items: readonly RatedItem[], options: TasteOptions = {}): TasteModel {
@@ -336,6 +455,7 @@ export function buildTasteModel(items: readonly RatedItem[], options: TasteOptio
 		tastes,
 		dislikes,
 		conflicts,
+		scoring: prepareScoring(tastes, dislikes, frequencies, weights),
 		confidence: {
 			level: strong ? 'strong' : wellSupported ? 'moderate' : 'limited',
 			reasons: reasons.length ? reasons : ['Several agreeing positive examples support each measured taste.']
@@ -382,11 +502,9 @@ export function scoreTasteCandidate(curve: Curve, model: TasteModel): TasteFit |
 				nearestLiked = { id: liked.id, distanceDb: d.distance };
 		}
 	const constraints: ConstraintExplanation[] = [];
-	for (const disliked of model.dislikes) {
-		const reasons = (disliked.dislikeReasons ?? []).filter(
-			(r) => dislikeTrait(disliked.curve, r, f) !== null
-		);
-		if (!reasons.length) {
+	for (const constraint of model.scoring.constraints) {
+		const { disliked, reason } = constraint;
+		if (reason === 'near-duplicate') {
 			const d = responseDistance(curve, disliked.curve, { frequencies: f, weights: model.weights });
 			const penalty = d ? disliked.strength * Math.exp(-((d.distance / DUPLICATE_DISTANCE_DB) ** 2)) : 0;
 			constraints.push({
@@ -397,22 +515,18 @@ export function scoreTasteCandidate(curve: Curve, model: TasteModel): TasteFit |
 				candidateTrait: null,
 				dislikedTrait: null
 			});
-		}
-		for (const reason of reasons) {
-			const a = dislikeTrait(curve, reason, f),
-				b = dislikeTrait(disliked.curve, reason, f);
-			const observed = a && b && Number.isFinite(a.value) && Number.isFinite(b.value);
-			const z = observed ? a.direction * (a.value - b.value) - CONSTRAINT_MARGIN_DB : -Infinity;
-			// Zero on the safe side; squared, shifted softplus joins with zero slope at the boundary.
-			const h = z > 0 ? (Math.max(0, 2 * z) + Math.log1p(Math.exp(-Math.abs(2 * z))) - Math.log(2)) * 0.5 : 0;
-			const penalty = disliked.strength * h * h;
+		} else {
+			const a = dislikeTrait(curve, reason, f);
+			const observed = a && Number.isFinite(a.value) && Number.isFinite(constraint.trait);
+			const z = observed ? a.direction * (a.value - constraint.trait) - CONSTRAINT_MARGIN_DB : -Infinity;
+			const penalty = directionalPenalty(z, disliked.strength);
 			constraints.push({
 				disliked: disliked.id,
 				reason,
 				penalty,
 				status: !observed ? 'unknown' : z > 0 ? 'violated' : 'satisfied',
 				candidateTrait: observed ? a.value : null,
-				dislikedTrait: observed ? b.value : null
+				dislikedTrait: observed ? constraint.trait : null
 			});
 		}
 	}
@@ -436,18 +550,181 @@ export function scoreTasteCandidate(curve: Curve, model: TasteModel): TasteFit |
 	};
 }
 
-export function rankTasteCandidates(
-	candidates: readonly Curve[],
+/** Stable two-pass moments with precompiled eligibility; NaN denotes insufficient overlap. */
+function packedDistance(
+	matrix: Float32Array,
+	start: number,
+	reference: Curve,
+	weights: Curve,
+	indices: Uint16Array
+): number {
+	let sw = 0,
+		se = 0,
+		count = 0;
+	for (const i of indices) {
+		const e = (matrix[start + i] ?? NaN) - (reference[i] ?? NaN);
+		if (!Number.isFinite(e)) continue;
+		const w = weights[i] ?? 0;
+		sw += w;
+		se += w * e;
+		count++;
+	}
+	if (!sw || count < 12 || count / indices.length < 0.5) return NaN;
+	const offset = se / sw;
+	let sse = 0;
+	for (const i of indices) {
+		const e = (matrix[start + i] ?? NaN) - (reference[i] ?? NaN) - offset;
+		if (Number.isFinite(e)) sse += (weights[i] ?? 0) * e * e;
+	}
+	return Math.sqrt(sse / sw);
+}
+
+function enoughOverlap(matrix: Float32Array, start: number, reference: Curve, indices: Uint16Array): boolean {
+	let count = 0;
+	for (const i of indices) if (Number.isFinite((matrix[start + i] ?? NaN) - (reference[i] ?? NaN))) count++;
+	return count >= 12 && count / indices.length >= 0.5;
+}
+
+function packedRegionMean(matrix: Float32Array, start: number, indices: Uint16Array): number {
+	let sum = 0,
+		n = 0;
+	for (const i of indices) {
+		const v = matrix[start + i] ?? NaN;
+		if (Number.isFinite(v)) {
+			sum += v;
+			n++;
+		}
+	}
+	return n ? sum / n : NaN;
+}
+
+function packedTrait(
+	matrix: Float32Array,
+	start: number,
+	constraint: PreparedConstraint,
+	kernel: Float64Array
+): number {
+	if (constraint.reason !== 'sibilance')
+		return (
+			packedRegionMean(matrix, start, constraint.region) -
+			packedRegionMean(matrix, start, constraint.baseline)
+		);
+	const radius = (kernel.length - 1) / 2;
+	let sum = 0,
+		n = 0;
+	for (const i of constraint.region) {
+		const centre = matrix[start + i] ?? NaN;
+		if (!Number.isFinite(centre)) continue;
+		let smooth = 0,
+			weight = 0;
+		for (let j = Math.max(0, i - radius); j <= Math.min(RANK_SIZE - 1, i + radius); j++) {
+			const v = matrix[start + j] ?? NaN;
+			if (!Number.isFinite(v)) continue;
+			const w = kernel[j - i + radius] ?? 0;
+			smooth += w * v;
+			weight += w;
+		}
+		const narrow = centre - smooth / weight;
+		if (Number.isFinite(narrow)) {
+			sum += Math.max(0, narrow) ** 2;
+			n++;
+		}
+	}
+	return n ? Math.sqrt(sum / n) : NaN;
+}
+
+function packedTasteScore(matrix: Float32Array, start: number, model: TasteModel): number {
+	const prepared = model.scoring;
+	let best = Infinity,
+		bestTaste: Taste | undefined;
+	for (let j = 0; j < model.tastes.length; j++) {
+		const taste = model.tastes[j],
+			indices = prepared.tasteIndices[j];
+		if (!taste || !indices) continue;
+		const distance = packedDistance(matrix, start, taste.centre, taste.weights, indices);
+		if (distance < best) {
+			best = distance;
+			bestTaste = taste;
+		}
+	}
+	// The explanatory scorer also requires sufficient ordinary-weight overlap with the best taste.
+	if (!bestTaste || !enoughOverlap(matrix, start, bestTaste.centre, prepared.baseIndices)) return NaN;
+	let penalty = 0;
+	for (const constraint of prepared.constraints) {
+		if (constraint.reason === 'near-duplicate') {
+			const d = packedDistance(matrix, start, constraint.disliked.curve, model.weights, prepared.baseIndices);
+			if (Number.isFinite(d))
+				penalty += constraint.disliked.strength * Math.exp(-((d / DUPLICATE_DISTANCE_DB) ** 2));
+		} else {
+			const value = packedTrait(matrix, start, constraint, prepared.narrowKernel);
+			const z =
+				Number.isFinite(value) && Number.isFinite(constraint.trait)
+					? constraint.direction * (value - constraint.trait) - CONSTRAINT_MARGIN_DB
+					: -Infinity;
+			penalty += directionalPenalty(z, constraint.disliked.strength);
+		}
+	}
+	return best + penalty;
+}
+
+/** Allocation-free N-row scalar scan, O(N log K) heap, full explanations only for K winners. */
+export function rankTastePacked(
+	matrix: Float32Array,
 	model: TasteModel,
 	topK = 20
 ): { index: number; fit: TasteFit }[] {
-	return candidates
-		.flatMap((curve, index) => {
-			const fit = scoreTasteCandidate(curve, model);
-			return fit ? [{ index, fit }] : [];
-		})
-		.sort((a, b) => a.fit.score - b.fit.score || a.index - b.index)
-		.slice(0, Math.max(0, topK));
+	if (matrix.length % RANK_SIZE || model.frequencies.length !== RANK_SIZE)
+		throw new RangeError('Expected N × 120 ranking matrix and model');
+	if (!Number.isInteger(topK) || topK < 0) throw new RangeError('topK must be a nonnegative integer');
+	const n = matrix.length / RANK_SIZE,
+		k = Math.min(n, topK);
+	if (!k || !model.tastes.length) return [];
+	const indices = new Int32Array(k),
+		scores = new Float64Array(k);
+	let size = 0;
+	for (let row = 0; row < n; row++) {
+		const score = packedTasteScore(matrix, row * RANK_SIZE, model);
+		if (!Number.isFinite(score) || (size === k && score >= (scores[0] ?? Infinity))) continue;
+		let pos = size < k ? size++ : 0;
+		if (pos) {
+			while (pos > 0) {
+				const parent = (pos - 1) >> 1,
+					parentScore = scores[parent] ?? 0,
+					parentIndex = indices[parent] ?? 0;
+				if (parentScore > score || (parentScore === score && parentIndex > row)) break;
+				scores[pos] = parentScore;
+				indices[pos] = parentIndex;
+				pos = parent;
+			}
+		} else {
+			while (2 * pos + 1 < size) {
+				let child = 2 * pos + 1;
+				const leftScore = scores[child] ?? 0,
+					rightScore = scores[child + 1] ?? 0;
+				if (
+					child + 1 < size &&
+					(rightScore > leftScore ||
+						(rightScore === leftScore && (indices[child + 1] ?? 0) > (indices[child] ?? 0)))
+				)
+					child++;
+				const childScore = scores[child] ?? 0,
+					childIndex = indices[child] ?? 0;
+				if (childScore < score || (childScore === score && childIndex < row)) break;
+				scores[pos] = childScore;
+				indices[pos] = childIndex;
+				pos = child;
+			}
+		}
+		scores[pos] = score;
+		indices[pos] = row;
+	}
+	const matches: { index: number; fit: TasteFit }[] = [];
+	for (let i = 0; i < size; i++) {
+		const index = indices[i] ?? 0,
+			fit = scoreTasteCandidate(matrix.subarray(index * RANK_SIZE, (index + 1) * RANK_SIZE), model);
+		if (fit) matches.push({ index, fit });
+	}
+	return matches.sort((a, b) => a.fit.score - b.fit.score || a.index - b.index);
 }
 
 /** Returns a corrected copy; learned spread/confidence remain evidence-based, not changed by a correction. */

@@ -2,7 +2,7 @@ import { cpus } from 'node:os';
 import { GRID, RANK_GRID, RANK_SIZE } from '../src/core/grid.ts';
 import { rankPacked } from '../src/core/analysis/distance.ts';
 import { makeWeights } from '../src/core/analysis/weights.ts';
-import { buildTasteModel, rankTasteCandidates, type RatedItem } from '../src/core/analysis/taste.ts';
+import { buildTasteModel, rankTastePacked, type RatedItem } from '../src/core/analysis/taste.ts';
 import { equalizerResponse, type Filter } from '../src/core/analysis/biquad.ts';
 import { fitPeq } from '../src/core/analysis/peq.ts';
 
@@ -19,10 +19,9 @@ for (let row = 0; row < n; row++)
 	}
 const weights = makeWeights(RANK_GRID),
 	reference = matrix.subarray(0, RANK_SIZE);
-const curves = Array.from({ length: n }, (_, i) => matrix.subarray(i * RANK_SIZE, (i + 1) * RANK_SIZE));
 const rated: RatedItem[] = [0, 1, 2, 300, 700].map((row, i) => ({
 	id: String(row),
-	curve: curves[row] ?? reference,
+	curve: matrix.subarray(row * RANK_SIZE, (row + 1) * RANK_SIZE),
 	rating: i < 3 ? 'like' : 'dislike',
 	strength: 1,
 	soundRelated: true,
@@ -48,7 +47,7 @@ console.log(
 );
 // Warm up each distinct path outside the measured region.
 rankPacked(matrix, reference, 20, { weights });
-rankTasteCandidates(curves.slice(0, 100), model);
+rankTastePacked(matrix, model);
 fitPeq(flat, target);
 time(
 	'single-reference rank (30000 candidates)',
@@ -58,7 +57,7 @@ time(
 time(
 	'taste rank (30000 candidates, 3 likes + 2 dislikes)',
 	n,
-	() => rankTasteCandidates(curves, model)[0]?.fit.score ?? 0
+	() => rankTastePacked(matrix, model)[0]?.fit.score ?? 0
 );
 time('PEQ fit (1 curve)', 1, () => fitPeq(flat, target)?.residualDistanceDb ?? 0);
 time('PEQ fit (50 curves)', 50, () => {
