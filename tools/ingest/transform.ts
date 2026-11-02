@@ -102,6 +102,22 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 	};
 }
 
+/** Connected near-name candidates for human audit only; never used to assign product identity. */
+export function collisionGroups(products: { id: string; brand: string; model: string }[]): string[][] {
+	const groups = new Map<string, Set<string>>();
+	for (const { left, right } of suspiciousNames(products)) {
+		const a = groups.get(left) ?? new Set([left]);
+		const b = groups.get(right) ?? new Set([right]);
+		for (const id of b) a.add(id);
+		for (const id of a) groups.set(id, a);
+	}
+	const names = new Map(products.map((p) => [p.id, `${p.brand} ${p.model}`]));
+	return [...new Set(groups.values())]
+		.map((ids) => [...ids].map((id) => names.get(id) ?? id).sort())
+		.sort((a, b) => b.length - a.length || (a[0] ?? '').localeCompare(b[0] ?? '', 'en'))
+		.slice(0, 20);
+}
+
 /** Edit-distance candidates are audit suggestions ONLY; no fuzzy identity merges. */
 export function suspiciousNames(
 	products: { id: string; brand: string; model: string }[]

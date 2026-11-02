@@ -40,7 +40,15 @@ import {
 	sha256,
 	unwanted
 } from './common.ts';
-import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
+import {
+	collisionGroups,
+	identity,
+	normalise,
+	sourceFor,
+	suspiciousNames,
+	usdPrice,
+	variant
+} from './transform.ts';
 import { publishDataset, removeStaging } from './publish.ts';
 import { medianSpreadByBand, rankStatistics } from './statistics.ts';
 import { referenceTargets } from './targets.ts';
@@ -100,6 +108,14 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const products = new Map<string, Product>();
 	const identities = new Map<string, Set<string>>();
 	const originalIdentities = new Map<string, Set<string>>();
+	const trackIdentity = (product: ReturnType<typeof identity>, originalName: string) => {
+		const names = identities.get(product.id) ?? new Set<string>();
+		names.add(originalName);
+		identities.set(product.id, names);
+		const originals = originalIdentities.get(product.id) ?? new Set<string>();
+		originals.add(product.originalKey);
+		originalIdentities.set(product.id, originals);
+	};
 	const unmatchedBrands = new Set<string>();
 	const sources: Source[] = [];
 	const partitions = new Map<string, PartitionCurve[]>();
@@ -252,6 +268,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const product = identity(phone.brand, phone.name, source.form, aliases, productAliases);
 				const id = `m-${sha256(`${db.id}\0${product.id}\0${file}\0${index}`).slice(0, 20)}`;
 				if (acceptedIds.has(id)) {
+					trackIdentity(product, `${phone.brand} ${phone.name}`);
 					reject(file, 'duplicate normalised identity/file/index; first accepted entry retained');
 					continue;
 				}
@@ -392,12 +409,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					products.set(p.id, p);
 				}
 				p.measurementIds.push(id);
-				const names = identities.get(p.id) ?? new Set<string>();
-				names.add(`${phone.brand} ${phone.name}`);
-				identities.set(p.id, names);
-				const originals = originalIdentities.get(p.id) ?? new Set<string>();
-				originals.add(product.originalKey);
-				originalIdentities.set(p.id, originals);
+				trackIdentity(product, `${phone.brand} ${phone.name}`);
 				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
 				const group = partitions.get(source.partition) ?? [];
 				group.push({
@@ -509,6 +521,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
 	const productsBefore = [...originalIdentities.values()].reduce((n, ids) => n + ids.size, 0);
+	const remainingCollisionGroups = collisionGroups(sortedProducts);
 	const identityMerges = {
 		productsBefore,
 		productsAfter: products.size,
@@ -560,6 +573,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				sourcesIncluded: sources.length,
 				products: products.size,
 				identityMerges,
+				remainingCollisionGroups,
 				measurements: partitionMetadata.map((p) => ({ partition: p.id, count: p.measurementCount })),
 				files: manifest.files,
 				unmatchedBrands: [...unmatchedBrands].sort(),
@@ -577,6 +591,9 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	);
 	console.log(
 		`Identity: ${identityMerges.merged} products merged (${productsBefore} before, ${products.size} after)`
+	);
+	console.log(
+		`Top remaining identity collision candidates (not merged): ${JSON.stringify(remainingCollisionGroups.slice(0, 5))}`
 	);
 }
 

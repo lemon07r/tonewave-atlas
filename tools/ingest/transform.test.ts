@@ -13,7 +13,15 @@ import {
 	supportedChannels,
 	unwanted
 } from './common.ts';
-import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
+import {
+	collisionGroups,
+	identity,
+	normalise,
+	sourceFor,
+	suspiciousNames,
+	usdPrice,
+	variant
+} from './transform.ts';
 import { compressPack, computePartitionStatistics } from './build.ts';
 import { decodePack, decompressGzip } from '#core/dataset/codec.ts';
 
@@ -107,6 +115,15 @@ describe('source transforms', () => {
 		expect(variant(phone, 1, 'm-456')).toMatchObject({ kind: 'fit', label: '(foam tips)' });
 		expect(variant(phone, 2, 'm-789').kind).toBe('tuning');
 		expect(book.warnings).toHaveLength(1);
+	});
+	it('groups near-name audit candidates without changing their separate identities', () => {
+		const products = [
+			{ id: 'a', brand: 'Brand', model: 'Reference' },
+			{ id: 'b', brand: 'Brand', model: 'Referenc' },
+			{ id: 'c', brand: 'Other', model: 'Reference' }
+		];
+		expect(collisionGroups(products)).toEqual([['Brand Referenc', 'Brand Reference']]);
+		expect(products).toHaveLength(3);
 	});
 	it('normalises spelling only, and reports rather than merges near names', () => {
 		expect(normalise('SÓFT Ears')).toBe('softears');

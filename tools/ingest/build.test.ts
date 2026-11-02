@@ -86,6 +86,26 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('counts identity merges even when the same file/index becomes a duplicate measurement', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: 'Model' },
+							{ name: 'Brand Model', file: 'Model' }
+						]
+					}
+				])
+			]
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.measurements).toHaveLength(1);
+		expect(report.identityMerges).toEqual({ productsBefore: 2, productsAfter: 1, merged: 1 });
+	});
 	it('reports actual brand-prefix and explicit alias product merges', async () => {
 		const { paths } = await fixture('', [
 			[
