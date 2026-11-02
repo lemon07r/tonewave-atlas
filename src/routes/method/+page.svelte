@@ -63,8 +63,7 @@
 >
 <div class="page method">
 	<div class="page-heading">
-		<p class="eyebrow">Method / A note on evidence</p>
-		<h1>A map is not the music.</h1>
+		<h1>How matching works.</h1>
 		<p>
 			Frequency response is useful evidence about tonal balance. It is not a complete description of sound,
 			and it is never a substitute for your own ears.

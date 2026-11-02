@@ -188,7 +188,7 @@
 				axes: [
 					{
 						stroke: ink,
-						grid: { show: current.length === 0, stroke: line, width: 1 },
+						grid: { show: true, stroke: line, width: 0.5 },
 						ticks: { stroke: line, width: 1, size: 5 },
 						splits: () => FREQUENCY_TICKS,
 						// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
@@ -201,7 +201,7 @@
 					},
 					{
 						stroke: ink,
-						grid: { stroke: line, width: 1 },
+						grid: { stroke: line, width: 1, dash: [2, 4] },
 						ticks: { show: false },
 						values: (_, splits) => splits.map((value) => `${value}`),
 						font: '11px "IBM Plex Mono"',
@@ -215,7 +215,7 @@
 					...current.map((curve, index) => ({
 						label: curve.label,
 						stroke: colours[index] ?? ink,
-						width: curve.reference ? 1.5 : 2,
+						width: curve.reference ? 2 : 2.4,
 						dash: dash(curve.index, curve.reference),
 						show: !invisible.includes(curve.id),
 						spanGaps: false,
@@ -475,7 +475,9 @@
 								stroke-width="2"
 								stroke-dasharray={dash(curve.index, curve.reference).join(' ')}
 							/></svg
-						><span class="legend-number">{curve.index + 1}</span><span>{curve.label}</span></button
+						><span class="legend-number">{curve.index + 1}</span><span
+							>{curve.label}{#if curve.reference}<span class="reference-label">Reference</span>{/if}</span
+						></button
 					><span class="legend-value"
 						>{mode === 'difference' ? 'Δ ' : ''}{dbLabel(curve.data[readIndex], mode === 'difference')}
 						<span class="muted">dB</span></span

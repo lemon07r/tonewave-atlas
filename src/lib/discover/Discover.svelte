@@ -110,6 +110,13 @@
 			}))
 	);
 	let selectedProduct = $derived(products.find((p) => p.id === urlState.ref));
+	let starting = $derived(urlState.mode === 'similar' && !urlState.ref);
+	let examples = $derived(
+		(form === 'iem'
+			? ['Truthear Hexa', 'Moondrop Chu 2', 'Etymotic ER2SE']
+			: ['Sennheiser HD 600', 'Sennheiser HD 650', 'Hifiman Sundara']
+		).flatMap((name) => products.filter((product) => `${product.brand} ${product.model}` === name))
+	);
 	let referenceId = $derived(urlState.ref);
 	let activeResult = $derived(urlState.mode === 'similar' ? similar : taste);
 	let effectiveOverlays = $derived(
@@ -415,48 +422,63 @@
 	});
 </script>
 
-<div class="page discover">
+<div class={['page discover', { starting }]}>
+	<div class="page-heading">
+		<h1>
+			{starting
+				? `Find ${form === 'iem' ? 'IEMs' : 'headphones'} that sound like yours.`
+				: 'Find a similar sound.'}
+		</h1>
+		<p>Choose a reference. Find the closest measured matches, then compare what changes.</p>
+	</div>
 	<div class="discover-grid">
 		<section class="discovery-column" aria-label="Discover measured matches">
-			<div class="page-heading">
-				<p class="eyebrow">A listening atlas, not a leaderboard</p>
-				<h1>Find {form === 'iem' ? 'IEMs' : 'headphones'} that<br />sound like…</h1>
-				<p>Start with something you know. Compare measured response, not a promise of what you will hear.</p>
-			</div>
-			<SegmentedControl
-				label="Discovery mode"
-				options={[
-					{ value: 'similar', label: form === 'iem' ? 'Similar to one IEM' : 'Similar to one headphone' },
-					{ value: 'profile', label: 'Match my taste profile' }
-				]}
-				value={urlState.mode}
-				onchange={(value) => {
-					query = '';
-					changeUrl({
-						mode: value === 'profile' ? 'profile' : undefined,
-						rig: undefined,
-						chart: undefined,
-						sources: undefined
-					});
-				}}
-			/>
-			<div class="search">
-				<SearchCombobox
-					items={choices}
-					label={urlState.mode === 'profile'
-						? `Add ${form === 'iem' ? 'an IEM' : 'a headphone'} to your profile`
-						: form === 'iem'
-							? 'An IEM you enjoy'
-							: 'A headphone you enjoy'}
-					placeholder="Search by brand or model"
-					bind:query
-					loading={catalogLoading}
-					filter={false}
-					shortcut
-					onselect={choose}
+			<div class="entry">
+				<SegmentedControl
+					label="Discovery mode"
+					options={[
+						{ value: 'similar', label: form === 'iem' ? 'Similar to one IEM' : 'Similar to one headphone' },
+						{ value: 'profile', label: 'Match my taste profile' }
+					]}
+					value={urlState.mode}
+					onchange={(value) => {
+						query = '';
+						changeUrl({
+							mode: value === 'profile' ? 'profile' : undefined,
+							rig: undefined,
+							chart: undefined,
+							sources: undefined
+						});
+					}}
 				/>
-				<p class="search-note">Matches use measurements from the same rig family.</p>
+				<div class="search">
+					<SearchCombobox
+						items={choices}
+						label={urlState.mode === 'profile'
+							? `Add ${form === 'iem' ? 'an IEM' : 'a headphone'} to your profile`
+							: form === 'iem'
+								? 'An IEM you enjoy'
+								: 'A headphone you enjoy'}
+						placeholder="Search by brand or model"
+						bind:query
+						loading={catalogLoading}
+						filter={false}
+						shortcut
+						onselect={choose}
+					/>
+					<p class="search-note">Search the measured catalog. Matches stay within the same rig family.</p>
+				</div>
 			</div>
+			{#if starting}<div class="start-guide">
+					<h2>One familiar pair is enough.</h2>
+					<p>Search for something you have heard, or choose an example to explore how matching works.</p>
+					<ol>
+						<li>Choose your reference</li>
+						<li>Read the measured differences</li>
+						<li>Compare the curves</li>
+					</ol>
+					<a href={resolve('/explore')}>Browse the catalog <span aria-hidden="true">↗</span></a>
+				</div>{/if}
 			{#if catalogError}<Notice kind="caution">Catalog unavailable: {catalogError}</Notice>{/if}
 			{#if urlState.mode === 'similar' && urlState.ref}<div class="reference">
 					<h2>{nameFor(urlState.ref)}</h2>
@@ -465,39 +487,42 @@
 							? rigLabel(similar?.partition ?? urlState.rig, summary?.sources)
 							: 'automatic rig selection'}
 					</p>
-					{#if (selectedProduct?.partitions.length ?? 0) > 1}<label class="field-label"
-							>Measurement rig<select
-								class="text-input"
-								value={urlState.rig}
-								onchange={(event) => {
-									changeUrl({
-										rig: event.currentTarget.value,
-										m: undefined,
-										chart: undefined,
-										sources: undefined
-									});
-								}}
-								><option value=""
-									>Automatic{similar ? ` · ${rigLabel(similar.partition, summary?.sources)}` : ''}</option
-								>{#each selectedProduct?.partitions ?? [] as partition (partition)}<option value={partition}
-										>{rigLabel(partition, summary?.sources)}</option
-									>{/each}</select
-							></label
-						>{/if}
-					{#if referenceDetail}<label class="field-label"
-							>Reference measurement<select
-								class="text-input"
-								value={urlState.measurement}
-								onchange={(event) => {
-									changeUrl({ m: event.currentTarget.value, chart: undefined });
-								}}
-								><option value="">Default product consensus</option
-								>{#each referenceDetail.measurements.filter((m) => m.measurement.partition === (similar?.partition ?? (urlState.rig || selectedProduct?.partitions[0]))) as measurement (measurement.measurement.id)}<option
-										value={measurement.measurement.id}
-										>{measurement.source.name} · {measurement.measurement.variant.label}</option
-									>{/each}</select
-							></label
-						>{/if}
+					<details class="reference-settings">
+						<summary>Measurement settings</summary>
+						{#if (selectedProduct?.partitions.length ?? 0) > 1}<label class="field-label"
+								>Measurement rig<select
+									class="text-input"
+									value={urlState.rig}
+									onchange={(event) => {
+										changeUrl({
+											rig: event.currentTarget.value,
+											m: undefined,
+											chart: undefined,
+											sources: undefined
+										});
+									}}
+									><option value=""
+										>Automatic{similar ? ` · ${rigLabel(similar.partition, summary?.sources)}` : ''}</option
+									>{#each selectedProduct?.partitions ?? [] as partition (partition)}<option value={partition}
+											>{rigLabel(partition, summary?.sources)}</option
+										>{/each}</select
+								></label
+							>{/if}
+						{#if referenceDetail}<label class="field-label"
+								>Reference measurement<select
+									class="text-input"
+									value={urlState.measurement}
+									onchange={(event) => {
+										changeUrl({ m: event.currentTarget.value, chart: undefined });
+									}}
+									><option value="">Default product consensus</option
+									>{#each referenceDetail.measurements.filter((m) => m.measurement.partition === (similar?.partition ?? (urlState.rig || selectedProduct?.partitions[0]))) as measurement (measurement.measurement.id)}<option
+											value={measurement.measurement.id}
+											>{measurement.source.name} · {measurement.measurement.variant.label}</option
+										>{/each}</select
+								></label
+							>{/if}
+					</details>
 				</div>{/if}
 			{#if referenceError && urlState.mode === 'similar'}<Notice kind="caution">{referenceError}</Notice>{/if}
 			{#if urlState.mode === 'profile'}<section class="profile" aria-label="Your taste profile">
@@ -541,124 +566,130 @@
 							fit/comfort-only ratings do not inform measured sound.</Notice
 						>{/if}
 				</section>{/if}
-			<div class="controls">
-				{#if urlState.mode === 'similar'}<SegmentedControl
-						label="Matching focus"
-						options={[
-							{ value: 'balanced', label: 'Balanced' },
-							{ value: 'bass', label: 'Bass' },
-							{ value: 'vocals', label: 'Vocals' },
-							{ value: 'treble', label: 'Treble' }
-						]}
-						value={urlState.focus}
-						onchange={(value: Focus) => {
-							changeUrl({ focus: value === 'balanced' ? undefined : value }, true);
-						}}
-					/>{/if}
-				<label class="budget field-label"
-					>Maximum listed price (USD)<input
-						class="text-input"
-						type="number"
-						min="0"
-						step="1"
-						placeholder="No limit"
-						value={urlState.max ?? ''}
-						onchange={(event) => {
-							changeUrl(
-								{
-									max:
-										event.currentTarget.value &&
-										Number.isFinite(event.currentTarget.valueAsNumber) &&
-										event.currentTarget.valueAsNumber >= 0
-											? String(event.currentTarget.valueAsNumber)
-											: undefined
-								},
-								true
-							);
-						}}
-					/></label
-				>
-				<p class="small muted">With a budget, products without a published USD price are excluded.</p>
-				<Toggle
-					label="Include separate tunings"
-					checked={urlState.tunings}
-					onchange={(checked: boolean) => {
-						changeUrl({ tunings: checked ? '1' : undefined }, true);
-					}}
-				/>
-				<Disclosure label="Advanced matching">
-					{#if urlState.mode === 'similar'}<Toggle
-							label="Treble-sensitive matching"
-							checked={urlState.alpha !== undefined}
+			{#if !starting}<details class="refine">
+					<summary>Refine matches <span>Focus, budget &amp; sources</span></summary>
+					<div class="controls">
+						{#if urlState.mode === 'similar'}<SegmentedControl
+								label="Matching focus"
+								options={[
+									{ value: 'balanced', label: 'Balanced' },
+									{ value: 'bass', label: 'Bass' },
+									{ value: 'vocals', label: 'Vocals' },
+									{ value: 'treble', label: 'Treble' }
+								]}
+								value={urlState.focus}
+								onchange={(value: Focus) => {
+									changeUrl({ focus: value === 'balanced' ? undefined : value }, true);
+								}}
+							/>{/if}
+						<label class="budget field-label"
+							>Maximum listed price (USD)<input
+								class="text-input"
+								type="number"
+								min="0"
+								step="1"
+								placeholder="No limit"
+								value={urlState.max ?? ''}
+								onchange={(event) => {
+									changeUrl(
+										{
+											max:
+												event.currentTarget.value &&
+												Number.isFinite(event.currentTarget.valueAsNumber) &&
+												event.currentTarget.valueAsNumber >= 0
+													? String(event.currentTarget.valueAsNumber)
+													: undefined
+										},
+										true
+									);
+								}}
+							/></label
+						>
+						<p class="small muted">With a budget, products without a published USD price are excluded.</p>
+						<Toggle
+							label="Include separate tunings"
+							checked={urlState.tunings}
 							onchange={(checked: boolean) => {
-								changeUrl({ alpha: checked ? '2' : undefined }, true);
+								changeUrl({ tunings: checked ? '1' : undefined }, true);
 							}}
 						/>
-						<p class="small muted">
-							Penalises extra measured energy from 2–10 kHz; directional matching, not a hearing diagnosis.
-						</p>
-						{#if urlState.alpha !== undefined}<Slider
-								label="Extra-treble penalty α"
-								min={1}
-								max={4}
-								step={0.25}
-								value={urlState.alpha}
-								onchange={(value: number) => {
-									changeUrl({ alpha: String(value) }, true);
-								}}
-							/>{/if}{/if}
-					{#if urlState.mode === 'profile' && summary}<label class="field-label"
-							>Taste measurement rig<select
-								class="text-input"
-								value={urlState.rig}
-								onchange={(event) => {
-									changeUrl({ rig: event.currentTarget.value, chart: undefined, sources: undefined });
-								}}
-								><option value=""
-									>Automatic{taste ? ` · ${rigLabel(taste.partition, summary.sources)}` : ''}</option
-								>{#each summary.partitions.filter((p) => p.form === form) as partition (partition.id)}<option
-										value={partition.id}>{rigLabel(partition.id, summary.sources)}</option
-									>{/each}</select
-							></label
-						>{/if}
-					<fieldset class="source-filter">
-						<legend class="field-label">Sources (none selected means all)</legend
-						>{#each summary?.sources.filter((s) => s.form === form && (!activeResult || s.partition === activeResult.partition)) ?? [] as source (source.id)}<label
-								><input
-									type="checkbox"
-									checked={urlState.sources.includes(source.id)}
-									onchange={(event) => {
-										changeUrl(
-											{
-												sources: (event.currentTarget.checked
-													? [...urlState.sources, source.id]
-													: urlState.sources.filter((s) => s !== source.id)
-												).join(',')
-											},
-											true
-										);
+						<Disclosure label="Advanced matching">
+							{#if urlState.mode === 'similar'}<Toggle
+									label="Treble-sensitive matching"
+									checked={urlState.alpha !== undefined}
+									onchange={(checked: boolean) => {
+										changeUrl({ alpha: checked ? '2' : undefined }, true);
 									}}
-								/>{source.name}</label
-							>{/each}
-					</fieldset>
-					{#if urlState.mode === 'profile' && taste}<p class="small muted">
-							Corrections shift derived centres, not the learned statements or confidence. Units: dB.
-						</p>
-						{#each taste.model.tastes as target (target.id)}<fieldset class="corrections">
-								<legend>Taste {target.id + 1} corrections</legend>{#each BANDS as band (band.id)}<Slider
-										label={`Taste ${target.id + 1} ${bandLabels[band.id]}`}
-										min={-4}
+								/>
+								<p class="small muted">
+									Penalises extra measured energy from 2–10 kHz; directional matching, not a hearing
+									diagnosis.
+								</p>
+								{#if urlState.alpha !== undefined}<Slider
+										label="Extra-treble penalty α"
+										min={1}
 										max={4}
-										step={0.5}
-										unit="dB"
-										value={currentCorrections[target.id]?.[band.id] ?? 0}
+										step={0.25}
+										value={urlState.alpha}
 										onchange={(value: number) => {
-											correct(target.id, band.id, value);
+											changeUrl({ alpha: String(value) }, true);
 										}}
-									/>{/each}
-							</fieldset>{/each}{/if}
-				</Disclosure>
-			</div>
+									/>{/if}{/if}
+							{#if urlState.mode === 'profile' && summary}<label class="field-label"
+									>Taste measurement rig<select
+										class="text-input"
+										value={urlState.rig}
+										onchange={(event) => {
+											changeUrl({ rig: event.currentTarget.value, chart: undefined, sources: undefined });
+										}}
+										><option value=""
+											>Automatic{taste ? ` · ${rigLabel(taste.partition, summary.sources)}` : ''}</option
+										>{#each summary.partitions.filter((p) => p.form === form) as partition (partition.id)}<option
+												value={partition.id}>{rigLabel(partition.id, summary.sources)}</option
+											>{/each}</select
+									></label
+								>{/if}
+							<fieldset class="source-filter">
+								<legend class="field-label">Sources (none selected means all)</legend
+								>{#each summary?.sources.filter((s) => s.form === form && (!activeResult || s.partition === activeResult.partition)) ?? [] as source (source.id)}<label
+										><input
+											type="checkbox"
+											checked={urlState.sources.includes(source.id)}
+											onchange={(event) => {
+												changeUrl(
+													{
+														sources: (event.currentTarget.checked
+															? [...urlState.sources, source.id]
+															: urlState.sources.filter((s) => s !== source.id)
+														).join(',')
+													},
+													true
+												);
+											}}
+										/>{source.name}</label
+									>{/each}
+							</fieldset>
+							{#if urlState.mode === 'profile' && taste}<p class="small muted">
+									Corrections shift derived centres, not the learned statements or confidence. Units: dB.
+								</p>
+								{#each taste.model.tastes as target (target.id)}<fieldset class="corrections">
+										<legend>Taste {target.id + 1} corrections</legend>{#each BANDS as band (band.id)}<Slider
+												label={`Taste ${target.id + 1} ${bandLabels[band.id]}`}
+												min={-4}
+												max={4}
+												step={0.5}
+												unit="dB"
+												value={currentCorrections[target.id]?.[band.id] ?? 0}
+												onchange={(value: number) => {
+													correct(target.id, band.id, value);
+												}}
+											/>{/each}
+									</fieldset>{/each}{/if}
+						</Disclosure>
+					</div>
+				</details>{/if}
+		</section>
+		{#snippet resultContent()}
 			<section class="results" id="discover-results" aria-label="Measured matches" aria-busy={loading}>
 				<div class="section-heading">
 					<h2>{urlState.mode === 'similar' ? 'Similar sound' : 'Taste matches'}</h2>
@@ -751,33 +782,68 @@
 						</div>{/if}
 				{/if}
 			</section>
-		</section>
-		<aside class="chart-column" id="discover-chart" aria-label="Reference and match chart">
-			<a class="chart-jump return-link" href="#discover-results">Back to matches</a>
-			<FrChart
-				{series}
-				baselineId={urlState.mode === 'similar' ? 'reference' : `taste-${taste?.model.tastes[0]?.id ?? 0}`}
-				emptyText={urlState.mode === 'profile'
-					? 'No derived centre yet — add a sound-related Like or Love.'
-					: `No curve yet — pick ${form === 'iem' ? 'an IEM' : 'a headphone'} to see its measured response.`}
-			/>
-			{#if chartLoading}<p role="status" class="chart-note">
-					Loading display curves…
-				</p>{/if}{#if chartError}<Notice kind="caution">Chart unavailable: {chartError}</Notice>{/if}
-			{#if series.length}<p class="chart-note">
-					Display curves are level-aligned to the first curve (weighted least squares on the full grid).
-					Measured products use detail data; taste centres are derived, interpolated model curves, not
-					measurements. Above 8 kHz is less reliable.
+		{/snippet}
+		{#if starting}
+			<aside class="starting-examples" aria-label="Example references">
+				<div class="examples-heading">
+					<h2>Try a measured {form === 'iem' ? 'IEM' : 'headphone'}</h2>
+					<p>Choose one to start a real search.</p>
+				</div>
+				{#if catalogLoading}<p class="small muted" role="status">Loading example references…</p>{/if}
+				{#each examples as product, index (product.id)}
+					<button
+						class="example"
+						type="button"
+						onclick={() => {
+							choose({ ...product, label: `${product.brand} ${product.model}` });
+						}}
+					>
+						<span class="example-index">{String(index + 1).padStart(2, '0')}</span>
+						<span class="example-name"
+							><span class="example-brand">{product.brand}</span><strong>{product.model}</strong><span
+								class="example-sources"
+								>{product.sourceCount} measured {product.sourceCount === 1 ? 'source' : 'sources'}</span
+							></span
+						>
+						<span class="example-arrow" aria-hidden="true">→</span>
+					</button>
+				{/each}
+				<p class="example-note">
+					Examples are starting points, not recommendations. Your reference is only set when you select it.
 				</p>
-				<details class="chart-sources">
-					<summary>Curve sources</summary>
-					<ul>
-						{#each provenance as source (source.url)}<li>
-								<a href={source.url} target="_blank" rel="external noreferrer">{source.label}</a>
-							</li>{/each}
-					</ul>
-				</details>{/if}
-		</aside>
+			</aside>
+		{:else}
+			<aside class="chart-column" id="discover-chart" aria-label="Reference and match chart">
+				<a class="chart-jump return-link" href="#discover-results">Go to matches</a>
+				<FrChart
+					{series}
+					baselineId={urlState.mode === 'similar' ? 'reference' : `taste-${taste?.model.tastes[0]?.id ?? 0}`}
+					emptyText={urlState.mode === 'profile'
+						? 'No derived centre yet — add a sound-related Like or Love.'
+						: `No curve yet — pick ${form === 'iem' ? 'an IEM' : 'a headphone'} to see its measured response.`}
+				/>
+				{#if chartLoading}<p role="status" class="chart-note">
+						Loading display curves…
+					</p>{/if}{#if chartError}<Notice kind="caution">Chart unavailable: {chartError}</Notice>{/if}
+				{#if series.length}<details class="chart-display">
+						<summary>Alignment &amp; reliability</summary>
+						<p class="chart-note">
+							Display curves are level-aligned to the first curve (weighted least squares on the full grid).
+							Measured products use detail data; taste centres are derived, interpolated model curves, not
+							measurements. Above 8 kHz is less reliable.
+						</p>
+					</details>
+					<details class="chart-sources">
+						<summary>Curve sources</summary>
+						<ul>
+							{#each provenance as source (source.url)}<li>
+									<a href={source.url} target="_blank" rel="external noreferrer">{source.label}</a>
+								</li>{/each}
+						</ul>
+					</details>{/if}
+			</aside>
+			{@render resultContent()}
+		{/if}
 	</div>
 </div>
 <Toast

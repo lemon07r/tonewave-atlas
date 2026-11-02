@@ -1,0 +1,300 @@
+/* Shared mechanics for the three visual studies. Tokens and composition live in direction.css. */
+body .site-header .header-inner {
+	min-height: 76px;
+}
+body .site-header .wordmark {
+	font-size: 21px;
+	letter-spacing: -0.055em;
+}
+body .site-header .wordmark::before {
+	content: 't/a';
+	font: 12px var(--mono);
+	letter-spacing: -0.07em;
+	color: var(--detail);
+	border-right: 1px solid var(--strong-line);
+	padding-right: 14px;
+	margin-right: 4px;
+}
+body .site-header .desktop-nav a[aria-current='page'] {
+	color: var(--accent);
+}
+body .page.discover .discover-grid {
+	grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+	gap: 0 48px;
+}
+body .page.discover .discovery-column {
+	grid-column: 1;
+	grid-row: 1;
+}
+body .page.discover .chart-column {
+	grid-column: 2;
+	grid-row: 1 / span 2;
+	top: 20px;
+}
+body .page.discover .results {
+	grid-column: 1;
+	grid-row: 2;
+	min-height: 0;
+	margin-top: 24px;
+}
+body .page.discover .page-heading {
+	max-width: none;
+	margin-bottom: 32px;
+}
+body .page.discover:not(.starting) .page-heading h1 {
+	font-size: 44px;
+}
+body .page.discover .search {
+	margin: 22px 0 20px;
+}
+body .page.discover .search .search {
+	margin: 0;
+}
+body .page.discover .search .field-label {
+	font-weight: 600;
+}
+body .page.discover .reference {
+	padding: 16px 0 8px;
+	gap: 6px;
+}
+body .page.discover .reference h2 {
+	font-size: 23px;
+}
+body .page.discover .reference-settings,
+body .page.discover .chart-display,
+body .page.discover .chart-sources {
+	font-size: 12px;
+	color: var(--muted);
+}
+body .page.discover .reference-settings summary,
+body .page.discover .chart-display summary,
+body .page.discover .chart-sources summary {
+	min-height: 36px;
+	padding: 8px 0;
+	cursor: pointer;
+}
+body .page.discover .refine {
+	border-block: 1px solid var(--line);
+	font-size: 14px;
+	margin-top: 12px;
+}
+body .page.discover .refine > summary {
+	padding: 14px 0;
+	cursor: pointer;
+	font-weight: 600;
+}
+body .page.discover .refine > summary span {
+	font-weight: 400;
+	color: var(--muted);
+	font-size: 12px;
+	margin-left: 12px;
+}
+body .page.discover .controls {
+	margin: 0;
+	padding: 12px 0 20px;
+}
+body .page.discover .starting-examples {
+	min-width: 0;
+}
+body .page.discover .examples-heading {
+	margin-bottom: 20px;
+}
+body .page.discover .examples-heading h2 {
+	font-size: 23px;
+}
+body .page.discover .examples-heading p {
+	font-size: 14px;
+	color: var(--muted);
+	margin-top: 6px;
+}
+body .page.discover .example {
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr) auto;
+	gap: 16px;
+	align-items: center;
+	width: 100%;
+	border: 0;
+	border-top: 1px solid var(--line);
+	background: none;
+	text-align: left;
+	padding: 18px 0;
+	color: var(--ink);
+}
+body .page.discover .example:hover,
+body .page.discover .example:focus-visible {
+	background: var(--accent-soft);
+}
+body .page.discover .example-index {
+	font: 11px var(--mono);
+	color: var(--detail);
+	align-self: start;
+	padding-top: 5px;
+}
+body .page.discover .example-name {
+	display: grid;
+	gap: 2px;
+}
+body .page.discover .example-brand,
+body .page.discover .example-sources {
+	font-size: 12px;
+	color: var(--muted);
+}
+body .page.discover .example-name strong {
+	font-weight: 550;
+	font-size: 26px;
+	line-height: 1.2;
+}
+body .page.discover .example-arrow {
+	font-size: 26px;
+	color: var(--accent);
+}
+body .page.discover .example-note {
+	font-size: 12px;
+	color: var(--muted);
+	margin-top: 12px;
+	max-width: 46ch;
+}
+body .page.discover .start-guide {
+	padding-top: 24px;
+	margin-top: 24px;
+	border-top: 1px solid var(--line);
+}
+body .page.discover .start-guide h2 {
+	font-size: 23px;
+}
+body .page.discover .start-guide p {
+	max-width: 44ch;
+	font-size: 14px;
+	color: var(--muted);
+	margin-top: 10px;
+}
+body .page.discover .start-guide ol {
+	padding-left: 20px;
+	font-size: 13px;
+	line-height: 2;
+	margin: 18px 0;
+}
+body .page.discover .start-guide a {
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 36px;
+	font-size: 14px;
+}
+body .fr-chart {
+	border-radius: 0;
+}
+body .fr-chart .chart-heading h2 {
+	font-size: 20px;
+}
+body .fr-chart .legend {
+	border-top: 1px solid var(--line);
+	padding-top: 8px;
+}
+body .fr-chart .legend-row {
+	border-bottom: 1px solid var(--line);
+	padding-block: 4px;
+}
+body .fr-chart .legend-row button {
+	font-size: 12px;
+	line-height: 1.5;
+}
+body .fr-chart .legend-row .reference-label {
+	display: block;
+	color: var(--muted);
+	font-size: 10px;
+	font-family: var(--mono);
+}
+body .fr-chart .axis-label,
+body .fr-chart .x-label {
+	font-family: var(--mono);
+	font-size: 10px;
+}
+body .result-row .result-brand {
+	display: block;
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 450;
+	letter-spacing: 0.02em;
+}
+body .result-row .result-model {
+	font-size: 23px;
+	letter-spacing: -0.03em;
+}
+body .result-row .distance {
+	font-size: 25px;
+	letter-spacing: -0.06em;
+}
+body .result-row .distance > span {
+	font-size: 11px;
+	letter-spacing: 0;
+}
+body .result-row .description {
+	font-size: 13px;
+	line-height: 1.7;
+}
+body .result-row .actions button {
+	text-decoration: none;
+	padding: 4px 10px;
+	border: 1px solid var(--strong-line);
+	font-weight: 550;
+}
+body .result-row .actions button[aria-pressed='true'] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-ink);
+}
+body .result-row .actions {
+	margin-top: 12px;
+}
+body .result-row details {
+	margin-top: 6px;
+}
+@media (max-width: 900px) {
+	body .page.discover .discover-grid {
+		grid-template-columns: 1fr;
+		gap: 28px;
+	}
+	body .page.discover .chart-column,
+	body .page.discover .discovery-column,
+	body .page.discover .results {
+		grid-column: 1;
+		grid-row: auto;
+		position: static;
+	}
+	body .page.discover .results {
+		margin-top: 0;
+	}
+}
+@media (max-width: 640px) {
+	body .site-header .wordmark {
+		font-size: 20px;
+	}
+	body .site-header .wordmark::before {
+		display: none;
+	}
+	body .site-header .header-inner {
+		min-height: 64px;
+	}
+	body .page.discover .page-heading {
+		margin-bottom: 26px;
+	}
+	body .page.discover:not(.starting) .page-heading h1 {
+		font-size: 35px;
+	}
+	body .page.discover .start-guide ol {
+		display: none;
+	}
+	body .page.discover .refine > summary span {
+		display: none;
+	}
+	body .result-row .result-model {
+		font-size: 21px;
+	}
+	body .fr-chart .legend-row button {
+		font-size: 11px;
+	}
+	body .fr-chart .legend-row button svg {
+		width: 32px;
+	}
+}
