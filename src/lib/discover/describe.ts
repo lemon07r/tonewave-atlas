@@ -1,6 +1,7 @@
 import type { Band } from '#core/analysis/common.ts';
 import type { BandDistance } from '#core/analysis/distance.ts';
 import type { CandidateInfo } from '#core/atlas/types.ts';
+import { dateLabel } from '#lib/product/data.ts';
 
 const WORDING = { omit: 0.75, slight: 2, much: 4 } as const;
 export const bandLabels: Record<Band, string> = {
@@ -50,10 +51,8 @@ export function priceLines(candidate: CandidateInfo): string[] {
 		...new Set(
 			candidate.prices.flatMap((price) => {
 				const source = candidate.sources.find((source) => source.id === price.sourceId);
-				const date = new Date(price.crawledAt);
-				if (price.usd === null || !Number.isFinite(price.usd) || !source || !Number.isFinite(date.getTime()))
-					return [];
-				const month = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+				if (price.usd === null || !Number.isFinite(price.usd) || !source) return [];
+				const month = dateLabel(price.crawledAt);
 				return [
 					`$${price.usd.toLocaleString('en-US', { maximumFractionDigits: 2 })} listed by ${source.name}, ${month}`
 				];

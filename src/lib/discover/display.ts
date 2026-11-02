@@ -5,6 +5,7 @@ import { responseDistance } from '#core/analysis/distance.ts';
 import { makeWeights } from '#core/analysis/weights.ts';
 import { GRID } from '#core/grid.ts';
 import { rigLabel } from '#lib/rigs.ts';
+import { AsyncLru } from '#lib/analysis/cache.ts';
 
 export interface CurveSource {
 	label: string;
@@ -14,19 +15,18 @@ export interface DisplayCurve {
 	series: FrSeries;
 	sources: CurveSource[];
 }
-const details = new Map<string, Promise<ProductDetail>>();
+const details = new WeakMap<ReturnType<typeof analysis>, AsyncLru<string, ProductDetail>>();
 export function detail(productId: string): Promise<ProductDetail> {
-	let pending = details.get(productId);
-	if (!pending) {
-		pending = analysis().then(async (service) => {
+	const worker = analysis();
+	let cache = details.get(worker);
+	if (!cache) details.set(worker, (cache = new AsyncLru(8)));
+	return cache.get(productId, () =>
+		worker.then(async (service) => {
 			const result = await service.productDetail(productId);
 			if (!result.ok) throw new Error(result.message);
 			return result;
-		});
-		pending.catch(() => details.delete(productId));
-		details.set(productId, pending);
-	}
-	return pending;
+		})
+	);
 }
 export function curveSources(product: ProductDetail, ids: readonly string[]): CurveSource[] {
 	const unique = new Map<string, CurveSource>();

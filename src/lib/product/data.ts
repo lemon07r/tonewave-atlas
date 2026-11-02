@@ -18,7 +18,7 @@ export function priceListings(
 	return [
 		...new Set(
 			prices.flatMap((price) =>
-				price.usd != null
+				price.usd != null && Number.isFinite(price.usd)
 					? [
 							`$${price.usd.toLocaleString('en-US')} listed by ${sources.find((s) => s.id === price.sourceId)?.name ?? price.sourceId}, ${dateLabel(price.crawledAt)}`
 						]

@@ -43,6 +43,11 @@ test('never converts raw prices or prints an unattributed amount', () => {
 	if (!listing) throw new Error('Test fixture requires a listing');
 	listing.usd = 129;
 	expect(priceLines(candidate)).toEqual(['$129 listed by Database A, Nov 2026']);
+	listing.crawledAt = 'date not provided';
+	expect(priceLines(candidate)).toEqual(['$129 listed by Database A, date not provided']);
+	listing.usd = Infinity;
+	expect(priceLines(candidate)).toEqual([]);
+	listing.usd = 129;
 	listing.sourceId = 'missing';
 	expect(priceLines(candidate)).toEqual([]);
 });

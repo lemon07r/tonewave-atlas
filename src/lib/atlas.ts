@@ -1,6 +1,7 @@
 import { resolve } from '$app/paths';
 import type { Form } from '#core/dataset/types.ts';
 import { getAnalysis, type ProductListItem } from './analysis/client.ts';
+import { AsyncLru } from './analysis/cache.ts';
 
 /**
  * The shared analysis worker for the published dataset. Browser only.
@@ -16,15 +17,12 @@ export function formFromUrl(url: URL): Form {
 	return url.searchParams.get('form') === 'headphones' ? 'headphone' : 'iem';
 }
 
-const lists = new Map<Form, Promise<ProductListItem[]>>();
+const lists = new WeakMap<ReturnType<typeof analysis>, AsyncLru<Form, ProductListItem[]>>();
 
-/** Search list for a form factor, fetched once per page load; failures are retried on the next call. */
+/** Search lists belong to the current worker/dataset generation; failures are retryable. */
 export function productList(form: Form): Promise<ProductListItem[]> {
-	let list = lists.get(form);
-	if (!list) {
-		list = analysis().then((service) => service.products(form));
-		list.catch(() => lists.delete(form));
-		lists.set(form, list);
-	}
-	return list;
+	const worker = analysis();
+	let cache = lists.get(worker);
+	if (!cache) lists.set(worker, (cache = new AsyncLru(2)));
+	return cache.get(form, () => worker.then((service) => service.products(form)));
 }

@@ -17,7 +17,7 @@ export function parseCompare(params: URLSearchParams): CompareState {
 		.filter((id) => !products.includes(id))
 		.slice(0, 6 - products.length);
 	const channel = params.get('ch');
-	const smoothing = Number(params.get('smooth') ?? 12);
+	const smoothing = Number(params.get('smooth')?.trim() || 12);
 	const difference = params.get('diff') ?? '';
 	return {
 		products,

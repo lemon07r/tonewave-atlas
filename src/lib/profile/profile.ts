@@ -3,6 +3,7 @@ import type { DislikeReason, RatedItem } from '#core/analysis/taste.ts';
 import type { Form } from '#core/dataset/types.ts';
 
 export const PROFILE_KEY = 'tonewave.profile.v1';
+export const PROFILE_LIMIT = 200;
 export const reasonLabels: Record<DislikeReason, string> = {
 	'too-much-bass': 'Too much bass',
 	'too-little-bass': 'Too little bass',
@@ -42,15 +43,16 @@ export function parseProfile(text: string): Profile {
 	const result = emptyProfile();
 	for (const form of ['iem', 'headphone'] as const) {
 		const items = data.profiles[form];
-		if (!Array.isArray(items) || items.length > 200)
-			throw new Error('Each form factor must contain at most 200 profile products.');
+		if (!Array.isArray(items) || items.length > PROFILE_LIMIT)
+			throw new Error(`Each form factor must contain at most ${PROFILE_LIMIT} profile products.`);
 		const seen = new Set<string>();
 		for (const item of items as unknown[]) {
 			if (
 				!record(item) ||
 				!id(item.productId) ||
 				seen.has(item.productId) ||
-				!['love', 'like', 'neutral', 'dislike'].includes(String(item.rating)) ||
+				typeof item.rating !== 'string' ||
+				!['love', 'like', 'neutral', 'dislike'].includes(item.rating) ||
 				typeof item.soundRelated !== 'boolean'
 			)
 				throw new Error('Invalid or duplicate profile product, rating or sound-related flag.');

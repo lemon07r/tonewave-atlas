@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { parseCompare, serialiseCompare, type CompareState } from './url.ts';
 
 describe('comparison URL state', () => {
+	it.each(['', ' ', '\t'])('defaults empty smoothing %j without disabling smoothing', (value) => {
+		expect(parseCompare(new URLSearchParams({ smooth: value })).smoothing).toBe(12);
+		expect(parseCompare(new URLSearchParams({ smooth: '0' })).smoothing).toBe(0);
+	});
 	it('round trips products, measurements, channel, smoothing and baseline', () => {
 		const state: CompareState = {
 			products: ['p-one', 'p-two'],

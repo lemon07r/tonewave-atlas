@@ -35,3 +35,17 @@ test('omits non-USD prices and retains source IDs when a summary source is absen
 test('has no price listing when the product has no service prices', () => {
 	expect(priceListings([], [])).toEqual([]);
 });
+
+test('rejects non-finite USD but preserves raw crawl-date evidence', () => {
+	expect(
+		priceListings(
+			[NaN, Infinity, -Infinity, 30].map((usd) => ({
+				raw: '$30',
+				usd,
+				sourceId: 's',
+				crawledAt: 'unknown date'
+			})),
+			[{ id: 's', name: 'Source' }]
+		)
+	).toEqual(['$30 listed by Source, unknown date']);
+});
