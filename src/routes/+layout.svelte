@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import '@fontsource-variable/newsreader';
 	import '#lib/styles/app.css';
 	import '#lib/styles/prototype.css';
 	import '#lib/styles/direction.css';
