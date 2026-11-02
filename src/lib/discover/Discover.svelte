@@ -146,7 +146,7 @@
 	let queryKey = $derived(
 		JSON.stringify({
 			state: { ...settings, overlays: [], corrections },
-			items: items.map((item) => (identity ? canonicalItem(item, identity) : item)),
+			items,
 			topK,
 			...(upload ? { upload: { id: upload.id, rig: upload.rig } } : {})
 		} satisfies QuerySpec)
@@ -155,9 +155,13 @@
 	const errorText = (cause: unknown) =>
 		cause instanceof Error ? cause.message : 'Analysis unavailable. Please try again.';
 	function nameFor(id: string): string {
+		const resolved = result?.data.resolvedIds?.find(
+			(entry) => entry.productId === id || entry.measurementId === id
+		);
 		const product = productFor(
 			products,
-			identity?.measurementProduct(id) ??
+			resolved?.canonicalProductId ??
+				identity?.measurementProduct(id) ??
 				[...resultItems, ...items].find((item) => item.measurementId === id)?.productId ??
 				id,
 			identity
@@ -394,12 +398,16 @@
 	$effect(() => {
 		if (!ready || catalogLoading || catalogError) return;
 		const spec = JSON.parse(queryKey) as QuerySpec;
+		const currentIdentity = identity;
 		controller.invalidate();
 		queryError = undefined;
 		networkError = '';
 		if (
 			!spec.upload &&
-			soundItems(spec.items).some((item) => !products.some((p) => p.id === item.productId))
+			currentIdentity &&
+			soundItems(spec.items).some(
+				(item) => !products.some((p) => p.id === canonicalItem(item, currentIdentity).productId)
+			)
 		) {
 			result = undefined;
 			loading = false;

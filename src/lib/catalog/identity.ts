@@ -1,10 +1,9 @@
-import type { Catalog, Product, Measurement } from '#core/dataset/types.ts';
+import type { Catalog } from '#core/dataset/types.ts';
 
-/** The data lane's additive catalog contract; remove this adapter after its types land. */
-export type IdentityCatalog = {
-	products: readonly Pick<Product, 'id' | 'brand' | 'model'>[];
-	measurements: readonly Pick<Measurement, 'id' | 'productId'>[];
-	redirects?: { products: Record<string, string>; measurements: Record<string, string> };
+/** Compact published-catalog projection used only for URL/profile migration and saved-item labels. */
+export type IdentityCatalog = Pick<Catalog, 'redirects'> & {
+	products: Pick<Catalog['products'][number], 'id' | 'brand' | 'model'>[];
+	measurements: Pick<Catalog['measurements'][number], 'id' | 'productId'>[];
 };
 
 export class CatalogIdentity {
@@ -38,6 +37,3 @@ export class CatalogIdentity {
 		return product ? `${product.brand} ${product.model}` : id;
 	}
 }
-
-// Structural compatibility with current catalogs and the additive data-lane fields.
-export type RedirectCatalog = Catalog & Pick<IdentityCatalog, 'redirects'>;

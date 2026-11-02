@@ -1,5 +1,6 @@
 import { decompressGzip } from '#core/dataset/codec.ts';
-import type { IdentityCatalog, RedirectCatalog } from './identity.ts';
+import type { IdentityCatalog } from './identity.ts';
+import type { Catalog } from '#core/dataset/types.ts';
 import { validationFigures, type ValidationFigure } from '#lib/method/figures.ts';
 
 export interface CatalogMetadata {
@@ -13,7 +14,7 @@ export async function readCatalogMetadata(url: string): Promise<CatalogMetadata>
 	if (!response.ok) throw new Error(`Catalog metadata request failed (${response.status}).`);
 	const bytes = new Uint8Array(await response.arrayBuffer());
 	const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? await decompressGzip(bytes) : bytes;
-	const catalog = JSON.parse(new TextDecoder().decode(decoded)) as RedirectCatalog;
+	const catalog = JSON.parse(new TextDecoder().decode(decoded)) as Catalog;
 	return {
 		identity: {
 			products: catalog.products.map(({ id, brand, model }) => ({ id, brand, model })),

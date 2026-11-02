@@ -29,6 +29,14 @@ function rows(products: number, tilt = 0) {
 }
 
 describe('rank-grid statistics integration', () => {
+	it('rejects unreconciled multiple defaults instead of silently choosing a stable id', () => {
+		const input = rows(2);
+		const first = input[0];
+		if (!first) throw new Error('Missing fixture');
+		expect(() =>
+			statisticsProducts([...input, { ...first, measurement: { ...first.measurement, id: 'another' } }])
+		).toThrow('multiple defaults');
+	});
 	it('records the pooled uncorrected held-out median against an independent linear-slope expectation', () => {
 		const input = rows(3);
 		for (const row of input) {
@@ -64,7 +72,8 @@ describe('rank-grid statistics integration', () => {
 			rank: { values: Float64Array.from(RANK_GRID, (hz) => 100 - 6 * Math.log2(hz / 1000)) }
 		};
 		const single = { ...first, measurement: { ...first.measurement, productId: 'single' } };
-		const expanded = [duplicate, variant, ...original, single];
+		expect(() => statisticsProducts([duplicate, variant, ...original, single])).toThrow('multiple defaults');
+		const expanded = [variant, ...original, single];
 		expect(statisticsProducts(expanded)).toHaveLength(20);
 		expect(statisticsProducts(expanded).every((p) => p.measurements.length === 2)).toBe(true);
 		expect(

@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 import type { Catalog, Manifest } from '../../src/core/dataset/types.ts';
-import type { RedirectCatalog } from '../../src/lib/catalog/identity.ts';
 import { parseProfile, PROFILE_KEY, type WorkspaceItem } from '../../src/lib/profile/profile.ts';
 
 const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest;
@@ -40,7 +39,7 @@ async function redirectFixture(page: Page) {
 		const bytes = await response.body();
 		const data = JSON.parse(
 			(bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString()
-		) as RedirectCatalog;
+		) as Catalog;
 		data.redirects = {
 			products: { ...data.redirects?.products, 'misfiled-hd600': hdId, 'misfiled-mv1': mvId },
 			measurements: { ...data.redirects?.measurements, 'misfiled-headphone-measurement': measurementId }

@@ -1,6 +1,8 @@
 import type { Database, Phone } from './common.ts';
-import { configString, formFor, productAliasKey, record, sha256 } from './common.ts';
+import { configString, formFor, nonProductName, productAliasKey, record, sha256 } from './common.ts';
 import type { Form, Product, Source, Variant } from '#core/dataset/types.ts';
+import { classifyEq, factoryMode } from './eq.ts';
+import { adapterState, cableDescriptor, tipDescriptor, tuningDescriptor } from './variant-labels.ts';
 
 export function normalise(value: string): string {
 	return value
@@ -91,25 +93,156 @@ export class DisplayNames {
 	}
 }
 
-export function variant(phone: Phone, index: number, measurementId: string): Variant {
+/** Credits identify the measurer, not a sample, fit, or voicing. Original filenames stay intact. */
+export function withoutAttribution(text: string): string {
+	return text.replace(/[([]\s*(?:(?:measured|measurement|measurements)\s+)?by\s+[^)\]]+[)\]]/gi, '').trim();
+}
+
+/** S<n> is a sample shorthand only with explicit source evidence or sibling sample numbers. */
+export function sampleContext(phones: readonly Phone[]): ReadonlySet<Phone> {
+	const text = (p: Phone) => [p.name, ...p.file, ...p.suffix].map(withoutAttribution).join(' ');
+	const explicit = phones.some((p) => /\b(?:sample|unit)(?:s?\b|\d)/i.test(text(p)));
+	const key = (p: Phone) => `${normalise(p.brand)}:${normalise(p.name.replace(/\bs[1-9]\b/gi, ''))}`;
+	const groups = Map.groupBy(phones, key);
+	return new Set(
+		phones.filter((p) => {
+			const siblings = groups.get(key(p)) ?? [];
+			const numbers = new Set(
+				siblings.flatMap((q) => [...text(q).matchAll(/\bs([1-9])\b/gi)].map((m) => m[1]))
+			);
+			return explicit || numbers.size > 1;
+		})
+	);
+}
+
+function descriptor(phone: Phone, index: number): string {
+	const file = withoutAttribution(phone.file[index] ?? '');
+	// Descriptors, not the product's own name: e.g. a sample of Tangzu ON must not become tuning.
+	let firstDescriptor = withoutAttribution(phone.suffix[index]?.trim() || file);
+	for (const prefix of [`${phone.brand} ${phone.name}`, phone.name]) {
+		if (
+			firstDescriptor.toLowerCase().startsWith(prefix.toLowerCase()) &&
+			!/[\p{L}\p{N}]/u.test(firstDescriptor[prefix.length] ?? '')
+		) {
+			firstDescriptor = firstDescriptor.slice(prefix.length);
+			break;
+		}
+	}
+	return firstDescriptor;
+}
+
+/** Retain both file and suffix configuration evidence before considering shape deduplication. */
+export function configurationDescriptor(phone: Phone, index: number): string {
+	const file = descriptor({ ...phone, suffix: [] }, index);
+	const declaredFile =
+		tipDescriptor(file) ||
+		tuningDescriptor(file) ||
+		cableDescriptor(file) ||
+		factoryMode(file) ||
+		classifyEq(file) !== 'none' ||
+		/\b(?:sample|unit|batch|revision)\b/i.test(file);
+	return [
+		...new Set(
+			[phone.suffix[index]?.trim() ? descriptor(phone, index) : '', declaredFile ? file : ''].map((text) =>
+				text.trim().replace(/\s+/g, ' ').toLowerCase()
+			)
+		)
+	]
+		.filter(Boolean)
+		.join(' | ');
+}
+
+function sampleDescriptor(phone: Phone, index: number, shortSamples: boolean): string {
+	// B&W's Pi7/Px7/Px8 S2/S3 labels denote product generations, not replacement samples.
+	const name = phone.name.replace(/\b(?:Pi7|Px[78])\s+S[23]\b|^s\d+$/gi, '');
+	const text = `${descriptor(phone, index)} ${
+		withoutAttribution(name)
+			.match(/\b(?:sample|unit)\s*[:#-]?\s*\d+|\bs[1-9]\b|\bprototype\b/gi)
+			?.join(' ') ?? ''
+	}`;
+	return shortSamples ? text : text.replace(/\bs[1-9]\b/gi, '');
+}
+
+const unitPattern = /\b(?:sample|unit)\s*[:#-]?\s*\d+\b|\bs[1-9]\b|\bprototype\b|\bdefect/i;
+const withoutSampleOne = (text: string): string =>
+	text.replace(/\b(?:sample|unit)\s*[:#-]?\s*1\b|\bs1\b/gi, '');
+
+function eqLabel(phone: Phone, index: number): string {
+	return withoutAttribution(
+		`${phone.brand} ${phone.name} ${phone.file[index] ?? ''} ${phone.suffix[index] ?? ''}`
+	);
+}
+
+/** Explicit stock/neutral states win, then ANC off; source order breaks ties and supplies the fallback. */
+export function defaultVariantIndex(
+	phone: Phone,
+	shortSamples = sampleContext([phone]).has(phone)
+): number | null {
+	const candidates = phone.file.flatMap((_file, index) => {
+		const text = descriptor(phone, index);
+		const eq = classifyEq(eqLabel(phone, index));
+		if (
+			eq === 'ambiguous' ||
+			nonProductName(eqLabel(phone, index)) ||
+			adapterState(`${phone.file[index] ?? ''} ${text}`) !== null ||
+			unitPattern.test(withoutSampleOne(sampleDescriptor(phone, index, shortSamples)))
+		)
+			return [];
+		// A stock accessory does not identify the product's stock electronic/voicing mode.
+		const state = text.replace(
+			/\b(?:stock|default|normal|standard|original)\b[^();,]*\b(?:tips?|eartips?|pads?|cable)\b/gi,
+			''
+		);
+		const score =
+			Number(/\b(?:default|stock)\b/i.test(state)) * 100 +
+			Number(eq === 'neutral' && !/\bn\/a\b/i.test(text)) * 50 +
+			Number(/\b(?:normal|norm|standard|original)\b/i.test(state)) * 30 +
+			Number(/\b(?:anc\s*[:=-]?\s*off|noanc)\b|\(off\s*[-)]/i.test(text)) * 10;
+		return [{ index, score }];
+	});
+	return candidates.sort((a, b) => b.score - a.score || a.index - b.index)[0]?.index ?? null;
+}
+
+export function variant(
+	phone: Phone,
+	index: number,
+	measurementId: string,
+	shortSamples = sampleContext([phone]).has(phone)
+): Variant {
 	const file = phone.file[index] ?? '';
-	const label = phone.suffix[index] ?? (index === 0 ? '' : file);
-	const text = `${label} ${file}`;
+	const label = withoutAttribution(phone.suffix[index] ?? (index === 0 ? '' : file));
+	const text = sampleDescriptor(phone, index, shortSamples);
+	const eq = classifyEq(eqLabel(phone, index));
+	const preferred = defaultVariantIndex(phone, shortSamples);
+	const unitText = index === 0 || index === preferred ? withoutSampleOne(text) : text;
 	const kind =
-		index === 0
-			? 'default'
-			: /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
-						text
-				  )
-				? 'tuning'
-				: /tip|insert|shallow|deep|foam|pad|seal|position/i.test(text)
-					? 'fit'
-					: /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
-						? 'setup'
-						: /sample|unit|proto|defect|\bs\d\b/i.test(text)
-							? 'unit'
-							: 'unknown';
-	return { id: `v-${measurementId.slice(2)}`, file, label, kind, isDefault: index === 0 };
+		eq === 'ambiguous'
+			? 'tuning'
+			: unitPattern.test(unitText)
+				? 'unit'
+				: index === preferred
+					? 'default'
+					: eq !== 'none' || /\bdsp\s*:/i.test(text) || tuningDescriptor(text)
+						? 'tuning'
+						: tipDescriptor(text)
+							? 'fit'
+							: (factoryMode(text) && !/\b(?:balanced|single.ended)\s+(?:cable|adapter)\b/i.test(text)) ||
+								  /switch|nozzle|impedance|\bohm|\bdsp\b|filter|bass|treble|\banc\b|transparent|\bon\b|\boff\b|m20|m15|m12|\bmx\b/i.test(
+										text
+								  )
+								? 'tuning'
+								: cableDescriptor(text) || /adapter|dongle|cable|\bamp\b|balanced|single.ended/i.test(text)
+									? 'setup'
+									: /sample|unit|proto|defect/i.test(text)
+										? 'unit'
+										: 'unknown';
+	return {
+		id: `v-${measurementId.slice(2)}`,
+		file,
+		label: kind === 'default' ? label : label.trim() || withoutAttribution(file) || file.trim(),
+		kind,
+		isDefault: kind === 'default'
+	};
 }
 
 /** Dollar sign alone follows the source index's USD convention; no bare numbers or conversions. */
@@ -126,10 +259,18 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 	const o = record(override) ? override : {};
 	const form = o.form === 'iem' || o.form === 'headphone' ? o.form : formFor(db);
 	const rig = typeof o.rig === 'string' ? o.rig : configString(config, 'rig_description');
+	const corrected = typeof o.rig === 'string' || typeof o.partition === 'string';
+	const family =
+		(!corrected && db.dbType === '5128') ||
+		/5128/.test(typeof o.partition === 'string' ? o.partition : (rig ?? ''))
+			? '5128'
+			: /\b(?:711|60711)\b|60318[\s-]*4/i.test(typeof o.partition === 'string' ? o.partition : (rig ?? ''))
+				? '711'
+				: null;
 	let partition: string;
 	if (typeof o.partition === 'string') partition = o.partition;
-	else if (db.dbType === '5128' || /5128/.test(rig ?? '')) partition = `${form}-5128`;
-	else if (form === 'iem') partition = 'iem-711';
+	else if (family === '5128') partition = `${form}-5128`;
+	else if (form === 'iem') partition = family === '711' ? 'iem-711' : `iem-source-${db.id}`;
 	else if (/mini.?dsp\s+ears\s+pro/i.test(rig ?? '')) partition = 'headphone-minidsp-ears-pro';
 	else if (/mini.?dsp\s+ears/i.test(rig ?? '')) partition = 'headphone-minidsp-ears';
 	else if (/\b4128\b/.test(rig ?? '')) partition = 'headphone-4128';
@@ -140,12 +281,20 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 		form,
 		partition,
 		rig: rig || null,
-		rigInferred:
-			!rig ||
-			(form === 'iem' &&
-				partition === 'iem-711' &&
-				typeof o.partition !== 'string' &&
-				!/\b(?:711|60711)\b|60318[\s-]*4/i.test(rig)),
+		rigEvidence: {
+			configRig: configString(config, 'rig_description'),
+			class: family || (form === 'headphone' && rig) ? 'verified' : 'unknown',
+			family,
+			rationale:
+				typeof o.rationale === 'string'
+					? o.rationale
+					: db.dbType === '5128'
+						? 'squigsites.json database type 5128'
+						: family
+							? `config rig_description: ${rig}`
+							: 'No recognised IEM rig family in config or curated override'
+		},
+		rigInferred: !family && !(form === 'headphone' && rig),
 		permission:
 			o.permission === 'permission granted' ? 'permission granted' : 'public, not explicitly licensed',
 		crawledAt,

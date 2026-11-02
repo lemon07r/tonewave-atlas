@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 import type { Catalog, Manifest } from '../../src/core/dataset/types.ts';
-import type { RedirectCatalog } from '../../src/lib/catalog/identity.ts';
 import { parseProfile, PROFILE_KEY } from '../../src/lib/profile/profile.ts';
 
 const reference = 'p-437de4e3e3402077cdc3';
@@ -29,7 +28,7 @@ async function redirects(page: Page) {
 		const bytes = await response.body();
 		const data = JSON.parse(
 			(bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString()
-		) as RedirectCatalog;
+		) as Catalog;
 		data.redirects = aliases;
 		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
 	});

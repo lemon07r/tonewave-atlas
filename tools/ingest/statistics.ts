@@ -21,7 +21,11 @@ export function statisticsProducts(curves: readonly RankMeasurement[]): ProductM
 	for (const row of [...curves].sort((a, b) => a.measurement.id.localeCompare(b.measurement.id, 'en'))) {
 		if (!row.measurement.variant.isDefault) continue;
 		const sources = products.get(row.measurement.productId) ?? new Map<string, Float64Array>();
-		if (!sources.has(row.measurement.sourceId)) sources.set(row.measurement.sourceId, row.rank.values);
+		if (sources.has(row.measurement.sourceId))
+			throw new Error(
+				`Statistics: multiple defaults for ${row.measurement.productId} / ${row.measurement.sourceId}`
+			);
+		sources.set(row.measurement.sourceId, row.rank.values);
 		products.set(row.measurement.productId, sources);
 	}
 	return [...products]

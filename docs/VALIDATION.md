@@ -274,11 +274,15 @@ with the timing scope above, measured:
 | Resident similar, including top-K source ranges                   |   6.46 |        50 |
 | Resident taste, including model and winner explanations           |  17.01 |       150 |
 
-Cold/resident similar and taste each returned 20 winners; all budgets pass. This run uses the new
+Cold/resident similar and taste each returned 20 winners; all budgets pass. This historical run uses the new
 validated correction default. Published iem-711 statistics report sufficient support and positive
 pooled mean improvement overall and in every fold: **1.781 → 1.588 dB (−10.9%)**, fold improvements
 **0.184–0.202 dB**, **50,823 held-out same-product pairs**. Low-support partitions remain uncorrected;
 this is observational dataset validation, not physical calibration or evidence of listener preference.
+
+Those figures belong to dataset `208ae49722c1645d1b838cd4`, not the current dataset. Current rebuilt
+harmonisation figures and their dataset version are maintained in [METHODOLOGY.md](METHODOLOGY.md),
+so this historical integration record is not a second current validation summary.
 
 The 44 synthetic service tests include lazy target caching/provenance, bidirectional rig refusal,
 an independently specified 3 dB shelf with reduced PEQ residual, default correction on/off, missing

@@ -15,13 +15,7 @@
 	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import { analysis, productList, formFromUrl } from '#lib/atlas.ts';
-	import {
-		catalogIdentity,
-		migrationCatalogs,
-		productFor,
-		channelSpread,
-		mainPartition
-	} from '#lib/product/data.ts';
+	import { catalogIdentity, migrationCatalogs, channelSpread, mainPartition } from '#lib/product/data.ts';
 	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	import { migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
@@ -56,13 +50,7 @@
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let identity = $state.raw<CatalogIdentity>();
 	let migrationNote = $state<string[]>([]);
-	let selectionState = $derived(
-		parseCompare(
-			browser && identity
-				? migrateUrl(new URL(page.url.href), identity).url.searchParams
-				: new URLSearchParams(browser ? page.url.search : '')
-		)
-	);
+	let selectionState = $derived(parseCompare(new URLSearchParams(browser ? page.url.search : '')));
 	let products = $state.raw<ProductListItem[]>([]);
 	let summary = $state.raw<AtlasSummary | null>(null);
 	let selections = $state.raw<Selection[]>([]);
@@ -187,7 +175,7 @@
 	$effect(() => {
 		const settings = selectionState,
 			data = summary,
-			list = products;
+			selectedForm = form;
 		const abort = new AbortController();
 		selections = [];
 		loading = false;
@@ -196,21 +184,26 @@
 		error = '';
 		void (async () => {
 			const service = await analysis();
+			const measurementRows = await service.measurements([...settings.measurements]);
 			const measurements = new Map(
-				(await service.measurements([...settings.measurements])).map((measurement) => [
-					measurement.id,
-					measurement
-				])
+				measurementRows.flatMap((measurement) =>
+					[
+						measurement.id,
+						...(measurement.resolvedIds ?? []).flatMap((entry) =>
+							entry.measurementId ? [entry.measurementId] : []
+						)
+					].map((id) => [id, measurement] as const)
+				)
 			);
 			const rows: Selection[] = [];
 			for (const id of [...settings.products, ...settings.measurements]) {
 				const measurement = measurements.get(id);
 				if (settings.measurements.includes(id) && !measurement)
 					throw new Error(`Unknown product or measurement: ${id}`);
-				const productId = measurement?.productId ?? id;
-				const product = productFor(list, productId, identity);
-				if (!product) throw new Error(`Unknown product or measurement: ${id}`);
-				const result = await detail(productId);
+				const result = await detail(measurement?.productId ?? id);
+				const product = result.product,
+					productId = product.id;
+				if (product.form !== selectedForm) throw new Error(`Unknown product or measurement: ${id}`);
 				const partition = measurement?.partition ?? mainPartition(result);
 				const spread = measurement ? null : await channelSpread(result, partition, settings.channel);
 				const curve = measurement ? (await service.curves([id], { channel: settings.channel }))[0] : null;

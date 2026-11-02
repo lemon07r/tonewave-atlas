@@ -127,9 +127,12 @@ export async function crawl(
 			const files = [
 				...new Set(
 					book.phones.flatMap((p) =>
-						excluded.products.includes(`${p.brand} ${p.name}`) || unwanted(`${p.brand} ${p.name}`)
+						excluded.products.includes(`${p.brand} ${p.name}`)
 							? []
-							: p.file.filter((f) => !unwanted(f) && !excluded.files.includes(f))
+							: p.file.filter(
+									(f, i) =>
+										!unwanted(`${p.brand} ${p.name} ${f} ${p.suffix[i] ?? ''}`) && !excluded.files.includes(f)
+								)
 					)
 				)
 			].slice(0, limit);

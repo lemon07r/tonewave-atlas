@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
-	import { migrationCatalogs, productFor, priceListings } from '#lib/product/data.ts';
+	import { migrationCatalogs, priceListings } from '#lib/product/data.ts';
 	import { migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
 	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
@@ -89,12 +89,12 @@
 					return;
 				}
 				const canonical = migrated?.url.searchParams.get('product') ?? id;
-				if (!productFor(list, canonical, identity))
+				const result = await service.productDetail(canonical);
+				if (!result.ok) throw new Error(result.message);
+				if (result.product.form !== selectedForm)
 					throw new Error(
 						'This product is not in the selected form-factor catalog. Switch modes or return to the catalog.'
 					);
-				const result = await service.productDetail(canonical);
-				if (!result.ok) throw new Error(result.message);
 				if (!abort.signal.aborted) detail = result;
 			}
 		})()
