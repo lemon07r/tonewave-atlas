@@ -60,5 +60,16 @@ test('headphone mode attributes only headphone sources', async ({ page }) => {
 	await expect(table).toBeVisible();
 	await expect(table).toContainText('headphone-');
 	await expect(table).not.toContainText('iem-711');
+	const sources = manifest.sources.filter((source) => (source.forms ?? [source.form]).includes('headphone'));
+	expect((await table.locator('tbody th a').allTextContents()).map((name) => name.trim()).sort()).toEqual(
+		sources.map((source) => source.name).sort()
+	);
+	expect((await table.locator('tbody td:nth-child(2) .mono').allTextContents()).sort()).toEqual(
+		sources
+			.flatMap((source) =>
+				(source.partitions ?? [source.partition]).filter((partition) => partition.startsWith('headphone-'))
+			)
+			.sort()
+	);
 	await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

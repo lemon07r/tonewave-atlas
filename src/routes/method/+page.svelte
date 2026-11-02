@@ -5,7 +5,7 @@
 	import { analysis, formFromUrl } from '#lib/atlas.ts';
 	import { dateLabel } from '#lib/product/data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
-	import { sourceInForm } from '#lib/sources.ts';
+	import { sourceInForm, sourceOnPartition } from '#lib/sources.ts';
 	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
@@ -190,11 +190,20 @@
 									><th scope="col">Crawled</th><th scope="col">Permission</th></tr
 								></thead
 							><tbody
-								>{#each sources as source (source.id)}<tr
+								>{#each sources as source (source.id)}
+									{@const partitions = summary.partitions.filter(
+										(partition) => partition.form === form && sourceOnPartition(source, partition.id)
+									)}
+									<tr
 										><th scope="row"><a href={source.url} rel="external">{source.name}</a></th><td
-											>{source.rig || rigLabel(source.partition, summary.sources)}{source.rigInferred
-												? ' (inferred)'
-												: ''}<br /><span class="mono">{source.partition}</span></td
+											>{#each partitions as partition (partition.id)}<div>
+													{partition.id === source.partition && source.rig
+														? source.rig
+														: rigLabel(partition.id, summary.sources)}{partition.id === source.partition &&
+													source.rigInferred
+														? ' (inferred)'
+														: ''}<br /><span class="mono">{partition.id}</span>
+												</div>{/each}</td
 										><td>{source.measurementCount}</td><td>{dateLabel(source.crawledAt)}</td><td
 											>{source.permission}</td
 										></tr
