@@ -7,6 +7,7 @@ import {
 	CACHE,
 	calibrationUrl,
 	fileChannels,
+	configScriptUrl,
 	configString,
 	dataDirectory,
 	DIRECTORY_URL,
@@ -80,14 +81,23 @@ export async function crawl(
 	for (const [i, db] of snapshot.sources.entries()) {
 		console.log(`[${i + 1}/${snapshot.sources.length}] ${db.id}: ${db.url}`);
 		try {
-			const [configResponse, bookResponse] = await Promise.all([
+			const [rootConfigResponse, bookResponse] = await Promise.all([
 				http.fetch(new URL('config.js', db.url).href),
 				http.fetch(new URL('data/phone_book.json', db.url).href)
 			]);
 			if (bookResponse.entry.status !== 200) throw new Error(`Phone book HTTP ${bookResponse.entry.status}`);
+			let configResponse = rootConfigResponse;
+			if (configResponse.entry.status !== 200) {
+				const pageResponse = await http.fetch(db.url);
+				if (pageResponse.entry.status === 200) {
+					retained(db.id, pageResponse);
+					const configUrl = configScriptUrl(new TextDecoder().decode(pageResponse.body), db.url);
+					if (configUrl) configResponse = await http.fetch(configUrl);
+				}
+			}
 			if (configResponse.entry.status !== 200)
 				throw new Error(
-					'No successful config.js; source excluded rather than using rig/calibration defaults'
+					'No successful config found at config.js or in the index page; source excluded rather than using rig/calibration defaults'
 				);
 			const config = new TextDecoder().decode(configResponse.body);
 			for (const response of [configResponse, bookResponse]) retained(db.id, response);

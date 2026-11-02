@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { crawl } from './crawl.ts';
-import { HttpCache } from './cache.ts';
+import { cached, HttpCache } from './cache.ts';
 import { DIRECTORY_URL, type CrawlSnapshot } from './common.ts';
 
 const roots: string[] = [];
@@ -58,6 +58,45 @@ async function fixture(config = '') {
 }
 
 describe('crawl preflight', () => {
+	it('discovers and caches the page config after root config.js returns 404', async () => {
+		const { paths, bodies, request, snapshot } = await fixture();
+		const base = 'https://reviewer.squig.link/';
+		const configUrl = `${base}assets/js/config.js`;
+		bodies.delete(`${base}config.js`);
+		bodies.set(
+			base,
+			'<script src="assets/js/graphtool.js"></script><script src="assets/js/config.js"></script>'
+		);
+		bodies.set(configUrl, 'const DIR = "data/", default_channels = ["R"];');
+		bodies.set(`${base}data/Model%20R.txt`, '20 70\n20000 80');
+		await crawl(['--sites', 'reviewer'], paths);
+		const urls = request.mock.calls.map(([url]) => href(url));
+		expect(urls.indexOf(`${base}config.js`)).toBeLessThan(urls.indexOf(base));
+		expect(urls.indexOf(base)).toBeLessThan(urls.indexOf(configUrl));
+		expect(urls.filter((url) => url.endsWith('.txt'))).toEqual([`${base}data/Model%20R.txt`]);
+		expect((await cached(configUrl, paths.cache))?.entry.status).toBe(200);
+		expect((await snapshot()).errors).toEqual([]);
+		expect((await snapshot()).excluded.filter(({ id }) => id.startsWith('reviewer-'))).toEqual([]);
+	});
+	it('keeps a successful root config without requesting the index page', async () => {
+		const { paths, request, snapshot } = await fixture();
+		await crawl(['--sites', 'reviewer'], paths);
+		expect(request.mock.calls.some(([url]) => href(url) === 'https://reviewer.squig.link/')).toBe(false);
+		expect((await snapshot()).errors).toEqual([]);
+	});
+	it.each([
+		null,
+		'<script src="assets/js/graphtool.js"></script>',
+		'<script src="assets/js/config.js"></script>'
+	])('excludes a missing config before requesting measurements: %j', async (html) => {
+		const { paths, bodies, request, snapshot } = await fixture();
+		const base = 'https://reviewer.squig.link/';
+		bodies.delete(`${base}config.js`);
+		if (html !== null) bodies.set(base, html);
+		await crawl(['--sites', 'reviewer'], paths);
+		expect(request.mock.calls.some(([url]) => href(url).endsWith('.txt'))).toBe(false);
+		expect((await snapshot()).errors[0]?.error).toContain('No successful config found');
+	});
 	it.each(['[]', '["A"]', '["L", "R", "C"]'])(
 		'excludes unsupported channels %s before requesting measurements',
 		async (channels) => {

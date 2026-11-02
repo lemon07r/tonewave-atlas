@@ -22,6 +22,7 @@ import {
 	atomicWrite,
 	CACHE,
 	calibrationUrl,
+	configScriptUrl,
 	supportedChannels,
 	fileChannels,
 	dataDirectory,
@@ -171,11 +172,27 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			continue;
 		}
 		useTime(bookCache.entry.fetchedAt);
-		const configCache = await cached(new URL('config.js', db.url).href, paths.cache);
+		let configCache = await cached(new URL('config.js', db.url).href, paths.cache);
+		if (configCache?.entry.status !== 200) {
+			const pageCache = await cached(db.url, paths.cache);
+			if (pageCache?.entry.status === 200) {
+				useTime(pageCache.entry.fetchedAt);
+				retained(db.id, pageCache);
+				let configUrl: string | null;
+				try {
+					configUrl = configScriptUrl(new TextDecoder().decode(pageCache.body), db.url);
+				} catch (e) {
+					report.excluded.push({ id: db.id, reason: errorMessage(e) });
+					continue;
+				}
+				if (configUrl) configCache = await cached(configUrl, paths.cache);
+			}
+		}
 		if (configCache?.entry.status !== 200) {
 			report.excluded.push({
 				id: db.id,
-				reason: 'No successful config.js; refusing rig/calibration defaults'
+				reason:
+					'No successful config found at config.js or in the index page; refusing rig/calibration defaults'
 			});
 			continue;
 		}
