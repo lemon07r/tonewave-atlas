@@ -180,6 +180,7 @@ export function validateProducts(value: unknown): Record<string, string> {
 	};
 	for (const [from, to] of Object.entries(v.aliases)) {
 		if (typeof to !== 'string') throw new Error(`Invalid product alias: ${from}`);
+		if (from === '_note') continue;
 		const [brand = '', model = ''] = pair(from);
 		pair(to);
 		const key = productAliasKey(brand, model);

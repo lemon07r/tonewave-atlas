@@ -7,6 +7,7 @@ import {
 } from '#core/analysis/statistics.ts';
 import type { Measurement, PartitionStatistics } from '#core/dataset/types.ts';
 
+/** Provisional reporting guard, not statistical confidence; see partition support in METHODOLOGY.md. */
 export const MIN_STATISTICS_PRODUCTS = 20;
 interface RankMeasurement {
 	measurement: Pick<Measurement, 'id' | 'productId' | 'sourceId' | 'variant'>;

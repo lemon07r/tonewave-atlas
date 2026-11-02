@@ -20,13 +20,14 @@ export function identity(
 	let canonical = aliases[normalise(brand)] ?? brand.trim().replace(/\s+/g, ' ');
 	let cleanModel = model.trim().replace(/\s+/g, ' ');
 	const originalKey = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
-	// Compare case/spacing-insensitively, but require a whole leading brand and nonempty remainder.
-	const prefix = new RegExp(
-		`^${Array.from(canonical.replace(/\s/g, ''), (c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*')}\\s+(.+)$`,
-		'i'
-	);
+	// Use identity's spelling normalization, but only at complete leading-word boundaries.
+	const prefixes = new Set([normalise(brand), normalise(canonical)].filter(Boolean));
 	for (;;) {
-		const rest = prefix.exec(cleanModel)?.[1]?.trim();
+		let rest: string | undefined;
+		for (const boundary of cleanModel.matchAll(/\s+/g)) {
+			if (prefixes.has(normalise(cleanModel.slice(0, boundary.index))))
+				rest = cleanModel.slice(boundary.index + boundary[0].length);
+		}
 		if (!rest) break;
 		cleanModel = rest;
 	}
@@ -102,29 +103,55 @@ export function sourceFor(db: Database, config: string, crawledAt: string, overr
 	};
 }
 
+interface AuditProduct {
+	id: string;
+	brand: string;
+	model: string;
+	form?: Form;
+}
+
 /** Connected near-name candidates for human audit only; never used to assign product identity. */
-export function collisionGroups(products: { id: string; brand: string; model: string }[]): string[][] {
-	const groups = new Map<string, Set<string>>();
+export function collisionGroups(products: AuditProduct[]): string[][] {
+	const parent = new Map<string, string>(),
+		size = new Map<string, number>();
+	const find = (id: string): string => {
+		if (!parent.has(id)) parent.set(id, id);
+		let root = id;
+		while (parent.get(root) !== root) root = parent.get(root) ?? root;
+		while (id !== root) {
+			const next = parent.get(id) ?? root;
+			parent.set(id, root);
+			id = next;
+		}
+		return root;
+	};
 	for (const { left, right } of suspiciousNames(products)) {
-		const a = groups.get(left) ?? new Set([left]);
-		const b = groups.get(right) ?? new Set([right]);
-		for (const id of b) a.add(id);
-		for (const id of a) groups.set(id, a);
+		let a = find(left),
+			b = find(right);
+		if (a === b) continue;
+		if ((size.get(a) ?? 1) < (size.get(b) ?? 1)) [a, b] = [b, a];
+		parent.set(b, a);
+		size.set(a, (size.get(a) ?? 1) + (size.get(b) ?? 1));
 	}
-	const names = new Map(products.map((p) => [p.id, `${p.brand} ${p.model}`]));
-	return [...new Set(groups.values())]
+	const groups = new Map<string, Set<string>>();
+	for (const id of parent.keys()) {
+		const root = find(id),
+			members = groups.get(root) ?? new Set<string>();
+		members.add(id);
+		groups.set(root, members);
+	}
+	const names = new Map(products.map((p) => [p.id, `${p.form ? `[${p.form}] ` : ''}${p.brand} ${p.model}`]));
+	return [...groups.values()]
 		.map((ids) => [...ids].map((id) => names.get(id) ?? id).sort())
 		.sort((a, b) => b.length - a.length || (a[0] ?? '').localeCompare(b[0] ?? '', 'en'))
 		.slice(0, 20);
 }
 
 /** Edit-distance candidates are audit suggestions ONLY; no fuzzy identity merges. */
-export function suspiciousNames(
-	products: { id: string; brand: string; model: string }[]
-): { left: string; right: string }[] {
+export function suspiciousNames(products: AuditProduct[]): { left: string; right: string }[] {
 	const groups = new Map<string, typeof products>();
 	for (const p of products) {
-		const key = normalise(p.brand);
+		const key = `${p.form ?? 'unknown'}:${normalise(p.brand)}`;
 		const group = groups.get(key) ?? [];
 		group.push(p);
 		groups.set(key, group);

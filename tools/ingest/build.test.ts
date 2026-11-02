@@ -8,7 +8,7 @@ import { decodePack } from '#core/dataset/codec.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
-import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL, ROOT } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL, ROOT, sha256 } from './common.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -81,11 +81,32 @@ async function result(paths: { cache: string; output: string }) {
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
 		statistics: { partition: string; statistics: unknown }[];
+		targets: ({ id: string } & ReferenceTarget['provenance'])[];
 	};
 	return { manifest, catalog, report };
 }
 
 describe('cached dataset build safety', () => {
+	it('records successful target parse warnings in both the report and published target provenance', async () => {
+		const { paths } = await fixture();
+		const file = resolve(paths.root, 'data/targets/Harman in-ear 2019.csv');
+		const bytes = `${await readFile(file, 'utf8')}\n20.00,7.61\nbroken row\n`;
+		await writeFile(file, bytes);
+		await build(paths);
+		const { manifest, report } = await result(paths);
+		const targets = JSON.parse(
+			gunzipSync(await readFile(resolve(paths.output, manifest.version, 'targets.json.gz'))).toString()
+		) as ReferenceTarget[];
+		const expected = [
+			'Dropped 1 malformed/nonfinite rows',
+			'Sorted frequencies',
+			'Merged 1 duplicate frequencies (dB mean)'
+		];
+		expect(targets[0]?.provenance.warnings).toEqual(expected);
+		expect(report.targets[0]?.warnings).toEqual(expected);
+		expect(report.targets[0]?.sha256).toBe(sha256(bytes));
+		expect(report.targets[0]).toEqual({ id: targets[0]?.id, ...targets[0]?.provenance });
+	});
 	it('counts identity merges even when the same file/index becomes a duplicate measurement', async () => {
 		const { paths } = await fixture('', [
 			[
@@ -134,8 +155,8 @@ describe('cached dataset build safety', () => {
 		expect(catalog.measurements).toHaveLength(3);
 		expect(report.identityMerges).toEqual({ productsBefore: 3, productsAfter: 1, merged: 2 });
 	});
-	it.each([`${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
-		'reports stale calibration/measurement %s',
+	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
+		'reports stale discovery/calibration/measurement %s',
 		async (url) => {
 			const { paths, http } = await fixture();
 			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })));
@@ -144,6 +165,8 @@ describe('cached dataset build safety', () => {
 			const { report, catalog } = await result(paths);
 			expect(catalog.measurements).toHaveLength(1);
 			expect(report.retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
+			if ([DIRECTORY_URL, OPT_OUT_URL].includes(url))
+				expect(report.retainedFailures[0]).toMatchObject({ source: 'discovery' });
 			expect(report.issues.some((issue) => issue.reason.includes('last-good'))).toBe(true);
 		}
 	);

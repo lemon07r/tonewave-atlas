@@ -116,6 +116,14 @@ export interface ReferenceTarget {
 	attribution: string;
 	/** Relative dB on the canonical GRID, with no smoothing or level normalization. */
 	values: number[];
+	provenance: {
+		file: string;
+		sha256: string;
+		upstream: string;
+		revision: string;
+		processing: string[];
+		warnings: string[];
+	};
 }
 
 export interface Manifest {

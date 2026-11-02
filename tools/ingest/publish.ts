@@ -2,7 +2,7 @@ import { lstat, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { Manifest } from '#core/dataset/types.ts';
-import { atomicWrite, errorMessage, sha256 } from './common.ts';
+import { atomicWrite, errorMessage, readJson, record, sha256 } from './common.ts';
 
 function missing(error: unknown): boolean {
 	return error instanceof Error && 'code' in error && error.code === 'ENOENT';
@@ -17,22 +17,38 @@ export async function removeStaging(path: string): Promise<void> {
 	}
 }
 
-async function sweep(
-	output: string,
-	staging: string,
-	version: string,
-	committed: boolean,
-	preserveBackup: boolean
-): Promise<void> {
+async function sweep(output: string, staging: string, manifest: Manifest, committed: boolean): Promise<void> {
 	await removeStaging(staging);
 	try {
+		// Only the committed manifest can authorize deletion of recovery data. On any failed
+		// publication retain *all* backups, not just the attempted version's backup.
+		let verifiedCommit = false;
+		if (committed) {
+			const live = await readJson(resolve(output, 'manifest.json'));
+			verifiedCommit =
+				record(live) &&
+				live.formatVersion === manifest.formatVersion &&
+				live.version === manifest.version &&
+				Array.isArray(live.files) &&
+				live.files.length === manifest.files.length &&
+				live.files.every(
+					(file: unknown, i: number) =>
+						record(file) &&
+						file.path === manifest.files[i]?.path &&
+						file.bytes === manifest.files[i]?.bytes &&
+						file.sha256 === manifest.files[i]?.sha256
+				) &&
+				(await matches(resolve(output, manifest.version), manifest));
+			if (!verifiedCommit)
+				console.warn('Dataset cleanup: live manifest/target not verified; preserving backups and versions');
+		}
 		for (const entry of await readdir(output, { withFileTypes: true })) {
 			// Publication is serial: another active build/pull must not share this output directory.
-			// Preserve the sole recovery copy if rollback itself failed; never delete live data.
-			if (preserveBackup && entry.name === `.backup-${version}`) continue;
+			if (!entry.isDirectory()) continue;
+			if (!verifiedCommit && entry.name.startsWith('.backup-')) continue;
 			if (
 				/^\.(?:build|pull|backup|interrupted)-/.test(entry.name) ||
-				(committed && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== version)
+				(verifiedCommit && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== manifest.version)
 			)
 				await removeStaging(resolve(output, entry.name));
 		}
@@ -79,10 +95,8 @@ export async function publishDataset(
 	const target = resolve(output, manifest.version);
 	const backup = resolve(output, `.backup-${manifest.version}`);
 	let committed = false;
-	let verifiedTarget = false;
 	try {
 		if (await matches(target, manifest)) {
-			verifiedTarget = true;
 			await atomicWrite(resolve(output, 'manifest.json'), manifestText);
 		} else {
 			// Recover a crash between old→backup and staging→target before starting a new repair.
@@ -117,6 +131,6 @@ export async function publishDataset(
 		}
 		committed = true;
 	} finally {
-		await sweep(output, staging, manifest.version, committed, !committed && !verifiedTarget);
+		await sweep(output, staging, manifest, committed);
 	}
 }

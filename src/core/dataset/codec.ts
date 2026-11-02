@@ -102,7 +102,7 @@ function statistics(value: unknown, points: number): value is PartitionStatistic
 		const s = value.support;
 		if (
 			!object(s) ||
-			!['sufficient', 'low'].includes(String(s.status)) ||
+			!(s.status === 'sufficient' || s.status === 'low') ||
 			!(s.reason === null || typeof s.reason === 'string') ||
 			!count(s.minimumProducts) ||
 			!count(s.multiSourceProducts) ||

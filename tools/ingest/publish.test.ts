@@ -48,6 +48,40 @@ async function fixture() {
 }
 
 describe('recoverable dataset publication', () => {
+	it.each([true, false])('preserves matching regular files during sweep (success=%s)', async (success) => {
+		const f = await fixture();
+		const names = [
+			'.build-not-a-directory',
+			'.pull-not-a-directory',
+			'.backup-not-a-directory',
+			'.interrupted-not-a-directory',
+			'd'.repeat(24)
+		];
+		for (const name of names) await writeFile(resolve(f.output, name), 'keep this file');
+		if (!success) await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), 'corrupt');
+		if (success) await publishDataset(f.output, f.staging, manifest, text);
+		else await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('does not match');
+		for (const name of names) expect(await readFile(resolve(f.output, name), 'utf8')).toBe('keep this file');
+	});
+	it('preserves every backup when a different-version publication fails, including the live manifest recovery copy', async () => {
+		const f = await fixture();
+		const liveVersion = 'b'.repeat(24),
+			otherVersion = 'c'.repeat(24);
+		const liveBackup = resolve(f.output, `.backup-${liveVersion}`);
+		const otherBackup = resolve(f.output, `.backup-${otherVersion}`);
+		for (const dir of [liveBackup, otherBackup]) {
+			await mkdir(dir);
+			await writeFile(resolve(dir, 'catalog-iem.json.gz'), 'recoverable dataset');
+		}
+		const oldManifest = JSON.stringify({ ...manifest, version: liveVersion });
+		await writeFile(resolve(f.output, 'manifest.json'), oldManifest);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), 'corrupt');
+		await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('does not match');
+		expect(await readFile(resolve(f.output, 'manifest.json'), 'utf8')).toBe(oldManifest);
+		for (const dir of [liveBackup, otherBackup])
+			expect(await readFile(resolve(dir, 'catalog-iem.json.gz'), 'utf8')).toBe('recoverable dataset');
+		await expect(stat(f.staging)).rejects.toThrow();
+	});
 	it('repairs an incomplete version, publishes manifest last, then removes the backup', async () => {
 		const f = await fixture();
 		await publishDataset(f.output, f.staging, manifest, text);
@@ -104,7 +138,7 @@ describe('recoverable dataset publication', () => {
 		expect(await readFile(resolve(f.output, 'manifest.json'), 'utf8')).toBe(text);
 		await expect(stat(f.backup)).rejects.toThrow();
 	});
-	it('removes an obsolete same-version backup on manifest failure when the live target is verified', async () => {
+	it('retains even a same-version backup when manifest publication fails with a verified target', async () => {
 		const f = await fixture();
 		await rename(f.target, f.backup);
 		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), payload);
@@ -116,7 +150,8 @@ describe('recoverable dataset publication', () => {
 		);
 		await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('manifest interrupted');
 		expect(await readFile(resolve(f.target, 'catalog-iem.json.gz'), 'utf8')).toBe(payload);
-		expect(await readdir(f.output)).toEqual(['manifest.json', version].sort());
+		expect(await readFile(resolve(f.backup, 'catalog-iem.json.gz'), 'utf8')).toBe('old incomplete dataset');
+		expect(await readdir(f.output)).toEqual([`.backup-${version}`, 'manifest.json', version].sort());
 	});
 	it('rejects corrupt staging without renaming the live target', async () => {
 		const f = await fixture();
@@ -136,7 +171,52 @@ describe('recoverable dataset publication', () => {
 		if (!success) await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), 'corrupt');
 		if (success) await publishDataset(f.output, f.staging, manifest, text);
 		else await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('does not match');
-		expect(await readdir(f.output)).toEqual(['manifest.json', version].sort());
+		expect(await readdir(f.output)).toEqual(
+			(success ? ['manifest.json', version] : [`.backup-${'b'.repeat(24)}`, 'manifest.json', version]).sort()
+		);
+	});
+	it('does not sweep the live manifest recovery backup if the manifest changed after commit', async () => {
+		const f = await fixture(),
+			liveVersion = 'b'.repeat(24);
+		const backup = resolve(f.output, `.backup-${liveVersion}`);
+		await mkdir(backup);
+		await writeFile(resolve(backup, 'catalog-iem.json.gz'), 'last live data');
+		vi.mocked(rename).mockImplementation(async (from, to) => {
+			await realFs.rename(from, to);
+			if (to === resolve(f.output, 'manifest.json'))
+				await writeFile(to, JSON.stringify({ version: liveVersion }));
+		});
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			await publishDataset(f.output, f.staging, manifest, text);
+			expect(await readFile(resolve(backup, 'catalog-iem.json.gz'), 'utf8')).toBe('last live data');
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining('preserving backups'));
+		} finally {
+			warn.mockRestore();
+		}
+	});
+	it('preserves a backup needed by changed live file metadata even when its version string is unchanged', async () => {
+		const f = await fixture();
+		await mkdir(f.backup);
+		await writeFile(resolve(f.backup, 'required-old-file'), 'last live data');
+		vi.mocked(rename).mockImplementation(async (from, to) => {
+			await realFs.rename(from, to);
+			if (to === resolve(f.output, 'manifest.json'))
+				await writeFile(
+					to,
+					JSON.stringify({
+						...manifest,
+						files: [{ ...manifest.files[0], path: `${version}/required-old-file` }]
+					})
+				);
+		});
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			await publishDataset(f.output, f.staging, manifest, text);
+			expect(await readFile(resolve(f.backup, 'required-old-file'), 'utf8')).toBe('last live data');
+		} finally {
+			warn.mockRestore();
+		}
 	});
 	it('logs cleanup errors without failing an already committed publication', async () => {
 		const f = await fixture();

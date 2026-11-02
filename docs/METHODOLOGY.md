@@ -97,6 +97,21 @@ centre stays missing; smoothing does not extend measured coverage.
 
 ## Cross-source statistics and validation
 
+### Partition statistics support
+
+Ingestion defines `MIN_STATISTICS_PRODUCTS = 20`: a partition is labelled `support.status =
+"sufficient"` only with at least 20 products having default rank curves from two or more distinct
+sources **and** at least one valid held-out source pair. Otherwise support is `"low"` with a reason.
+This is a provisional engineering/reporting guard, not a confidence level, power calculation or
+validated perceptual threshold. Twenty products allow nominally four held-out and sixteen training
+products per fold in five-fold validation, rather than presenting a handful of products as a
+supported partition estimate. Hash folds are unequal, so these are not guaranteed per-fold counts.
+Per-source/per-bin counts and actual fold pair counts remain essential; the partition label does not
+establish adequate support for every correction bin or source. Low-support estimates are exploratory,
+unsupported bins remain missing (JSON `null`), and this label never enables harmonisation by itself.
+
+### Estimation and held-out validation
+
 The ingestion caller supplies one curve per product/source within a partition, after choosing
 appropriate default/tuning variants. Duplicate product/source rows are rejected. Fit variants remain
 separate evidence of sensitivity, never extra independent reviewers or extra population votes.

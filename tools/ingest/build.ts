@@ -121,6 +121,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const partitions = new Map<string, PartitionCurve[]>();
 	const acceptedIds = new Set<string>();
 	const report = {
+		targets: targets.map(({ id, provenance }) => ({ id, ...provenance })),
 		counts: {} as Record<string, SourceCount>,
 		excluded: [] as { id: string; reason: string }[],
 		issues: [] as { source: string; file: string; reason: string }[],
@@ -151,6 +152,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
 		});
 	};
+	for (const response of [directory, optScript]) retained('discovery', response);
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
 	if (Array.isArray(raw))
 		for (const site of raw as unknown[]) {

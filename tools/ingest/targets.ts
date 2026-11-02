@@ -4,7 +4,7 @@ import { GRID } from '#core/grid.ts';
 import { parseMeasurement } from '#core/measurement/parse.ts';
 import { resample } from '#core/measurement/resample.ts';
 import type { ReferenceTarget } from '#core/dataset/types.ts';
-import { ROOT } from './common.ts';
+import { ROOT, sha256 } from './common.ts';
 
 const inputs = [
 	{
@@ -30,12 +30,28 @@ const inputs = [
 export async function referenceTargets(root = ROOT): Promise<ReferenceTarget[]> {
 	return Promise.all(
 		inputs.map(async ({ file, ...metadata }) => {
-			const parsed = parseMeasurement(await readFile(resolve(root, 'data/targets', file), 'utf8'));
+			const bytes = await readFile(resolve(root, 'data/targets', file));
+			const parsed = parseMeasurement(bytes.toString('utf8'));
 			if (!parsed.ok) throw new Error(`Invalid target ${file}: ${parsed.error}`);
 			const values = resample(parsed.points);
 			if (values.length !== GRID.length || !values.every(Number.isFinite))
 				throw new Error(`Target ${file} must cover GRID`);
-			return { ...metadata, form: 'iem', values: [...values] };
+			return {
+				...metadata,
+				form: 'iem',
+				values: [...values],
+				provenance: {
+					file: `data/targets/${file}`,
+					sha256: sha256(bytes),
+					upstream: `https://github.com/jaakkopasanen/AutoEq/blob/7ae0f56d53074872b028649617a22bbb4232feb7/targets/${encodeURIComponent(file)}`,
+					revision: '7ae0f56d53074872b028649617a22bbb4232feb7',
+					processing: [
+						'parse/sort/duplicate-frequency dB mean; ignore phase',
+						'log-frequency linear interpolation on GRID; no extrapolation, smoothing or level normalization'
+					],
+					warnings: parsed.warnings
+				}
+			};
 		})
 	);
 }

@@ -125,6 +125,40 @@ describe('source transforms', () => {
 		expect(collisionGroups(products)).toEqual([['Brand Referenc', 'Brand Reference']]);
 		expect(products).toHaveLength(3);
 	});
+	it('keeps audit candidates separate by form and labels known forms in groups', () => {
+		const iem = { id: 'i-a', brand: 'Brand', model: 'Reference', form: 'iem' as const };
+		const headphone = { id: 'h-a', brand: 'Brand', model: 'Reference', form: 'headphone' as const };
+		const products = [
+			iem,
+			{ ...iem, id: 'i-b', model: 'Referenc' },
+			headphone,
+			{ ...headphone, id: 'h-b', model: 'Referenc' }
+		];
+		expect(suspiciousNames([iem, headphone])).toEqual([]);
+		expect(suspiciousNames(products)).toEqual([
+			{ left: 'i-b', right: 'i-a' },
+			{ left: 'h-b', right: 'h-a' }
+		]);
+		expect(collisionGroups(products)).toEqual([
+			['[headphone] Brand Referenc', '[headphone] Brand Reference'],
+			['[iem] Brand Referenc', '[iem] Brand Reference']
+		]);
+	});
+	it('unions two existing audit components through a bridge into one disjoint group', () => {
+		// Repeated vertices across pair-generating brand buckets exercise a bridge after A-B and C-D.
+		const products = [
+			{ id: 'a', brand: 'First', model: 'Reference A' },
+			{ id: 'b', brand: 'First', model: 'Reference B' },
+			{ id: 'c', brand: 'Second', model: 'Reference C' },
+			{ id: 'd', brand: 'Second', model: 'Reference D' },
+			{ id: 'b', brand: 'Bridge', model: 'Reference B' },
+			{ id: 'c', brand: 'Bridge', model: 'Reference C' }
+		];
+		expect(collisionGroups(products)).toEqual([
+			['Bridge Reference B', 'Bridge Reference C', 'First Reference A', 'Second Reference D']
+		]);
+		expect(collisionGroups([...products.slice(4), ...products.slice(0, 4)])).toHaveLength(1);
+	});
 	it('normalises spelling only, and reports rather than merges near names', () => {
 		expect(normalise('SÓFT Ears')).toBe('softears');
 		expect(identity('CRINEARS', 'Reference', 'iem', { crinears: 'CrinEar' }).id).toBe(
@@ -146,6 +180,26 @@ describe('source transforms', () => {
 		['KZ', 'KZfoo', 'KZfoo']
 	])('strips only a complete repeated leading brand: %s / %s', (brand, model, expected) => {
 		expect(identity(brand, model, 'iem', {}).model).toBe(expected);
+	});
+	it('strips punctuation-equivalent and registered raw brand prefixes without splitting identities', () => {
+		const aliases = { audiotechnica: 'Audio-Technica', crinears: 'CrinEar', crinear: 'CrinEar' };
+		const expected = identity('Audio-Technica', 'ATH-M50x', 'headphone', aliases);
+		for (const brand of ['AudioTechnica', 'Audio-Technica']) {
+			for (const model of ['AudioTechnica ATH-M50x', 'Audio-Technica ATH-M50x', 'Audio Technica ATH-M50x']) {
+				expect(identity(brand, model, 'headphone', aliases)).toMatchObject({
+					id: expected.id,
+					model: 'ATH-M50x'
+				});
+			}
+		}
+		expect(identity('CrinEars', 'CrinEars CrinEar Reference', 'iem', aliases)).toMatchObject({
+			id: identity('CrinEar', 'Reference', 'iem', aliases).id,
+			model: 'Reference'
+		});
+		expect(identity('AudioTechnica', 'AudioTechnicaX ATH-M50x', 'headphone', aliases).model).toBe(
+			'AudioTechnicaX ATH-M50x'
+		);
+		expect(identity('!!!', 'Model Name', 'iem', {}).model).toBe('Model Name');
 	});
 	it('applies explicit product aliases without merging variants or crossing forms', () => {
 		const aliases = validateProducts({ aliases: { 'MOONDROP|Aria II': 'MOONDROP|Aria 2' } });

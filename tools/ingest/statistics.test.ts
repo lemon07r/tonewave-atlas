@@ -37,15 +37,25 @@ describe('rank-grid statistics integration', () => {
 			...first,
 			measurement: {
 				...first.measurement,
-				id: 'other',
+				id: '!earlier-variant',
 				variant: { ...first.measurement.variant, isDefault: false }
-			}
+			},
+			rank: { values: Float64Array.from(RANK_GRID, (hz) => 50 + 8 * Math.log2(hz / 1000)) }
 		};
-		const duplicate = { ...first, measurement: { ...first.measurement, id: 'zz-last' } };
+		const duplicate = {
+			...first,
+			measurement: { ...first.measurement, id: 'zz-last' },
+			rank: { values: Float64Array.from(RANK_GRID, (hz) => 100 - 6 * Math.log2(hz / 1000)) }
+		};
 		const single = { ...first, measurement: { ...first.measurement, productId: 'single' } };
-		const expanded = [...original, variant, duplicate, single];
+		const expanded = [duplicate, variant, ...original, single];
 		expect(statisticsProducts(expanded)).toHaveLength(20);
 		expect(statisticsProducts(expanded).every((p) => p.measurements.length === 2)).toBe(true);
+		expect(
+			statisticsProducts(expanded)
+				.find((p) => p.id === first.measurement.productId)
+				?.measurements.find((m) => m.source === first.measurement.sourceId)?.curve
+		).toBe(first.rank.values);
 		expect(rankStatistics(expanded)).toEqual(rankStatistics(original));
 	});
 	it('gives zero shape spread for gain-only differences and balances products', () => {

@@ -60,16 +60,16 @@ default rank curve (lowest stable measurement ID breaks ties); non-default tunin
 never gain population weight. Products without a default from two sources do not train statistics.
 The engine aligns overall level, so the population median's absolute SPL is not a calibration.
 `support` records product/source counts, per-bin spread support and each source offset's product/bin
-support. Fewer than **20 multi-source products**, or no valid held-out pairs, means `status: "low"`
-with a reason; any computed estimates remain explicitly exploratory, not a recommendation to enable
-harmonisation. Empty support yields null bins and empty offsets.
+support. The [methodology's partition support rule](METHODOLOGY.md#partition-statistics-support)
+defines the sufficiency threshold and rationale. Low-support estimates remain explicitly exploratory,
+not a recommendation to enable harmonisation. Empty support yields null bins and empty offsets.
 
 Every partition runs deterministic **five-fold product-held-out validation**, shrinkage 10. Its
 `harmonisation` includes each fold's training/held-out product counts, valid pair counts, mean
 before/after distances and mean/median improvements, plus a pooled (not average-of-folds) summary.
 Positive improvement means reduced same-product response distance in dB, not improved perceptual
 accuracy. The same statistics and median spread per methodology frequency band are written to
-`report.json` and printed per partition; the UI chooses defaults from these results and support.
+`report.json` and printed per partition.
 
 ## Updating and limitations
 
@@ -82,6 +82,8 @@ the research citations and rights status: published research curves, redistribut
 remove on request. Processing is log-Hz interpolation only, no smoothing/normalization; references
 are not individual preference or calibration guarantees. Harman over-ear 2018 is deliberately absent
 because its GRAS basis does not match our headphone rigs. Targets never train partition statistics.
+Each target's provenance and the build report retain the input file/hash, upstream revision,
+processing steps and every successful parse warning (including dropped rows or merged frequencies).
 
 ### Commands and reports
 
@@ -91,8 +93,9 @@ The crawler uses an identifying User-Agent, four global request slots (never mor
 conditional ETag/Last-Modified requests, persistent content-addressed cache, and exponential backoff.
 Failed revalidations retain the last successful body and record the failure separately; sources
 without a successful configuration are excluded rather than silently losing calibration or rig data.
-Retained calibration and measurement failures are listed with their URL/status in the build report
-and crawl summary; a retained body is not counted as a fresh successful retrieval.
+Retained discovery, configuration, calibration and measurement failures are listed with their URL/status
+in the build report; the crawl summary also records retained fetch failures. A retained body is not
+counted as a fresh successful retrieval.
 Remote configuration paths must stay on the database's HTTP(S) origin. Hand-maintained inputs are
 strictly validated; missing keys, unknown keys (except `_note`), or wrong value types stop the command.
 Persistent rate limiting or blocking stops the crawl. Interrupted crawls resume from cached files.
@@ -103,9 +106,10 @@ Builds are deterministic for unchanged cache/inputs; build time is the newest re
 fetch time, not the current wall clock. Output versions hash the artifacts and source attribution.
 Verified existing versions stay in place on repeat publication; repairs use a recoverable backup and
 commit the manifest last. Generated old versions are removed only after successful local publication.
-Serial publication sweeps abandoned build/pull/backup/interrupted staging on success and failure;
-cleanup errors are warnings after a committed manifest, not failed publications. If rollback itself
-fails, its sole recovery backup is preserved rather than deleting live data.
+Serial publication sweeps abandoned build/pull/interrupted staging on success and failure. Every
+backup survives a failed publication; backup and old-version sweeping requires a committed manifest
+whose current version and live files are reverified. Cleanup errors are warnings after a committed
+manifest, not failed publications.
 Reports count missing channel HTTP responses and distinguish uncached
 variants in partial crawls from rejected measurements, and list parsing failures, unaliased
 brands, duplicate index rows, normalised identity collisions, and suspicious adjacent near-names. Exact
@@ -117,9 +121,12 @@ unsupported, not silently guessed. Source hardware, raw calibration, insertion, 
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
 and inter-source differences require caution.
 
-Product identity removes repeated leading brand names (case/spacing-insensitive, never an empty
-remainder). `data/products.json` contains only explicit, terminal brand/model aliases; malformed,
+Product identity removes complete leading raw or canonical brand names using the same case, accent,
+spacing and punctuation normalization as identity, with a nonempty remainder; partial words remain
+untouched. `data/products.json` contains only explicit, terminal brand/model aliases; string `_note`
+entries are permitted at the top level and inside `aliases`. Malformed,
 duplicate, cyclic or chained mappings stop ingestion. Initial Roman/Arabic numeral aliases were
 verified against catalog/file names in dataset `3c9d923462f8b79c98aa4ef9` (evidence in the input note).
 Tuning/fit/sample suffixes are not stripped. The report records pre/post identity counts, merged
 name groups and remaining suspicious near-name pairs for manual review, never fuzzy auto-merging.
+Near-name audit candidates are separated by form, and known forms are labelled in collision groups.
