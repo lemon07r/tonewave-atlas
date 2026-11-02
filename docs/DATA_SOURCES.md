@@ -50,15 +50,17 @@ local ingestion state, never part of the published dataset. Discovery must succe
   Ecoustic EQ-100. Explicit no/default/blank/zero/flat-EQ labels, and `EQ: Neutral/Normal/Original`
   states (including `EQ: None` and `PEQ - no gain`) are retained; these are source labels, not
   independently verified zero processing. Only explicit user/third-party processing (`+ EQ`,
-  EQ'd/EQed, user/custom EQ, Oratory1990/h0llow EQ, EQ to a target, AutoEQ, PEQ without an explicit
+  EQ'd/EQed, a plain user/custom EQ declaration, Oratory1990/h0llow EQ, EQ to a target, AutoEQ, PEQ without an explicit
   zero/off/default state, “with EQ”, or evident gain/filter settings) is excluded. Zero-gain
-  PEQ/custom slots remain. Factory app/DSP/ANC/ambient/transparency and voicing presets are retained
+  PEQ/custom slots (including `0 dB`) remain. A named custom slot alone is not a declaration of
+  user processing. Factory app/DSP/ANC/ambient/transparency and voicing presets are retained
   as tuning alternatives. Uncertain labels, including EQ1/EQ2 and Qudelix's “Sunrise Neutral EQ”,
   are initially non-default tuning, subject to final coverage selection below. `+ HiFi EQ` is not the
   explicit `+ EQ` operation. The word “Delta” alone is not an exclusion. Tone-control/knob values
   such as “K7 EQ (+12 Bass, +6 Treble)” do not establish post-hoc processing without further evidence;
   they and a named “EQ: custom - MRS” slot stay ambiguous tuning, not claimed factory presets or
-  confirmed user EQ. Explicit numeric EQ band lists and declared user/third-party operations remain excluded.
+  confirmed user EQ. Explicit numeric EQ band lists (with or without per-band `dB` labels) and declared
+  user/third-party operations remain excluded.
 - Detail packs retain each available channel and numbered repetition. Ranking uses finite dB means
   within repeated channels, then the L/R dB mean (or available channel), 1/12-octave smoothing and
   every second canonical bin. Missing data stays missing. Channel contribution masks and paired-bin

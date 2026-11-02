@@ -51,7 +51,8 @@ limits.
 
 - **Rig families stay separate.** 711-type ear simulators and the B&K 5128 produce different curves
   for the same IEM, so their measurements are ranked separately and never mixed. Databases that don't
-  name their rig default to the 711 group and are labelled as inferred.
+  name their rig stay in source-isolated partitions unless validated IEM evidence supports a shared
+  family; inferred evidence is labelled and does not certify hardware.
 - **Reviewers are combined, not cherry-picked.** A product's reference is the level-aligned median of
   every usable default measurement on that rig family. Tuning variants are separate candidates.
 - **Measured disagreement sets the weighting.** About 2,450 IEMs have been measured by more than one
