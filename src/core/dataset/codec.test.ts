@@ -72,11 +72,12 @@ describe('TWFR v1', () => {
 		expect(() => decodePack(bytes)).toThrow('Unknown');
 	});
 	it('does not silently clip values or lengths', () => {
-		expect(() => encodePack({ ...pack, points: 2 })).toThrow('length');
+		expect(() => encodePack({ ...pack, points: 2, statistics: null })).toThrow('length');
 		expect(() =>
 			encodePack({
 				...pack,
 				points: 1,
+				statistics: null,
 				curves: [{ measurementId: 'x', channel: 'R', values: new Float64Array([Infinity]) }]
 			})
 		).toThrow('represented');
@@ -84,8 +85,22 @@ describe('TWFR v1', () => {
 			encodePack({
 				...pack,
 				points: 1,
+				statistics: null,
 				curves: [{ measurementId: 'x', channel: 'R', values: new Float64Array([-655.36]) }]
 			})
 		).toThrow('represented');
+	});
+	it.each([
+		{ spread: [NaN, 2, 3], populationMedian: [1, 2, 3], sourceOffsets: {} },
+		{ spread: [1, 2], populationMedian: [1, 2, 3], sourceOffsets: {} },
+		{ spread: [1, 2, 3], populationMedian: [1, 2, 3], sourceOffsets: { source: [0, Infinity, 0] } },
+		{ spread: [1, 2, 3], populationMedian: [1, 2, 3], sourceOffsets: { source: [0] } }
+	])('rejects statistics the decoder cannot read', (statistics) => {
+		expect(() => encodePack({ ...pack, statistics })).toThrow('Invalid pack statistics');
+	});
+	it('stores the same quantisation step in the header and decoded values', () => {
+		const bytes = encodePack(pack);
+		expect(new DataView(bytes.buffer).getUint16(10, true)).toBe(DB_STEP * 1000);
+		expect(decodePack(bytes).curves[0]?.values[2]).toBe(-3);
 	});
 });

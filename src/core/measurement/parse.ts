@@ -17,16 +17,48 @@ export interface ParseOptions {
 	minEndHz?: number;
 }
 
-function fields(line: string): string[] {
-	// Comma decimals are unambiguous only with another explicit field separator.
-	if (/[;\t]/.test(line)) return line.split(/[;\t]+/).map((v) => v.trim().replace(',', '.'));
-	if (/\s/.test(line) && !/,\s/.test(line)) {
-		const parts = line.split(/\s+/);
-		if (parts.length >= 2 && parts.every((s) => /^[+-]?\d+(?:,\d+)?(?:e[+-]?\d+)?$/i.test(s))) {
-			return parts.map((s) => s.replace(',', '.'));
-		}
+function delimited(line: string, separator: string): string[] {
+	const parts: string[] = [];
+	let token = '',
+		quoted = false,
+		closed = false;
+	for (let i = 0; i < line.length; i++) {
+		const c = line[i] ?? '';
+		if (quoted) {
+			if (c === '"' && line[i + 1] === '"') {
+				token += '"';
+				i++;
+			} else if (c === '"') {
+				quoted = false;
+				closed = true;
+			} else token += c;
+		} else if (c === separator) {
+			parts.push(token.trim().replace(',', '.'));
+			token = '';
+			closed = false;
+		} else if (c === '"' && !token.trim() && !closed) {
+			token = '';
+			quoted = true;
+		} else if (c === '"' || (closed && c.trim())) return [];
+		else token += c;
 	}
-	return line.split(/[\s,]+/);
+	if (quoted) return [];
+	parts.push(token.trim().replace(',', '.'));
+	return parts;
+}
+
+function fields(line: string): string[] {
+	const outsideQuotes = line.replace(/"(?:[^"]|"")*"/g, '');
+	if (outsideQuotes.includes(';')) return delimited(line, ';');
+	if (outsideQuotes.includes('\t')) return delimited(line, '\t');
+	const parts = line.split(/\s+/);
+	// Only unambiguous, consistently comma-decimal whitespace rows may use comma decimals.
+	if (parts.length >= 2 && parts.some((s) => /^[+-]?\d+,\d+(?:e[+-]?\d+)?$/i.test(s))) {
+		if (parts.every((s) => /^[+-]?\d+(?:,\d+)?(?:e[+-]?\d+)?$/i.test(s)))
+			return parts.map((s) => s.replace(',', '.'));
+		if (parts.every((s) => /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?$/i.test(s))) return [];
+	}
+	return outsideQuotes.includes(',') ? delimited(line, ',') : parts;
 }
 
 /** Drops nonfinite rows, sorts and averages duplicate frequencies. Bad text is a result, not an exception. */
@@ -37,7 +69,7 @@ export function parseMeasurement(text: string, options: ParseOptions = {}): Pars
 	let dropped = 0;
 	let invalidHz = false;
 	let implausible = false;
-	for (const raw of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+	for (const raw of text.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)) {
 		const line = raw.trim();
 		if (!line) continue;
 		if (/^[*#]/.test(line)) {
@@ -49,7 +81,7 @@ export function parseMeasurement(text: string, options: ParseOptions = {}): Pars
 		const first = parts[0] ?? '';
 		// Recognise optional column headers, but count other malformed rows.
 		if (/^(?:freq(?:uency)?|hz)\b/i.test(first)) continue;
-		const hz = Number(first);
+		const hz = first && parts.length >= 2 && parts.length <= 3 ? Number(first) : NaN;
 		const db = parts[1] ? Number(parts[1]) : NaN;
 		if (!Number.isFinite(hz) || !Number.isFinite(db)) {
 			dropped++;
