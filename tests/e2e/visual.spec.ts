@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import type { WorkspaceItem } from '../../src/lib/profile/profile.ts';
+import { expectTradeoffRows } from './tradeoffs.ts';
 
 const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
 mkdirSync(shots, { recursive: true });
@@ -87,9 +88,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect(page.locator('.legend-row')).toHaveCount(3);
 			await capture('discover-multi');
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
-			const firstTradeoff = page.locator('.result-row').first().locator('.tradeoff');
-			await expect(firstTradeoff.locator('td')).toHaveText(['0.8', '0.8']);
-			await expect(firstTradeoff.locator('.extreme')).toHaveText(['', '']);
+			await expectTradeoffRows(page, ['CrinEar Reference', 'Softears Volume S'], 'mean');
 			await capture('discover-multi-evidence', '.result-row');
 			await page.goto(`/?ref=${reference}&rig=iem-711&sources=aden-iems-f0687e07&sourceMode=only`);
 			await ready();

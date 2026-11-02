@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { expectTradeoffRows } from './tradeoffs.ts';
 
 const reference = 'p-437de4e3e3402077cdc3';
 const volume = 'p-9104c8bb39d66e906811';
@@ -168,11 +169,13 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 	await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
 	await expect(page.locator('.legend-row')).toHaveCount(2);
 	const first = page.locator('.result-row').first();
+	const referenceNames = ['CrinEar Reference', 'Softears Volume S'];
+	await expectTradeoffRows(page, referenceNames, 'mean');
 	await first.locator('details:not(.rate-row) > summary').click();
 	await expect(
 		first.getByRole('table', { name: 'Distance to each reference (dB)', exact: true })
 	).toBeVisible();
-	for (const name of ['CrinEar Reference', 'Softears Volume S'])
+	for (const name of referenceNames)
 		await expect(
 			first.getByRole('table', {
 				name: `Candidate minus ${name}, after independent level alignment`,
@@ -186,10 +189,34 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 	await page.getByRole('combobox', { name: 'Trade-off sort', exact: true }).selectOption('minimax');
 	await expect(page).toHaveURL(/sort=minimax/);
 	await settled(page);
+	await expectTradeoffRows(page, referenceNames, 'minimax');
 	const pareto = page.getByRole('switch', { name: /^Best trade-offs only/ });
-	await expect(pareto).toHaveAccessibleName('Best trade-offs only (8 of 8065)');
+	const countLabel = /^Best trade-offs only \((\d+) of (\d+)\)$/;
+	await expect(pareto).toHaveAccessibleName(countLabel);
+	const counts = countLabel.exec((await pareto.locator('..').innerText()).trim());
+	if (!counts) throw new Error('Expected Pareto and candidate counts in the filter label.');
+	const paretoCount = Number(counts[1]),
+		candidateCount = Number(counts[2]);
+	expect(Number.isSafeInteger(paretoCount)).toBe(true);
+	expect(Number.isSafeInteger(candidateCount)).toBe(true);
+	expect(paretoCount).toBeGreaterThan(0);
+	expect(paretoCount).toBeLessThanOrEqual(candidateCount);
+	expect(candidateCount).toBeGreaterThanOrEqual(await page.locator('.result-row').count());
 	await pareto.check();
-	await expect(page.locator('.result-row')).toHaveCount(8);
+	const rows = page.locator('.result-row');
+	let shown = Math.min(20, paretoCount);
+	await expect(rows).toHaveCount(shown);
+	while (shown < paretoCount) {
+		await page.getByRole('button', { name: 'Show more matches', exact: true }).click();
+		shown = Math.min(shown + 20, paretoCount);
+		await expect(rows).toHaveCount(shown);
+	}
+	await expect(rows).toHaveCount(paretoCount);
+	for (const row of await rows.all())
+		await expect(row.locator('.tradeoff > p')).toHaveText(
+			'Best trade-off · no candidate improves one distance without worsening another'
+		);
+	await expectTradeoffRows(page, referenceNames, 'minimax');
 	await page.getByRole('radio', { name: 'Taste-model view', exact: true }).check();
 	await expect(page.getByRole('heading', { name: 'Taste matches', exact: true })).toBeVisible();
 	await page.getByRole('radio', { name: 'Reference trade-offs', exact: true }).check();
@@ -224,14 +251,25 @@ test('reviewer coverage versus source-only pooling is explicit, shareable and di
 }) => {
 	await page.goto(`/?ref=${reference}&rig=iem-711&sources=aden-iems-f0687e07`);
 	await expect(page.locator('.result-row').first()).toBeVisible();
-	const coverageFirst = await page.locator('.result-row').first().getByRole('heading').textContent();
 	await page.locator('.refine > summary').click();
+	const selectedReviewer = (
+		await page
+			.locator('.source-options label')
+			.filter({ has: page.getByRole('checkbox', { checked: true }) })
+			.innerText()
+	).trim();
+	expect(selectedReviewer).not.toBe('');
 	const mode = page.getByRole('combobox', { name: 'Reviewer scoring mode', exact: true });
 	await expect(mode).toHaveValue('coverage');
 	await mode.selectOption('only');
 	await expect(page).toHaveURL(/sourceMode=only/);
 	await settled(page);
-	await expect(page.locator('.result-row').first().getByRole('heading')).not.toHaveText(coverageFirst ?? '');
+	const matches = page.locator('.result-row');
+	await expect(matches.first()).toBeVisible();
+	for (const row of await matches.all()) {
+		await expect(row.locator('.reviewers')).toHaveText('Measured by 1 reviewer');
+		await expect(row.locator('.sources a')).toHaveText([`${selectedReviewer} database`]);
+	}
 	await expect(page.getByRole('complementary', { name: 'Reviewer selection caveats' })).toContainText(
 		'Unselected source measurements were excluded from reference pooling.'
 	);

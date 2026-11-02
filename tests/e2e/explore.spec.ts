@@ -20,7 +20,12 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.getByRole('searchbox', { name: 'Filter IEMs' }).fill('Truthear Hexa');
 			const hexaLink = page.locator('a[href="/explore?product=p-19d1654fcb150bf1aa2f"]');
 			await expect(hexaLink).toHaveText('Hexa');
-			await expect(page.locator('.catalog-row')).not.toHaveCount(40);
+			const filteredRows = page.locator('.catalog-row');
+			await expect(filteredRows.first()).toBeVisible();
+			for (const row of await filteredRows.all()) {
+				await expect(row).toContainText(/Truthear/i);
+				await expect(row.getByRole('heading')).toContainText(/Hexa/i);
+			}
 			await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('Truthear');
 			const hexa = page.locator('.catalog-row').filter({ has: hexaLink });
 			await expect(hexa).toContainText('711-family coupler');
