@@ -37,6 +37,14 @@ invented scores.
 Saved items (profiles, targets, comparisons) appear where they are used rather than in a separate
 account area.
 
+Catalog redirects update old shared links and saved profile ids in place, without adding a history
+entry. A surviving explicit measurement can identify a split product; unresolved items stay intact
+with a quiet, one-time note. Duplicate profile products merge: equal ratings combine their preference
+details, fit/comfort flag and explicit variant; an active rating beats Neutral or unrated. Conflicting
+active ratings prefer the already-current product entry and explain the dropped older rating by name.
+Undo restores the pre-migration profile for the session, leaving the saved canonical profile intact.
+Mixed reviewer databases remain available in each form and measurement rig they actually cover.
+
 ## Core flows
 
 1. _Start a workspace_: search → add an unrated product → choose Like/Love (and variant if it matters)

@@ -2,6 +2,7 @@
 	import { browser, dev } from '$app/env';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { SvelteMap, SvelteURL } from 'svelte/reactivity';
@@ -14,7 +15,11 @@
 	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import { analysis, productList, formFromUrl } from '#lib/atlas.ts';
-	import { channelSpread, mainPartition } from '#lib/product/data.ts';
+	import { catalogIdentity, productFor, channelSpread, mainPartition } from '#lib/product/data.ts';
+	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
+	import { migrateUrl } from '#lib/catalog/migrate.ts';
+	import { migrationMessages } from '#lib/catalog/notice.ts';
+	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { productSearch } from '#lib/product-search.ts';
 	import {
@@ -43,7 +48,15 @@
 		warning: string | undefined;
 	}
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
-	let selectionState = $derived(parseCompare(new URLSearchParams(browser ? page.url.search : '')));
+	let identity = $state.raw<CatalogIdentity>();
+	let migrationNote = $state<string[]>([]);
+	let selectionState = $derived(
+		parseCompare(
+			browser && identity
+				? migrateUrl(new URL(page.url.href), identity).url.searchParams
+				: new URLSearchParams(browser ? page.url.search : '')
+		)
+	);
 	let products = $state.raw<ProductListItem[]>([]);
 	let summary = $state.raw<AtlasSummary | null>(null);
 	let selections = $state.raw<Selection[]>([]);
@@ -100,14 +113,34 @@
 		});
 	}
 	$effect(() => {
+		const href = page.url.href,
+			current = identity;
+		if (!current) return;
+		untrack(() => {
+			const migrated = migrateUrl(new URL(href), current);
+			const fresh = migrationMessages(migrated.messages);
+			if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+			if (migrated.changed)
+				void goto(
+					resolve(
+						`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+					),
+					{ state: page.state, shallow: true, replace: true, reset: false }
+				);
+		});
+	});
+	$effect(() => {
 		const selectedForm = form;
 		const abort = new AbortController();
 		products = [];
 		summary = null;
+		identity = undefined;
 		error = '';
 		void Promise.all([productList(selectedForm), analysis().then((service) => service.summary())])
-			.then(([list, data]) => {
+			.then(async ([list, data]) => {
+				const current = await catalogIdentity(selectedForm, data.version);
 				if (!abort.signal.aborted) {
+					identity = current;
 					products = list;
 					summary = data;
 				}
@@ -156,7 +189,7 @@
 				if (settings.measurements.includes(id) && !measurement)
 					throw new Error(`Unknown product or measurement: ${id}`);
 				const productId = measurement?.productId ?? id;
-				const product = list.find((p) => p.id === productId);
+				const product = productFor(list, productId, identity);
 				if (!product) throw new Error(`Unknown product or measurement: ${id}`);
 				const result = await detail(productId);
 				const partition = measurement?.partition ?? mainPartition(result);
@@ -293,6 +326,12 @@
 				Add up to six products or measurements. Inspect differences, select variants and share the overlay.
 			</p>
 		</div>
+		<MigrationNote
+			messages={migrationNote}
+			ondismiss={() => {
+				migrationNote = [];
+			}}
+		/>
 		<div class="compare-grid">
 			<section class="stack" aria-label="Comparison selection">
 				{#if count < 6}<SearchCombobox

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import type { Catalog, Manifest, Product, Source } from '../../src/core/dataset/types.ts';
+import { sourceOnPartition } from '../../src/lib/sources.ts';
 
 const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest;
 const catalog = JSON.parse(
@@ -9,7 +10,10 @@ const catalog = JSON.parse(
 const defaults = catalog.measurements.filter((measurement) => measurement.variant.kind === 'default');
 
 /** Real reference support plus enough source-only candidates to exercise a full 20-row page. */
-export function reviewerForReference(productId: string, partition = 'iem-711'): Source {
+export function reviewerForReference(
+	productId: string,
+	partition = 'iem-711'
+): Source & { selectedPartition: string } {
 	const measurements = defaults.filter((measurement) => measurement.partition === partition);
 	const referenceSources = new Set(
 		measurements
@@ -26,7 +30,7 @@ export function reviewerForReference(productId: string, partition = 'iem-711'): 
 		if (measurement.productId !== productId) products.add(measurement.productId);
 		productsBySource.set(measurement.sourceId, products);
 	}
-	const sources = catalog.sources.filter((source) => source.partition === partition);
+	const sources = catalog.sources.filter((source) => sourceOnPartition(source, partition));
 	const reviewer = sources
 		.filter(
 			(source) =>
@@ -44,7 +48,7 @@ export function reviewerForReference(productId: string, partition = 'iem-711'): 
 		throw new Error(
 			`No reviewer supports reference ${productId} and a full page of candidates on ${partition}.`
 		);
-	return reviewer;
+	return { ...reviewer, selectedPartition: partition };
 }
 
 /** Choose a real default reference compatible with every rig the upload journey exercises. */

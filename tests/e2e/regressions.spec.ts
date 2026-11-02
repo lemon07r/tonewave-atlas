@@ -44,7 +44,7 @@ test('source-only reviewer Reset returns to coverage atomically instead of faili
 }) => {
 	const reviewer = reviewerForReference(reference);
 	await page.goto(
-		`/?${new URLSearchParams({ ref: reference, rig: reviewer.partition, sources: reviewer.id, sourceMode: 'only' })}`
+		`/?${new URLSearchParams({ ref: reference, rig: reviewer.selectedPartition, sources: reviewer.id, sourceMode: 'only' })}`
 	);
 	await expect(page.locator('.result-row')).toHaveCount(20);
 	await page.locator('.refine > summary').click();

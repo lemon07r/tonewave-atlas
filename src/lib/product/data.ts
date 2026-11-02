@@ -1,8 +1,36 @@
-import type { Source } from '#core/dataset/types.ts';
+import type { Source, Form } from '#core/dataset/types.ts';
 import type { ProductDetail, ProductListItem, ProductSpread } from '#core/atlas/types.ts';
 import { spreadFor } from '#core/atlas/spread.ts';
 import { analysis } from '#lib/atlas.ts';
 import type { Channel } from '#lib/compare/url.ts';
+import { resolve } from '$app/paths';
+import { AsyncLru } from '#lib/analysis/cache.ts';
+import { CatalogIdentity, type RedirectCatalog } from '#lib/catalog/identity.ts';
+
+const identities = new AsyncLru<string, CatalogIdentity>(4);
+
+/** UI lookups must resolve the catalog's ids before relying on engine-returned canonical ids. */
+export function catalogIdentity(form: Form, version: string): Promise<CatalogIdentity> {
+	const url = `${resolve('/')}data/${version}/catalog-${form}.json.gz`;
+	return identities.get(url, async () => {
+		const response = await fetch(url);
+		if (!response.ok) throw new Error(`Catalog identity request failed (${response.status}).`);
+		const bytes = new Uint8Array(await response.arrayBuffer());
+		const text =
+			bytes[0] === 0x1f && bytes[1] === 0x8b
+				? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
+				: new TextDecoder().decode(bytes);
+		return new CatalogIdentity(JSON.parse(text) as RedirectCatalog);
+	});
+}
+
+export function productFor<T extends { id: string }>(
+	products: readonly T[],
+	id: string,
+	identity?: CatalogIdentity
+): T | undefined {
+	return products.find((product) => product.id === (identity?.productId(id) ?? id));
+}
 
 export function dateLabel(value: string): string {
 	const date = new Date(value);

@@ -252,7 +252,7 @@ test('reviewer coverage versus source-only pooling is explicit, shareable and di
 }) => {
 	const reviewer = reviewerForReference(reference);
 	await page.goto(
-		`/?${new URLSearchParams({ ref: reference, rig: reviewer.partition, sources: reviewer.id })}`
+		`/?${new URLSearchParams({ ref: reference, rig: reviewer.selectedPartition, sources: reviewer.id })}`
 	);
 	await expect(page.locator('.result-row').first()).toBeVisible();
 	await page.locator('.refine > summary').click();

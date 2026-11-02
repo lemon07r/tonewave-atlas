@@ -2,8 +2,13 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
 	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
+	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
-	import { priceListings } from '#lib/product/data.ts';
+	import { catalogIdentity, productFor, priceListings } from '#lib/product/data.ts';
+	import { migrateUrl } from '#lib/catalog/migrate.ts';
+	import { migrationMessages } from '#lib/catalog/notice.ts';
+	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { productSearch } from '#lib/product-search.ts';
 	import ProductView from '#lib/product/ProductView.svelte';
@@ -19,6 +24,7 @@
 	let detail = $state.raw<ProductDetail | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let migrationNote = $state<string[]>([]);
 	let query = $state('');
 	let brand = $state('');
 	let sort = $state('name');
@@ -47,7 +53,8 @@
 	});
 	$effect(() => {
 		const selectedForm = form,
-			id = productId;
+			id = productId,
+			href = page.url.href;
 		const abort = new AbortController();
 		loading = true;
 		error = '';
@@ -58,15 +65,27 @@
 		void (async () => {
 			const service = await analysis();
 			const [list, data] = await Promise.all([productList(selectedForm), service.summary()]);
+			const identity = await catalogIdentity(selectedForm, data.version);
 			abort.signal.throwIfAborted();
+			const migrated = migrateUrl(new URL(href), identity);
+			const fresh = migrationMessages(migrated.messages);
+			if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+			if (migrated.changed)
+				await goto(
+					resolve(
+						`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+					),
+					{ state: page.state, shallow: true, replace: true, reset: false }
+				);
 			products = list;
 			summary = data;
 			if (id) {
-				if (!list.some((p) => p.id === id))
+				const canonical = migrated.url.searchParams.get('product') ?? id;
+				if (!productFor(list, canonical, identity))
 					throw new Error(
 						'This product is not in the selected form-factor catalog. Switch modes or return to the catalog.'
 					);
-				const result = await service.productDetail(id);
+				const result = await service.productDetail(canonical);
 				if (!result.ok) throw new Error(result.message);
 				if (!abort.signal.aborted) detail = result;
 			}
@@ -91,6 +110,12 @@
 	/></svelte:head
 >
 <div class="page">
+	<MigrationNote
+		messages={migrationNote}
+		ondismiss={() => {
+			migrationNote = [];
+		}}
+	/>
 	{#if error}<Notice kind="caution" title="Catalog unavailable"
 			>{error}
 			<a href={resolve(`/explore${headphones ? '?form=headphones' : ''}`)}>Back to catalog</a></Notice

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { Focus } from '#core/analysis/weights.ts';
@@ -25,6 +25,11 @@
 	import { latestQuery, queryDiscovery, type DiscoveryResult, type QuerySpec } from './query.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { sourceInForm, sourceOnPartition } from '#lib/sources.ts';
+	import { catalogIdentity, productFor } from '#lib/product/data.ts';
+	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
+	import { canonicalItem, migrateProfile, migrateUrl } from '#lib/catalog/migrate.ts';
+	import { migrationMessages } from '#lib/catalog/notice.ts';
+	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { bandLabels } from './describe.ts';
 	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
@@ -45,6 +50,10 @@
 	let settings = $derived(parseDiscovery(browser ? page.url.searchParams : new SvelteURLSearchParams()));
 	let products = $state.raw<ProductListItem[]>([]);
 	let summary = $state.raw<AtlasSummary>();
+	let identity = $state.raw<CatalogIdentity>();
+	let migrationNote = $state<string[]>([]);
+	let migrationBefore = $state.raw<{ profile: Profile; url: string }>();
+	let migrationUndone = false;
 	let catalogLoading = $state(true);
 	let catalogError = $state('');
 	let ready = $state(false);
@@ -76,7 +85,12 @@
 	let search = $derived(productSearch(products));
 	let choices = $derived(
 		search(query)
-			.filter((p) => !items.some((item) => item.productId === p.id))
+			.filter(
+				(p) =>
+					!items.some(
+						(item) => (identity ? canonicalItem(item, identity).productId : item.productId) === p.id
+					)
+			)
 			.map((p) => ({
 				...p,
 				label: `${p.brand} ${p.model}`,
@@ -130,7 +144,7 @@
 	let queryKey = $derived(
 		JSON.stringify({
 			state: { ...settings, overlays: [], corrections },
-			items,
+			items: items.map((item) => (identity ? canonicalItem(item, identity) : item)),
 			topK,
 			...(upload ? { upload: { id: upload.id, rig: upload.rig } } : {})
 		} satisfies QuerySpec)
@@ -139,12 +153,44 @@
 	const errorText = (cause: unknown) =>
 		cause instanceof Error ? cause.message : 'Analysis unavailable. Please try again.';
 	function nameFor(id: string): string {
-		const product = products.find(
-			(p) =>
-				p.id === id ||
-				p.id === [...resultItems, ...items].find((item) => item.measurementId === id)?.productId
+		const product = productFor(
+			products,
+			identity?.measurementProduct(id) ??
+				[...resultItems, ...items].find((item) => item.measurementId === id)?.productId ??
+				id,
+			identity
 		);
 		return product ? `${product.brand} ${product.model}` : 'Unavailable product';
+	}
+	async function migrateLocation(href: string, current: CatalogIdentity) {
+		if (migrationUndone) return;
+		const migrated = migrateUrl(new URL(href), current);
+		const fresh = migrationMessages(migrated.messages);
+		if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+		if (migrated.droppedRating && !migrationBefore) migrationBefore = { profile, url: href };
+		if (migrated.changed)
+			await goto(
+				resolve(
+					`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+				),
+				{ state: page.state, shallow: true, replace: true, reset: false }
+			);
+	}
+	function undoMigration() {
+		if (!migrationBefore || !store) return;
+		migrationUndone = true;
+		store.restoreSession(migrationBefore.profile);
+		profile = store.value;
+		const restored = new URL(migrationBefore.url, page.url.href);
+		void goto(resolve(`${restored.pathname}${restored.search}${restored.hash}` as PathnameWithSearchOrHash), {
+			state: page.state,
+			shallow: true,
+			replace: true,
+			reset: false
+		});
+		migrationBefore = undefined;
+		migrationNote = [];
+		undoMessage = 'Pre-migration profile restored for this session.';
 	}
 	function navigate(params: URLSearchParams, replace = true) {
 		void goto(resolve(`/?${params}` as PathnameWithSearchOrHash), { reset: false, replace });
@@ -216,7 +262,20 @@
 		if (!file || !store) return;
 		try {
 			if (file.size > 1_000_000) throw new Error('Profile file is too large (maximum 1 MB).');
-			const next = parseProfile(await file.text());
+			const parsed = parseProfile(await file.text());
+			const info = summary ?? (await (await analysis()).summary());
+			const catalogs = {
+				iem: await catalogIdentity('iem', info.version),
+				headphone: await catalogIdentity('headphone', info.version)
+			};
+			const migrated = migrateProfile(parsed, catalogs);
+			const next = migrated.profile;
+			migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
+			if (migrated.droppedRating)
+				migrationBefore = {
+					profile: parsed,
+					url: `/?${withItems(page.url.searchParams, parsed.profiles[form])}`
+				};
 			store.change(next, { ...profile, profiles: { ...profile.profiles, [form]: items } });
 			profile = store.value;
 			storageError = store.error;
@@ -259,25 +318,48 @@
 		storageError = store.error;
 		ready = true;
 		let active = true;
-		void Promise.all([productList(form), analysis().then((service) => service.summary())]).then(
-			([list, info]) => {
+		void Promise.all([productList(form), analysis().then((service) => service.summary())])
+			.then(async ([list, info]) => {
+				const catalogs: Partial<Record<Form, CatalogIdentity>> = {
+					[form]: await catalogIdentity(form, info.version)
+				};
+				const other = form === 'iem' ? 'headphone' : 'iem';
+				if (profile.profiles[other].length) catalogs[other] = await catalogIdentity(other, info.version);
 				if (active) {
+					const before = profile;
+					const migrated = migrateProfile(profile, catalogs);
+					migrationNote = migrationMessages(migrated.messages);
+					if (migrated.droppedRating) migrationBefore = { profile: before, url: page.url.href };
+					if (migrated.changed && store) {
+						store.change(migrated.profile);
+						profile = store.value;
+						storageError = store.error;
+					}
+					identity = catalogs[form];
+					if (identity) await migrateLocation(page.url.href, identity);
 					products = list;
 					summary = info;
 					catalogLoading = false;
 				}
-			},
-			(cause: unknown) => {
+			})
+			.catch((cause: unknown) => {
 				if (active) {
 					catalogError = errorText(cause);
 					catalogLoading = false;
 				}
-			}
-		);
+			});
 		return () => {
 			active = false;
 			controller.invalidate();
 		};
+	});
+	$effect(() => {
+		const href = page.url.href,
+			current = identity;
+		if (catalogLoading || !current) return;
+		untrack(() => {
+			void migrateLocation(href, current);
+		});
 	});
 	$effect(() => {
 		if (!ready || catalogLoading || catalogError) return;
@@ -337,6 +419,13 @@
 		</h1>
 		<p>Add products you know, then rate your experience. Start with one Like or build a set of references.</p>
 	</div>
+	<MigrationNote
+		messages={migrationNote}
+		onundo={migrationBefore ? undoMigration : undefined}
+		ondismiss={() => {
+			migrationNote = [];
+		}}
+	/>
 	<div class="discover-grid">
 		<section class="discovery-column" aria-label="Your references and preferences">
 			<div class="search">
@@ -376,7 +465,13 @@
 						}}>Clear all</button
 					>
 				</div>
-				<ProfileEditor {items} {products} partition={activePartition} onchange={updateItems} />{/if}
+				<ProfileEditor
+					{items}
+					{products}
+					{identity}
+					partition={activePartition}
+					onchange={updateItems}
+				/>{/if}
 			{#if !starting && route === 'empty'}<Notice
 					>Choose at least one sound-related Like or Love to see matches. Not rated, Neutral and
 					fit/comfort-only items do not define a sound reference.</Notice
@@ -644,6 +739,7 @@
 				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
 						><ReferenceDiagnostics
 							{items}
+							{identity}
 							{products}
 							partition={activePartition}
 							sources={summary?.sources ?? []}

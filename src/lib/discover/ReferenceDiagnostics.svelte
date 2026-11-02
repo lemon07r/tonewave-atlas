@@ -4,13 +4,18 @@
 	import type { WorkspaceItem } from '#lib/profile/profile.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import { referenceDiagnostic } from './evidence.ts';
+	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
+	import { canonicalItem } from '#lib/catalog/migrate.ts';
+	import { productFor } from '#lib/product/data.ts';
 	let {
 		items,
+		identity,
 		products,
 		partition,
 		sources
 	}: {
 		items: WorkspaceItem[];
+		identity?: CatalogIdentity | undefined;
 		products: ProductListItem[];
 		partition: string;
 		sources: AtlasSummary['sources'];
@@ -19,7 +24,9 @@
 	let loading = $state(true);
 	let error = $state('');
 	$effect(() => {
-		const explicit = items.filter((item) => item.measurementId);
+		const explicit = items
+			.map((item) => (identity ? canonicalItem(item, identity) : item))
+			.filter((item) => item.measurementId);
 		const abort = new AbortController();
 		loading = true;
 		void analysis()
@@ -47,8 +54,9 @@
 </script>
 
 {#if loading}<p role="status">Checking reference measurements…</p>{:else}<ul class="diagnostics">
-		{#each items.filter((item) => item.soundRelated && ['like', 'love'].includes(item.rating)) as item (item.productId)}
-			{@const product = products.find((p) => p.id === item.productId)}
+		{#each items.filter((item) => item.soundRelated && ['like', 'love'].includes(item.rating)) as original (original.productId)}
+			{@const item = identity ? canonicalItem(original, identity) : original}
+			{@const product = productFor(products, item.productId, identity)}
 			{@const diagnostic = referenceDiagnostic(item, product, measurements, partition)}
 			<li>
 				<strong>{product ? `${product.brand} ${product.model}` : 'Unavailable product'}</strong

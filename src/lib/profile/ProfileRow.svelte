@@ -3,14 +3,17 @@
 	import { strength, type WorkspaceItem } from './profile.ts';
 	import PreferenceFields from './PreferenceFields.svelte';
 	import ReferenceVariant from './ReferenceVariant.svelte';
+	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	let {
 		item,
+		identity,
 		name,
 		partition,
 		onchange,
 		onremove
 	}: {
 		item: WorkspaceItem;
+		identity?: CatalogIdentity | undefined;
 		name: string;
 		partition: string;
 		onchange: (item: WorkspaceItem) => void;
@@ -47,6 +50,7 @@
 		{#if open}<div class="fields">
 				<PreferenceFields {item} {name} showRating={false} {onchange} />
 				<ReferenceVariant
+					{identity}
 					productId={item.productId}
 					{name}
 					{partition}

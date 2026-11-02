@@ -1,6 +1,33 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import type { ProductListItem } from '#core/atlas/types.ts';
-import { priceListings } from './data.ts';
+import { catalogIdentity, priceListings, productFor } from './data.ts';
+import { gzipSync } from 'node:zlib';
+
+test('loads redirects from both gzip and decoded catalogs and retries failed requests', async () => {
+	const fixture = {
+		products: [{ id: 'now', brand: 'Fixture', model: 'One' }],
+		measurements: [{ id: 'm-now', productId: 'now' }],
+		redirects: { products: { old: 'now' }, measurements: { 'm-old': 'm-now' } }
+	};
+	const fetch = vi.spyOn(globalThis, 'fetch');
+	try {
+		for (const [version, body] of [
+			['fixture-json', JSON.stringify(fixture)],
+			['fixture-gzip', gzipSync(JSON.stringify(fixture))]
+		] as const) {
+			fetch.mockResolvedValueOnce(new Response(body));
+			const identity = await catalogIdentity('iem', version);
+			expect(identity.measurementId('m-old')).toBe('m-now');
+			expect(productFor(fixture.products, 'old', identity)).toEqual(fixture.products[0]);
+		}
+		fetch.mockResolvedValueOnce(new Response('', { status: 503 }));
+		await expect(catalogIdentity('headphone', 'fixture-retry')).rejects.toThrow('503');
+		fetch.mockResolvedValueOnce(new Response(JSON.stringify(fixture)));
+		expect((await catalogIdentity('headphone', 'fixture-retry')).productId('old')).toBe('now');
+	} finally {
+		fetch.mockRestore();
+	}
+});
 
 test('lists each service price with its summary source name and crawl month', () => {
 	const prices: ProductListItem['prices'] = [

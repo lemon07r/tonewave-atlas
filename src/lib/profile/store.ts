@@ -36,6 +36,11 @@ export function profileStore(storage: Storage) {
 			previous = before;
 			write(next);
 		},
+		/** Migration Undo keeps the persisted canonical profile; only this session is restored. */
+		restoreSession(before: Profile) {
+			value = before;
+			previous = undefined;
+		},
 		undo() {
 			if (previous) {
 				const restore = previous;

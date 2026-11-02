@@ -93,7 +93,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await capture('discover-multi-evidence', '.result-row');
 			const reviewer = reviewerForReference(reference);
 			await page.goto(
-				`/?${new URLSearchParams({ ref: reference, rig: reviewer.partition, sources: reviewer.id, sourceMode: 'only' })}`
+				`/?${new URLSearchParams({ ref: reference, rig: reviewer.selectedPartition, sources: reviewer.id, sourceMode: 'only' })}`
 			);
 			await ready();
 			await page.locator('.refine > summary').click();

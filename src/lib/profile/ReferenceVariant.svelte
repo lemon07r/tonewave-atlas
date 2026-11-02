@@ -2,14 +2,17 @@
 	import type { ProductDetail } from '#core/atlas/types.ts';
 	import { detail } from '#lib/discover/display.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	let {
 		productId,
+		identity,
 		name,
 		partition,
 		measurementId,
 		onchange
 	}: {
 		productId: string;
+		identity?: CatalogIdentity | undefined;
 		name: string;
 		partition: string;
 		measurementId?: string | undefined;
@@ -17,9 +20,14 @@
 	} = $props();
 	let data = $state.raw<ProductDetail>();
 	let error = $state('');
+	let currentMeasurement = $derived(
+		measurementId ? (identity?.measurementId(measurementId) ?? measurementId) : ''
+	);
 	$effect(() => {
 		let active = true;
-		void detail(productId).then(
+		void detail(
+			identity?.productId(productId) ?? identity?.measurementProduct(currentMeasurement) ?? productId
+		).then(
 			(value) => {
 				if (active) data = value;
 			},
@@ -36,13 +44,13 @@
 <div class="variant">
 	{#if data}<label class="field-label"
 			>Measurement for {name}<select
-				value={measurementId ?? ''}
+				value={currentMeasurement}
 				onchange={(event) => {
 					onchange(event.currentTarget.value);
 				}}
 			>
 				<option value="">Default product consensus</option>
-				{#each data.measurements.filter((m) => !partition || m.measurement.partition === partition || m.measurement.id === measurementId) as entry (entry.measurement.id)}
+				{#each data.measurements.filter((m) => !partition || m.measurement.partition === partition || m.measurement.id === currentMeasurement) as entry (entry.measurement.id)}
 					<option value={entry.measurement.id}
 						>{entry.source.name} · {entry.measurement.variant.label} · {rigLabel(
 							entry.measurement.partition
