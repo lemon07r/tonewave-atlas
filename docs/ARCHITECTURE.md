@@ -71,7 +71,7 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
 
 `AtlasService({ baseUrl, fetch, detailCacheSize? })` has no UI or worker dependency. Its public
 `Analysis` type and the request/result types in `src/core/atlas/types.ts` define the worker contract.
-`summary`, `products`, `similar`, `taste`, `compare`, `productDetail`, `curves` and `peq` are async;
+`summary`, `products`, `measurements`, `similar`, `taste`, `compare`, `productDetail`, `curves` and `peq` are async;
 `parseUpload` is synchronous locally (async through Comlink). Missing identities/rig support return
 `{ ok: false, error, message }`; invalid numeric settings throw `RangeError`, and failed dataset
 requests reject. `curves` preserves request order and returns missing-channel/identity errors per row.

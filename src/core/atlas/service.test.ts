@@ -201,6 +201,35 @@ describe('atlas service', () => {
 			]
 		});
 	});
+	it('lists per-source prices, per-source measurement counts and measurement metadata', async () => {
+		const { service } = fixture();
+		const c = (await service.products('iem')).find((p) => p.id === 'c');
+		expect(c?.prices.map((p) => [p.sourceId, p.usd]).sort()).toEqual([
+			['s1', 150],
+			['s2', 180],
+			['s3', 1]
+		]);
+		const summary = await service.summary();
+		expect(summary.sources.map((s) => [s.id, s.measurementCount])).toEqual([
+			['s1', 7],
+			['s2', 2],
+			['s3', 1]
+		]);
+		expect(await service.measurements(['b-tune', 'missing', 'd1'])).toEqual([
+			{
+				id: 'b-tune',
+				productId: 'b',
+				brand: 'Brand',
+				model: 'B',
+				partition: 'iem-711',
+				sourceId: 's1',
+				sourceName: 's1',
+				variantLabel: 'Verbatim (b-tune)',
+				variantKind: 'tuning'
+			},
+			expect.objectContaining({ id: 'd1', partition: 'iem-5128', variantKind: 'default' })
+		]);
+	});
 	it('ranks an exact +3 dB shape first, excludes the reference, and never mixes rigs', async () => {
 		const { service, calls } = fixture();
 		const result = await service.similar({ productId: 'a', topK: 20 });

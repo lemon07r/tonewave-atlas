@@ -28,6 +28,7 @@ import type {
 	AtlasOptions,
 	AtlasError,
 	AtlasSummary,
+	MeasurementInfo,
 	ProductListItem,
 	SimilarRequest,
 	SimilarResult,
@@ -126,6 +127,17 @@ function spreadFor(curves: IndexedCurve[], partition: string): ProductSpread | n
 }
 
 /** Framework-free, partition-local dataset facade. All returned values are structured-clone friendly. */
+function listedPrices(measurements: readonly Measurement[]): NonNullable<Measurement['price']>[] {
+	const seen = new Map<string, NonNullable<Measurement['price']>>();
+	for (const m of measurements) {
+		const price = m.price;
+		if (price?.usd == null || !Number.isFinite(price.usd)) continue;
+		const key = `${price.sourceId}|${price.usd}`;
+		if (!seen.has(key)) seen.set(key, price);
+	}
+	return [...seen.values()];
+}
+
 export class AtlasService {
 	private readonly baseUrl: string;
 	private readonly fetcher: typeof globalThis.fetch;
@@ -412,10 +424,16 @@ export class AtlasService {
 			this.catalog('iem'),
 			this.catalog('headphone')
 		]);
+		const counts = new Map<string, number>();
+		for (const m of catalogs.flatMap((c) => c.measurements))
+			counts.set(m.sourceId, (counts.get(m.sourceId) ?? 0) + 1);
 		return {
 			version: manifest.version,
 			builtAt: manifest.builtAt,
-			sources: manifest.sources,
+			sources: manifest.sources.map((source) => ({
+				...source,
+				measurementCount: counts.get(source.id) ?? 0
+			})),
 			partitions: catalogs.flatMap((c) =>
 				c.partitions.map((p) => ({
 					id: p.id,
@@ -447,9 +465,32 @@ export class AtlasService {
 				variantLabels: [
 					...new Set(measurements.filter((m) => m.variant.kind === 'tuning').map((m) => m.variant.label))
 				],
-				priceUsd: priceRange(measurements.map((m) => m.price))
+				priceUsd: priceRange(measurements.map((m) => m.price)),
+				prices: listedPrices(measurements)
 			};
 		});
+	}
+	async measurements(ids: readonly string[]): Promise<MeasurementInfo[]> {
+		const output: MeasurementInfo[] = [];
+		for (const id of ids) {
+			const located = await this.locateMeasurement(id);
+			if (!located) continue;
+			const { catalog, measurement } = located;
+			const product = catalog.products.find((p) => p.id === measurement.productId);
+			const source = catalog.sources.find((s) => s.id === measurement.sourceId);
+			output.push({
+				id,
+				productId: measurement.productId,
+				brand: product?.brand ?? '',
+				model: product?.model ?? '',
+				partition: measurement.partition,
+				sourceId: measurement.sourceId,
+				sourceName: source?.name ?? measurement.sourceId,
+				variantLabel: measurement.variant.label,
+				variantKind: measurement.variant.kind
+			});
+		}
+		return output;
 	}
 	async similar(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
 		const k = topK(request.topK);
@@ -808,6 +849,7 @@ export type Analysis = Pick<
 	AtlasService,
 	| 'summary'
 	| 'products'
+	| 'measurements'
 	| 'similar'
 	| 'taste'
 	| 'compare'

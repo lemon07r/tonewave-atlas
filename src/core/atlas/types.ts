@@ -36,11 +36,27 @@ export interface PartitionSummary {
 	measurementCount: number;
 	productCount: number;
 }
+export interface SourceSummary extends Source {
+	/** Accepted measurements from this source in the published catalog. */
+	measurementCount: number;
+}
 export interface AtlasSummary {
 	version: Manifest['version'];
 	builtAt: string;
-	sources: Source[];
+	sources: SourceSummary[];
 	partitions: PartitionSummary[];
+}
+/** Display metadata for one measurement, without curves. */
+export interface MeasurementInfo {
+	id: string;
+	productId: string;
+	brand: string;
+	model: string;
+	partition: string;
+	sourceId: string;
+	sourceName: string;
+	variantLabel: string;
+	variantKind: Measurement['variant']['kind'];
 }
 export interface ProductListItem {
 	id: string;
@@ -51,6 +67,8 @@ export interface ProductListItem {
 	measurementCount: number;
 	variantLabels: string[];
 	priceUsd: [number, number] | null;
+	/** Reviewer-listed USD prices with their source and crawl date; one per source and amount. */
+	prices: NonNullable<Measurement['price']>[];
 }
 export interface CandidateInfo {
 	id: string;
