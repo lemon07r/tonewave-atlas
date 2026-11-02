@@ -1,10 +1,11 @@
-import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { DatasetFile, Manifest, Source } from '#core/dataset/types.ts';
 import { atomicWrite, errorMessage, OUTPUT, record, sha256, USER_AGENT } from './common.ts';
 import { parallelEach } from './cache.ts';
+import { publishDataset } from './publish.ts';
 
 /** Strict paths and checksums are required before any remote filename reaches the local filesystem. */
 export function validateManifest(value: unknown): Manifest {
@@ -100,12 +101,7 @@ export async function pull(
 				throw new Error(`${file.path}: size/sha256 mismatch`);
 			await atomicWrite(resolve(staging, file.path.slice(manifest.version.length + 1)), bytes);
 		});
-		await rm(resolve(output, manifest.version), { recursive: true, force: true });
-		await rename(staging, resolve(output, manifest.version));
-		await atomicWrite(resolve(output, 'manifest.json'), manifestText);
-		for (const entry of await readdir(output, { withFileTypes: true }))
-			if (entry.isDirectory() && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== manifest.version)
-				await rm(resolve(output, entry.name), { recursive: true });
+		await publishDataset(output, staging, manifest, manifestText);
 	} finally {
 		await rm(staging, { recursive: true, force: true });
 	}

@@ -12,7 +12,7 @@ import {
 	DIRECTORY_URL,
 	discover,
 	errorMessage,
-	exclusions,
+	readInputs,
 	measurementUrl,
 	OPT_OUT_URL,
 	parseOptOuts,
@@ -28,13 +28,15 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 	if (!(limit > 0) || (Number.isFinite(limit) && !Number.isInteger(limit)))
 		throw new Error('--limit must be a positive integer (variants per database)');
 	const sites = values.sites?.split(',');
+	const { excluded } = await readInputs();
 	const http = new HttpCache();
-	const [directory, script, excluded] = await Promise.all([
-		http.fetch(DIRECTORY_URL),
-		http.fetch(OPT_OUT_URL),
-		exclusions()
-	]);
-	if (directory.entry.status !== 200 || script.entry.status !== 200)
+	const [directory, script] = await Promise.all([http.fetch(DIRECTORY_URL), http.fetch(OPT_OUT_URL)]);
+	if (
+		directory.entry.status !== 200 ||
+		script.entry.status !== 200 ||
+		directory.entry.lastFailure ||
+		script.entry.lastFailure
+	)
 		throw new Error('Live source discovery/opt-out retrieval failed');
 	const optOuts = parseOptOuts(new TextDecoder().decode(script.body));
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
@@ -75,12 +77,17 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 				http.fetch(new URL('data/phone_book.json', db.url).href)
 			]);
 			if (bookResponse.entry.status !== 200) throw new Error(`Phone book HTTP ${bookResponse.entry.status}`);
-			const config = configResponse.entry.status === 200 ? new TextDecoder().decode(configResponse.body) : '';
 			if (configResponse.entry.status !== 200)
-				snapshot.errors.push({
-					id: db.id,
-					error: `Config HTTP ${configResponse.entry.status}; using default channels and rig inference`
-				});
+				throw new Error(
+					'No successful config.js; source excluded rather than using rig/calibration defaults'
+				);
+			const config = new TextDecoder().decode(configResponse.body);
+			for (const response of [configResponse, bookResponse])
+				if (response.entry.lastFailure)
+					snapshot.errors.push({
+						id: db.id,
+						error: `Using last-good ${response.entry.url}: ${response.entry.lastFailure.error}`
+					});
 			const dir = dataDirectory(db, config);
 			const channels = fileChannels(config);
 			if (!channels.length) throw new Error('Empty/unsupported default_channels');
@@ -120,6 +127,7 @@ export async function crawl(args = process.argv.slice(2)): Promise<void> {
 			);
 		} catch (e) {
 			snapshot.errors.push({ id: db.id, error: errorMessage(e) });
+			snapshot.excluded.push({ id: db.id, reason: errorMessage(e) });
 			await save();
 			if (e instanceof CrawlBlockedError) throw e;
 			console.warn(`  skipped: ${errorMessage(e)}`);

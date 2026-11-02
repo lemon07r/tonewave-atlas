@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	configChannels,
 	configString,
+	calibrationUrl,
 	dataDirectory,
 	discover,
 	fileChannels,
@@ -36,9 +37,32 @@ describe('source transforms', () => {
 		expect(() => parseOptOuts('something changed')).toThrow();
 	});
 	it('ignores commented sample/channel settings without stripping URLs', () => {
-		const config = `// num_samples = 5;\n/* default_channels = ['R']; */\nconst default_channels = ['L', 'R'], DIR = 'https://example.invalid/data/';`;
+		const config = `// num_samples = 5;\n/* default_channels = ['R']; */\nconst default_channels = ['L', 'R'], DIR = 'https://reviewer.squig.link/data/';`;
 		expect(fileChannels(config)).toEqual(['L', 'R']);
-		expect(dataDirectory(db, config)).toBe('https://example.invalid/data/');
+		expect(dataDirectory(db, config)).toBe('https://reviewer.squig.link/data/');
+	});
+	it.each([
+		'http://127.0.0.1/data/',
+		'https://other.squig.link/data/',
+		'//other.squig.link/data/',
+		'file:///etc/',
+		'data:text/plain,raw',
+		'javascript:alert(1)',
+		'http://reviewer.squig.link/data/',
+		'https://reviewer.squig.link:444/data/',
+		'https://user:pass@reviewer.squig.link/data/'
+	])('rejects a remote config redirect to %s', (path) => {
+		expect(() => dataDirectory(db, `const DIR = '${path}';`)).toThrow('same-origin');
+		expect(() => calibrationUrl(dataDirectory(db, ''), path)).toThrow('same-origin');
+	});
+	it('resolves relative, root-relative and same-origin absolute calibration paths', () => {
+		const dir = dataDirectory(db, "DIR = '/measurements'");
+		expect(dir).toBe('https://reviewer.squig.link/measurements/');
+		expect(calibrationUrl(dir, 'IEF Cal')).toBe('https://reviewer.squig.link/measurements/IEF%20Cal.txt');
+		expect(calibrationUrl(dir, '/data/cal.txt')).toBe('https://reviewer.squig.link/data/cal.txt');
+		expect(calibrationUrl(dir, 'https://reviewer.squig.link/cal/')).toBe(
+			'https://reviewer.squig.link/cal/calibration.txt'
+		);
 	});
 	it('discovers root/subdomain/lab URLs but never altDomain/crinacle', () => {
 		const entries = ['root', 'subdomain', 'labFolder', 'altDomain'].map((urlType) => ({

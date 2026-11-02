@@ -1,7 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
-import { atomicWrite, CACHE, readJson, record, sha256, USER_AGENT } from './common.ts';
+import { atomicWrite, CACHE, errorMessage, readJson, record, sha256, USER_AGENT } from './common.ts';
+
+interface CacheFailure {
+	status: number | null;
+	at: string;
+	error: string;
+}
 
 export interface CacheEntry {
 	url: string;
@@ -11,6 +17,8 @@ export interface CacheEntry {
 	fetchedAt: string;
 	checkedAt: string;
 	bodyHash: string | null;
+	/** Latest failed revalidation, separate from the last successful response's metadata/body. */
+	lastFailure: CacheFailure | null;
 }
 
 export class CrawlBlockedError extends Error {}
@@ -37,6 +45,17 @@ export async function cached(
 		!(raw.lastModified === null || typeof raw.lastModified === 'string')
 	)
 		throw new Error(`Invalid cache record: ${url}`);
+	// Older records have no lastFailure field; the active crawler may still write those records.
+	const failure = raw.lastFailure;
+	if (
+		failure !== undefined &&
+		failure !== null &&
+		(!record(failure) ||
+			!(failure.status === null || typeof failure.status === 'number') ||
+			typeof failure.at !== 'string' ||
+			typeof failure.error !== 'string')
+	)
+		throw new Error(`Invalid cached failure: ${url}`);
 	const entry: CacheEntry = {
 		url,
 		status: raw.status,
@@ -44,7 +63,10 @@ export async function cached(
 		checkedAt: raw.checkedAt,
 		bodyHash: raw.bodyHash,
 		etag: raw.etag,
-		lastModified: raw.lastModified
+		lastModified: raw.lastModified,
+		lastFailure: record(failure)
+			? { status: failure.status as number | null, at: failure.at as string, error: failure.error as string }
+			: null
 	};
 	const body = entry.bodyHash
 		? Uint8Array.from(await readFile(resolve(root, 'bodies', entry.bodyHash)))
@@ -85,6 +107,24 @@ export class HttpCache {
 		try {
 			if (this.blocked) throw new CrawlBlockedError('Crawl already blocked; no further requests');
 			const previous = await cached(url, this.root);
+			const failed = async (status: number | null, error: string) => {
+				const at = new Date().toISOString();
+				const entry: CacheEntry =
+					previous?.entry.status === 200
+						? { ...previous.entry, checkedAt: at, lastFailure: { status, at, error } }
+						: {
+								url,
+								status: status ?? 0,
+								etag: null,
+								lastModified: null,
+								fetchedAt: at,
+								checkedAt: at,
+								bodyHash: null,
+								lastFailure: { status, at, error }
+							};
+				await atomicWrite(resolve(this.root, 'requests', `${sha256(url)}.json`), JSON.stringify(entry));
+				return { entry, body: entry.status === 200 && previous ? previous.body : new Uint8Array() };
+			};
 			const headers: Record<string, string> = { 'User-Agent': USER_AGENT };
 			if (previous?.entry.status === 200) {
 				if (previous.entry.etag) headers['If-None-Match'] = previous.entry.etag;
@@ -96,17 +136,23 @@ export class HttpCache {
 				try {
 					response = await fetch(url, { headers, signal: AbortSignal.timeout(45000) });
 				} catch (e) {
-					if (attempt === 4) throw e;
+					if (attempt === 4) {
+						const retained = await failed(null, errorMessage(e));
+						if (retained.entry.status === 200) return retained;
+						throw e;
+					}
 					await setTimeout(1500 * 2 ** attempt);
 					continue;
 				}
 				if (response.status === 429 || response.status >= 500) {
 					await response.body?.cancel();
 					if (attempt === 4) {
+						const retained = await failed(response.status, `Persistent ${response.status}: ${url}`);
 						if (response.status === 429) {
 							this.blocked = true;
 							throw new CrawlBlockedError(`Persistent 429: ${url}`);
 						}
+						if (retained.entry.status === 200) return retained;
 						throw new Error(`Persistent ${response.status}: ${url}`);
 					}
 					const retry = response.headers.get('retry-after');
@@ -119,17 +165,22 @@ export class HttpCache {
 				}
 				if (response.status === 403) {
 					await response.body?.cancel();
+					await failed(response.status, `HTTP 403 blocking: ${url}`);
 					this.blocked = true;
 					throw new CrawlBlockedError(`HTTP 403 blocking: ${url}`);
 				}
 				const now = new Date().toISOString();
 				if (response.status === 304 && previous?.entry.status === 200) {
-					const entry = { ...previous.entry, checkedAt: now };
+					const entry = { ...previous.entry, checkedAt: now, lastFailure: null };
 					await atomicWrite(resolve(this.root, 'requests', `${sha256(url)}.json`), JSON.stringify(entry));
 					return { entry, body: previous.body };
 				}
+				if (!response.ok) {
+					await response.body?.cancel();
+					return await failed(response.status, `HTTP ${response.status}: ${url}`);
+				}
 				const body = new Uint8Array(await response.arrayBuffer());
-				const bodyHash = response.ok ? sha256(body) : null;
+				const bodyHash = sha256(body);
 				if (bodyHash) await atomicWrite(resolve(this.root, 'bodies', bodyHash), body);
 				const entry: CacheEntry = {
 					url,
@@ -138,7 +189,8 @@ export class HttpCache {
 					lastModified: response.headers.get('last-modified'),
 					fetchedAt: now,
 					checkedAt: now,
-					bodyHash
+					bodyHash,
+					lastFailure: null
 				};
 				await atomicWrite(resolve(this.root, 'requests', `${sha256(url)}.json`), JSON.stringify(entry));
 				return { entry, body };

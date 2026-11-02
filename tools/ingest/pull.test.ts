@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { pull, validateManifest } from './pull.ts';
@@ -47,6 +47,9 @@ describe('dataset pull', () => {
 		await pull('https://dataset.invalid/data/', dir);
 		expect(await readFile(resolve(dir, version, 'catalog-iem.json.gz'))).toEqual(Buffer.from(bytes));
 		expect(JSON.parse(await readFile(resolve(dir, 'manifest.json'), 'utf8')) as unknown).toEqual(manifest);
+		const inode = (await stat(resolve(dir, version))).ino;
+		await pull('https://dataset.invalid/data/', dir);
+		expect((await stat(resolve(dir, version))).ino).toBe(inode);
 	});
 	it('does not publish or retain staging files when a checksum fails', async () => {
 		const dir = await output();
