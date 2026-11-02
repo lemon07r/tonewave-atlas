@@ -1,12 +1,10 @@
-import { mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import type { Catalog, Manifest } from '../../src/core/dataset/types.ts';
+import { screenshot } from './screenshots.ts';
 
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
-mkdirSync(shots, { recursive: true });
 const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest;
 const catalog = JSON.parse(
 	gunzipSync(readFileSync(`static/data/${manifest.version}/catalog-iem.json.gz`)).toString()
@@ -47,17 +45,11 @@ for (const theme of ['light', 'dark'] as const) {
 				window.scrollTo(0, 0);
 			});
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-			await page.screenshot({
-				scale: 'css',
-				path: join(shots, `pages-method-${info.project.name}-${theme}.png`)
-			});
+			await screenshot(page, info, `pages-method-${info.project.name}-${theme}`);
 			await page.locator('#sources').evaluate((element) => {
 				element.scrollIntoView({ block: 'start' });
 			});
-			await page.screenshot({
-				scale: 'css',
-				path: join(shots, `pages-sources-${info.project.name}-${theme}.png`)
-			});
+			await screenshot(page, info, `pages-sources-${info.project.name}-${theme}`);
 		});
 	});
 }

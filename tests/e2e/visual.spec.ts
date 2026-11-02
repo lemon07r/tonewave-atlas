@@ -1,13 +1,10 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import type { WorkspaceItem } from '../../src/lib/profile/profile.ts';
 import { expectTradeoffRows } from './tradeoffs.ts';
 import { reviewerForReference } from './catalog.ts';
+import { screenshot } from './screenshots.ts';
 
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
-mkdirSync(shots, { recursive: true });
 const reference = 'p-437de4e3e3402077cdc3';
 const volume = 'p-9104c8bb39d66e906811';
 const nova = 'p-1b241163b22023defb6f';
@@ -44,10 +41,7 @@ for (const theme of ['light', 'dark'] as const) {
 				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), name).toBe(
 					true
 				);
-				await page.screenshot({
-					scale: 'css',
-					path: join(shots, `${name}-${info.project.name}-${theme}.png`)
-				});
+				await screenshot(page, info, `${name}-${info.project.name}-${theme}`);
 			}
 			async function ready() {
 				await expect(page.locator('.result-row')).toHaveCount(20);

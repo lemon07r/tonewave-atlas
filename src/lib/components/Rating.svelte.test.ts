@@ -27,9 +27,14 @@ test('uses native arrow-key radio navigation', async () => {
 
 test('Not rated and Dislike have different symbols as well as text labels', async () => {
 	const screen = await render(Rating, { compact: true });
-	const paths = [...screen.container.querySelectorAll('label')].map(
-		(label) => label.querySelector('svg')?.innerHTML
-	);
-	expect(paths[0]).not.toBe(paths[4]);
+	const unrated = screen.getByRole('radio', { name: 'Not rated', exact: true });
+	const dislike = screen.getByRole('radio', { name: 'Dislike', exact: true });
+	await expect.element(unrated).toBeVisible();
+	await expect.element(dislike).toBeVisible();
+	const unratedSymbol = unrated.element().closest('label')?.querySelector('svg')?.innerHTML;
+	const dislikeSymbol = dislike.element().closest('label')?.querySelector('svg')?.innerHTML;
+	expect(unratedSymbol).toBeDefined();
+	expect(dislikeSymbol).toBeDefined();
+	expect(unratedSymbol).not.toBe(dislikeSymbol);
 	await expect.element(screen.getByRole('group', { name: 'Your impression' })).toBeVisible();
 });

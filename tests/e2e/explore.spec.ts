@@ -1,10 +1,6 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/redesign/final');
-mkdirSync(shots, { recursive: true });
+import { screenshot } from './screenshots.ts';
 
 test('catalog search preserves exact-match relevance ahead of alphabetical prefix matches', async ({
 	page
@@ -44,10 +40,7 @@ for (const theme of ['light', 'dark'] as const) {
 			const listedPrices = (await hexa.locator('.prices p').allTextContents()).map((text) => text.trim());
 			expect(listedPrices.length).toBeGreaterThan(0);
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-			await page.screenshot({
-				scale: 'css',
-				path: join(shots, `pages-explore-${info.project.name}-${theme}.png`)
-			});
+			await screenshot(page, info, `pages-explore-${info.project.name}-${theme}`);
 			await hexaLink.click();
 			await expect(page.getByRole('heading', { name: 'Hexa', exact: true })).toBeVisible();
 			for (const listing of listedPrices)
@@ -75,10 +68,7 @@ for (const theme of ['light', 'dark'] as const) {
 				window.scrollTo(0, 0);
 			});
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-			await page.screenshot({
-				scale: 'css',
-				path: join(shots, `pages-product-${info.project.name}-${theme}.png`)
-			});
+			await screenshot(page, info, `pages-product-${info.project.name}-${theme}`);
 			const target = page.getByRole('combobox', { name: 'EQ target product', exact: true });
 			await target.fill('Truthear Nova');
 			await page
@@ -119,19 +109,13 @@ for (const theme of ['light', 'dark'] as const) {
 			expect(apo).not.toContain('−');
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			await page.locator('.eq').scrollIntoViewIfNeeded();
-			await page.screenshot({
-				scale: 'css',
-				path: join(shots, `pages-eq-${info.project.name}-${theme}.png`)
-			});
+			await screenshot(page, info, `pages-eq-${info.project.name}-${theme}`);
 			await page
 				.getByRole('figure', { name: 'Original, target and EQ approximation' })
 				.evaluate((element) => {
 					element.scrollIntoView({ block: 'start' });
 				});
-			await page.screenshot({
-				scale: 'css',
-				path: join(shots, `pages-eq-chart-${info.project.name}-${theme}.png`)
-			});
+			await screenshot(page, info, `pages-eq-chart-${info.project.name}-${theme}`);
 			const reference = page.getByRole('combobox', { name: 'EQ reference target', exact: true });
 			await expect(reference.getByRole('option', { name: 'Harman in-ear 2019', exact: true })).toHaveCount(1);
 			await expect(reference.getByRole('option', { name: 'Diffuse field 5128', exact: true })).toHaveCount(0);

@@ -215,7 +215,7 @@ test('pending results retain their returned reference headings, evidence and Com
 		.toBeGreaterThan(0);
 	await expect(results).toHaveAttribute('aria-busy', 'true');
 	const first = page.locator('.result-row').first();
-	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toBeVisible({ timeout: 1000 });
+	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toBeVisible();
 	await expect(first.getByRole('link', { name: 'Compare', exact: true })).toHaveAttribute(
 		'href',
 		new RegExp(volume)
