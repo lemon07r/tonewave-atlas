@@ -135,6 +135,13 @@ report; the build log prints a per-partition summary of support, band spread and
 
 Blank/placeholder identities and unresolved leading markers are quarantined. Numeric models such as
 Binary 1900 are legitimate when their maker is named; wholly symbolic/numeric identities are not.
+Complete source-chain category names (`Test`, `DAC Test`, `Amp Test`, `Cable Test`, source-chain
+tests/comparisons) and models explicitly declared as DACs, amplifiers or dongles are non-products.
+This is not a substring ban: named models containing `Test` or named `Reference`, and transducer
+setups such as `Model with DAC`, remain. `HP Test`/`Headphone Test` is instead a headphone category:
+its named measurements stay in a source-isolated headphone partition, with the category removed from
+the maker field. A declared maker prefix is retained; otherwise the maker stays source-local unbranded,
+without guessing an equivalence to another named headphone. Quarantined non-products have no redirects.
 Explicit fake/replica/counterfeit names or file descriptors, clone/copy product names, and unidentified
 one-character custom names are non-products. Clone accessories alone do not make the product fake.
 Earphones Archive's `*` is a mixed index category, not a uniform fake flag (its index, config and page
@@ -225,6 +232,10 @@ Recognized tip vocabulary includes stock/standard/original, silicone/foam, ear/t
 CP codes and ABP-T; SpinFit W1/Omni, Azla/Sedna Short/Light/Crystal/Origin, Divinus Velvet, Baroque,
 Moondrop Spring, Final E, JVC Spiral Dot, Sennheiser foam, TENNMAK SoFoam and KZ tips. Other names,
 colors and codes are not assumed neutral merely because the same suffix also contains “tip”.
+
+A terminal parenthesized `Depth Test`/`Insertion Depth Test`, optionally preceded by a declared filter,
+folds into an already accepted exact maker/model parent as insertion-fit metadata. Filter and numeric
+depth labels survive, including the first file's depth; no parent is invented when none exists.
 
 Before rig evidence and statistics, labelled switch defaults are reconciled **per product**, with
 one vote per source's unambiguous existing default state. A unique plurality selects the common state.
