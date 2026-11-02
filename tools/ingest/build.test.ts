@@ -105,7 +105,7 @@ async function result(paths: { cache: string; output: string }) {
 
 describe('cached dataset build safety', () => {
 	it('reconciles labelled switch defaults and split cable/state identities before statistics, without fetching', async () => {
-		const names = ['reviewer', 'second', 'third', 'store', 'joyce'];
+		const names = ['reviewer', 'second', 'third', 'store', 'joyce', 'tipper'];
 		const directory = names.map((username) => ({
 			username,
 			name: username,
@@ -125,7 +125,8 @@ describe('cached dataset build safety', () => {
 					]
 				}
 			],
-			[{ name: 'Softears', phones: [{ name: 'Volume S (Standard 4.4mm)', file: ['standard cable'] }] }]
+			[{ name: 'Softears', phones: [{ name: 'Volume S (Standard 4.4mm)', file: ['standard cable'] }] }],
+			[{ name: 'Softears', phones: [{ name: 'Volume S Stock Tip', file: ['stock tips'] }] }]
 		];
 		const bodies: [string, string][] = [[DIRECTORY_URL, JSON.stringify(directory)]];
 		for (const [i, name] of names.entries()) {
@@ -149,14 +150,23 @@ describe('cached dataset build safety', () => {
 		const { catalog, report } = await result(paths);
 		expect(request).not.toHaveBeenCalled();
 		expect(catalog.products.map((p) => p.model)).toEqual(['Volume S']);
-		expect(catalog.measurements).toHaveLength(8);
-		expect(report.switchIdentity.moves.map((m) => m.kind).sort()).toEqual(['cable', 'switch', 'switch']);
+		expect(catalog.measurements).toHaveLength(9);
+		expect(report.switchIdentity.moves.map((m) => m.kind).sort()).toEqual([
+			'cable',
+			'switch',
+			'switch',
+			'tip'
+		]);
 		expect(report.switchDefaults.decisions[0]?.preferred).toBe('impedance:low');
 		for (const source of catalog.sources) {
 			const defaults = catalog.measurements.filter((m) => m.sourceId === source.id && m.variant.isDefault);
 			expect(defaults).toHaveLength(1);
 			expect(defaults[0]?.variant.file).toBe(
-				source.username === 'joyce' ? 'standard cable' : 'Low Impedance'
+				source.username === 'joyce'
+					? 'standard cable'
+					: source.username === 'tipper'
+						? 'stock tips'
+						: 'Low Impedance'
 			);
 		}
 	});

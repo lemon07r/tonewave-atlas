@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import type { Phone } from './common.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults } from './switches.ts';
-import { adapterState, stateSuffix, switchState } from './variant-labels.ts';
+import { adapterState, stateSuffix, switchState, tipSuffixes } from './variant-labels.ts';
 import { variant } from './transform.ts';
 
 function row(
@@ -179,6 +179,49 @@ describe('switch-state identity and source-balanced defaults', () => {
 		expect(result.moves).toHaveLength(0);
 		expect(products.has('sample')).toBe(true);
 		expect(products.has('fit')).toBe(true);
+	});
+	it.each(['Stock Tip', 'Azla tips', 'foam', 'wide bore', 'CP100', '(CP145)', 'JVC Spiral Dot++'])(
+		'folds an exact tip parent and keeps a sole source measurement default: %s',
+		(suffix) => {
+			const products = new Map([product(), product('tip', `Volume S ${suffix}`)].map((p) => [p.id, p]));
+			const rows = [row('source', `Volume S ${suffix}`, true, 'tip')];
+			const result = mergeSwitchIdentities(products, rows);
+			expect(result.moves[0]?.kind).toBe('tip');
+			expect(rows[0]?.measurement).toMatchObject({
+				productId: 'parent',
+				variant: { kind: 'default', isDefault: true }
+			});
+			expect(rows[0]?.measurement.variant.label).toContain(suffix);
+		}
+	);
+	it('keeps additional tips fit, preferring stock deterministically without erasing load/unit meaning', () => {
+		const products = new Map(
+			[product(), product('foam', 'Volume S Foam'), product('stock', 'Volume S Stock Tip')].map((p) => [
+				p.id,
+				p
+			])
+		);
+		const rows = [
+			row('source', 'Volume S Foam', true, 'foam'),
+			row('source', 'Volume S Stock Tip', true, 'stock'),
+			row('source', 'Volume S Foam 15 Ohm', false, 'foam'),
+			row('source', 'Volume S Foam Unit 2', false, 'foam', 'unit'),
+			row('source', 'Volume S stock')
+		];
+		const result = mergeSwitchIdentities(products, rows);
+		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['fit', 'default', 'tuning', 'unit', 'fit']);
+		expect(result.tipDefaultChanges).toHaveLength(1);
+	});
+	it('requires an exact accepted tip parent and does not absorb sample/revision/state prefixes', () => {
+		const products = new Map(
+			[product(), product('missing', 'Other Stock Tip'), product('sample', 'Volume S S2 Foam')].map((p) => [
+				p.id,
+				p
+			])
+		);
+		expect(mergeSwitchIdentities(products, []).moves).toHaveLength(0);
+		for (const text of ['Volume S S2 Foam', 'Volume S Rev2 Stock Tip', 'Volume S High Impedance tips'])
+			expect(tipSuffixes(text).some((s) => s.parent === 'Volume S')).toBe(false);
 	});
 	it('selects the most source-default state, not the most measured state; leaves unlabeled data intact', () => {
 		const products = new Map([['parent', product()]]);

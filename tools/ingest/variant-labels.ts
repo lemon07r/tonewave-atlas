@@ -39,7 +39,7 @@ export function tuningDescriptor(text: string): boolean {
 }
 
 export function tipDescriptor(text: string): boolean {
-	return /tip|insert|shallow|deep|foam|pad|seal|position|\bcp\d{2,3}\b|\b(?:wide|narrow|shorter|standard)\s+bore\b|\b(?:spinfit|sedna|azla|divinus|baroque)\b|\babp-t\b/i.test(
+	return /tip|insert|shallow|deep|foam|pad|seal|position|\bcp\d{2,3}\b|\b(?:wide|narrow|shorter|standard)\s+bore\b|\b(?:spinfit|sedna|azla|divinus|baroque)\b|\babp-t\b|\bjvc\s+spiral\s+dot\b|\bmoondrop\s+spring\b/i.test(
 		text
 	);
 }
@@ -75,6 +75,31 @@ export function cableSuffixes(model: string): { parent: string; label: string }[
 			if (
 				!/^(?:[([][^()[\]]+[)\]]|(?:with\s+|\+\s*)?[^()[\]]*(?:cable|termination|plug)|(?:standard\s+)?[234][.,][45]\s*mm(?:\s+(?:balanced|single[ -]ended))?|balanced\s+(?:connection|output)|single[ -]ended)$/i.test(
 					label
+				)
+			)
+				return [];
+			return [{ parent, label }];
+		})
+		.sort((a, b) => b.parent.length - a.parent.length);
+}
+
+/** Named tips only; never absorb product revisions, samples, mods or switch states into fit. */
+export function tipSuffixes(model: string): { parent: string; label: string }[] {
+	return [...model.matchAll(/\s+/g)]
+		.flatMap((boundary) => {
+			const parent = model.slice(0, boundary.index).trim();
+			const label = model.slice(boundary.index + boundary[0].length).trim();
+			const text = label.replace(/^[([]|[)\]]$/g, '').trim();
+			if (
+				/\b(?:sample|unit|s\d+|rev(?:ision)?\s*\d*|mod|modded|diy|reshell|cable|plug|dsp|switch)\b/i.test(
+					text
+				) ||
+				tuningDescriptor(text)
+			)
+				return [];
+			if (
+				!/^(?:(?:[\p{L}\d+.-]+\s+){0,6}(?:ear)?tips?|(?:[\p{L}\d+.-]+\s+){0,4}(?:foam|(?:wide|narrow|shorter|standard)[ -]bore)|cp\d{2,3}\+?|abp-t|(?:spinfit|sedna|azla|divinus|baroque)\b[^()[\]]*|jvc\s+spiral\s+dot(?:\+{1,2})?|moondrop\s+spring)$/iu.test(
+					text
 				)
 			)
 				return [];

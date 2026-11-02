@@ -8,6 +8,7 @@ import {
 	stateSuffix,
 	switchState,
 	tipDescriptor,
+	tipSuffixes,
 	tuningDescriptor
 } from './variant-labels.ts';
 
@@ -29,11 +30,12 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 	const key = (p: Product, model = p.model) => `${p.form}:${normalise(p.brand)}:${normalise(model)}`;
 	const parents = new Map([...products.values()].map((p) => [key(p), p]));
 	const cableMeasurements = new Set<string>();
+	const tipMeasurements = new Set<string>();
 	const moves: {
 		from: string;
 		to: string;
 		form: string;
-		kind: 'switch' | 'cable';
+		kind: 'switch' | 'cable' | 'tip';
 		before: string;
 		parent: string;
 		label: string;
@@ -42,13 +44,17 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 	const unresolved: { product: string; label: string; reason: string }[] = [];
 	for (const p of [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'))) {
 		const switchSuffix = stateSuffix(p.model);
+		const cableSuffix =
+			cableSuffixes(p.model).find((s) => parents.has(key(p, s.parent))) ?? cableSuffixes(p.model)[0];
 		const suffix =
 			switchSuffix ??
-			cableSuffixes(p.model).find((s) => parents.has(key(p, s.parent))) ??
-			cableSuffixes(p.model)[0];
+			cableSuffix ??
+			tipSuffixes(p.model).find((s) => parents.has(key(p, s.parent))) ??
+			tipSuffixes(p.model)[0];
 		if (!suffix) continue;
+		const kind = switchSuffix ? 'switch' : cableSuffix ? 'cable' : 'tip';
 		const parent = parents.get(key(p, suffix.parent));
-		if (!parent || stateSuffix(parent.model)) {
+		if (!parent || !products.has(parent.id) || stateSuffix(parent.model)) {
 			unresolved.push({
 				product: `${p.brand} ${p.model}`,
 				label: suffix.label,
@@ -57,16 +63,19 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			continue;
 		}
 		for (const { measurement: m } of rows.filter((r) => r.measurement.productId === p.id)) {
-			if (!switchSuffix) cableMeasurements.add(m.id);
+			if (kind === 'cable') cableMeasurements.add(m.id);
+			if (kind === 'tip') tipMeasurements.add(m.id);
 			m.productId = parent.id;
 			m.variant.label = [m.variant.label, suffix.label].filter(Boolean).join(' · ');
 			m.provenance.processing.push(
-				`recognized ${switchSuffix ? 'switch-state' : 'cable/termination'} identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${suffix.label}`
+				`recognized ${kind === 'switch' ? 'switch-state' : kind === 'tip' ? 'tip/fit' : 'cable/termination'} identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${suffix.label}`
 			);
-			if (!switchSuffix) {
+			if (kind === 'cable') {
 				if (/\bdsp\b/i.test(suffix.label) || tuningDescriptor(suffix.label)) m.variant.isDefault = false;
 				if (!m.variant.isDefault) m.variant.kind = cableKind(m);
 			}
+			if (kind === 'tip' && !m.variant.isDefault && m.variant.kind !== 'unit' && m.variant.kind !== 'tuning')
+				m.variant.kind = 'fit';
 			parent.measurementIds.push(m.id);
 		}
 		products.delete(p.id);
@@ -74,7 +83,7 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			from: p.id,
 			to: parent.id,
 			form: p.form,
-			kind: switchSuffix ? 'switch' : 'cable',
+			kind,
 			before: `${p.brand} ${p.model}`,
 			parent: `${parent.brand} ${parent.model}`,
 			label: suffix.label,
@@ -83,10 +92,13 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 	}
 	const cableDefaultChanges: { source: string; productId: string; selected: string; demoted: string[] }[] =
 		[];
+	const tipDefaultChanges: typeof cableDefaultChanges = [];
 	for (const [productId, group] of Map.groupBy(rows, (r) => r.measurement.productId)) {
-		if (!moves.some((m) => m.to === productId && m.kind === 'cable')) continue;
+		if (!moves.some((m) => m.to === productId && m.kind !== 'switch')) continue;
 		for (const [source, sourceRows] of Map.groupBy(group, (r) => r.measurement.sourceId)) {
-			if (!sourceRows.some((r) => cableMeasurements.has(r.measurement.id))) continue;
+			const cable = sourceRows.some((r) => cableMeasurements.has(r.measurement.id));
+			const tip = sourceRows.some((r) => tipMeasurements.has(r.measurement.id));
+			if (!cable && !tip) continue;
 			const defaults = sourceRows.map((r) => r.measurement).filter((m) => m.variant.isDefault);
 			if (defaults.length < 2) continue;
 			const selected =
@@ -95,9 +107,13 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 			const demoted = defaults.filter((m) => m !== selected);
 			for (const m of demoted) {
 				m.variant.isDefault = false;
-				m.variant.kind = cableKind(m);
+				const existing = cableKind(m);
+				m.variant.kind =
+					(tipMeasurements.has(m.id) || (tip && !cable)) && !['unit', 'tuning'].includes(existing)
+						? 'fit'
+						: existing;
 			}
-			cableDefaultChanges.push({
+			(cable ? cableDefaultChanges : tipDefaultChanges).push({
 				source,
 				productId,
 				selected: selected.id,
@@ -121,6 +137,7 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 	return {
 		moves,
 		cableDefaultChanges,
+		tipDefaultChanges,
 		unresolved,
 		groupsBefore: before.length,
 		groupsAfter: collisionGroups([...products.values()]).length,
@@ -259,7 +276,12 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 					for (const m of ms)
 						if (m !== selected && m.variant.isDefault) {
 							m.variant.isDefault = false;
-							m.variant.kind = 'tuning';
+							m.variant.kind =
+								state(m) === null &&
+								tipDescriptor(descriptor(m)) &&
+								classifyEq(`${m.variant.file} ${m.variant.label}`) !== 'ambiguous'
+									? 'fit'
+									: 'tuning';
 						}
 				const after = ms
 					.filter((m) => m.variant.isDefault)
