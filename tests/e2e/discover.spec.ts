@@ -22,6 +22,13 @@ test('real similar search, dB explanations, overlays, URL controls and reload', 
 	await expect(first).toBeVisible();
 	await expect(first.locator('.distance')).toHaveText(/Response distance:\s\d+\.\d\sdB/);
 	await expect(page.locator('.results .section-heading .eyebrow')).toHaveText('711-family coupler');
+	await expect(
+		page.locator('.results').getByText('Reviewer offsets corrected (method)', { exact: true })
+	).toBeVisible();
+	await expect(page.locator('.results').getByRole('link', { name: 'method', exact: true })).toHaveAttribute(
+		'href',
+		'/method#harmonisation'
+	);
 	await expect(page).toHaveURL(/ref=p-/);
 	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
 	await expect(page.locator('.legend-row')).toHaveCount(2);
@@ -89,6 +96,9 @@ test('love and reasoned dislike produce a persistent, explained taste model', as
 	await nova.getByRole('radio', { name: 'Dislike', exact: true }).check();
 	await nova.getByRole('checkbox', { name: 'Too much bass', exact: true }).check();
 	await expect(page.getByRole('region', { name: 'Taste model summary' })).toBeVisible();
+	await expect(
+		page.locator('.results').getByText('Reviewer offsets corrected (method)', { exact: true })
+	).toBeVisible();
 	await expect(
 		page.getByText('Not enough agreement yet to describe this taste against typical IEMs.', { exact: true })
 	).toBeVisible();

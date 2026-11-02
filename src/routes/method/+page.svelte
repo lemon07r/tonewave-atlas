@@ -6,20 +6,25 @@
 	import { dateLabel } from '#lib/product/data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import type { AtlasSummary } from '#core/atlas/types.ts';
+	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
 	let summary = $state.raw<AtlasSummary | null>(null);
 	let error = $state('');
+	let targets = $state.raw<ReferenceTarget[]>([]);
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
 	let sources = $derived(summary?.sources.filter((s) => s.form === form) ?? []);
 	$effect(() => {
 		let active = true;
+		const selectedForm = form;
 		error = '';
 		summary = null;
+		targets = [];
 		void analysis()
-			.then((service) => service.summary())
-			.then((data) => {
+			.then((service) => Promise.all([service.summary(), service.targets(selectedForm)]))
+			.then(([data, references]) => {
 				if (!active) return;
 				summary = data;
+				targets = references;
 			})
 			.catch((e: unknown) => {
 				if (active) error = String(e);
@@ -50,7 +55,9 @@
 			<p class="eyebrow">On this page</p>
 			<a href="#reading">Reading a response</a><a href="#comparison">Fair comparisons</a><a
 				href="#uncertainty">Honest uncertainty</a
-			><a href="#sources">Sources & attribution</a><a href="#privacy">Local by design</a>
+			><a href="#harmonisation">Reviewer offsets</a><a href="#sources">Sources & attribution</a><a
+				href="#privacy">Local by design</a
+			>
 		</nav>
 		<article>
 			<section id="reading">
@@ -80,8 +87,8 @@
 				</p>
 				<p>
 					Balanced weighting gives less influence to uncertain high frequencies. Bass, vocal and treble focus
-					change the weights, not the underlying measurements. Current partition statistics are absent;
-					matching uses a conservative default reliability profile, not measured error bars.
+					change the weights, not the underlying measurements. Partition statistics inform reliability where
+					supported; otherwise matching uses a conservative default profile, not measured error bars.
 				</p>
 				<p>
 					A product reference is the aligned, per-frequency median of its default measurements within one rig
@@ -94,6 +101,20 @@
 					partitions too. Compare can explicitly overlay different rigs, with a caution and rig labels. Its
 					curves first receive the same balanced, reliability-weighted level offset to the first curve. The
 					difference view then subtracts the selected baseline point by point, without an extra alignment.
+				</p>
+			</section>
+			<section id="harmonisation">
+				<h2>Reviewer offsets, not rig conversion.</h2>
+				<p>
+					Similar and taste matching correct reviewer offsets by default only when partition support is
+					sufficient and pooled mean improvement is positive overall and in every held-out fold. Otherwise
+					correction stays off; explicit correction requests without sufficient support are rejected. Detail
+					charts and EQ use uncorrected curves.
+				</p>
+				<p>
+					In the 2026-11 dataset build, five-fold validation on iem-711 reduced held-out same-product pair
+					distance from 1.781 to 1.588 dB (−10.9%) across 50,823 pairs; fold improvements were 0.184–0.202 dB.
+					This is not physical calibration, rig conversion or evidence of listener preference.
 				</p>
 			</section>
 			<section id="uncertainty">
@@ -162,6 +183,12 @@
 						</table>
 					</div>
 				{/if}
+				<h3>Reference targets</h3>
+				{#each targets as target (target.id)}<div>
+						<h4>{target.name}</h4>
+						<p>{target.description} Compatible partitions: {target.partitions.join(', ')}.</p>
+						<p>{target.attribution} <a href={target.provenance.upstream} rel="external">Target source</a></p>
+					</div>{:else}{#if summary}<p>No published reference targets for this form factor.</p>{/if}{/each}
 				<p>
 					Full definitions: <a href="https://github.com/lemon07r/tonewave-atlas/blob/main/docs/METHODOLOGY.md"
 						>methodology and maths</a
@@ -181,10 +208,10 @@
 					product and measurement IDs, channel, smoothing and baseline can be shared in the URL.
 				</p>
 				<p>
-					Product-to-product EQ fits a constrained 48 kHz filter response. Its before/after distance is the
-					level-aligned RMS residual over 20 Hz–10 kHz. Notches and high frequencies are treated
-					conservatively. This approximates another product’s measured curve on the same rig, not its sound in
-					your ear.
+					Product or rig-matched reference-target EQ fits a constrained 48 kHz filter response. Its
+					before/after distance is the level-aligned RMS residual over 20 Hz–10 kHz. Notches and high
+					frequencies are treated conservatively. This approximates the target curve on the same rig, not its
+					sound in your ear.
 				</p>
 				<a class="method-back" href={resolve(`/${form === 'headphone' ? '?form=headphones' : ''}`)}
 					>Back to Discover <span aria-hidden="true">→</span></a

@@ -5,7 +5,9 @@ import type {
 	Manifest,
 	Measurement,
 	Partition,
+	PartitionStatistics,
 	Product,
+	ReferenceTarget,
 	Source,
 	VariantKind
 } from '../dataset/types.ts';
@@ -135,6 +137,24 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 	const json = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
 	files.set('v1/catalog-iem.json.gz', json(catalog));
 	files.set('v1/catalog-headphone.json.gz', json(empty));
+	const targets: ReferenceTarget[] = ['iem-711', 'iem-5128'].map((partition) => ({
+		id: `shelf-${partition}`,
+		name: `Synthetic shelf ${partition}`,
+		partitions: [partition],
+		form: 'iem',
+		description: 'Fixture measurement plus a smooth 3 dB bass shelf.',
+		attribution: 'Synthetic independent target',
+		values: Array.from(GRID, (hz, i) => (i < 120 ? 0 : 2) + 3 / (1 + (hz / 200) ** 4)),
+		provenance: {
+			file: 'synthetic.csv',
+			sha256: 'fixture',
+			upstream: 'https://example.com/target',
+			revision: 'fixture',
+			processing: [],
+			warnings: []
+		}
+	}));
+	files.set('v1/targets.json.gz', json(targets));
 	const packs: CurvePack[] = [];
 	for (const partition of partitions) {
 		const ids = new Set(measurements.filter((m) => m.partition === partition.id).map((m) => m.id));
@@ -190,6 +210,157 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 }
 
 describe('atlas service', () => {
+	it('lazily caches reference targets across forms, retaining GRID values and provenance', async () => {
+		const { service, calls } = fixture();
+		expect(calls).toEqual([]);
+		const [targets, headphones] = await Promise.all([service.targets('iem'), service.targets('headphone')]);
+		expect(headphones).toEqual([]);
+		expect(targets).toHaveLength(2);
+		expect(targets[0]).toMatchObject({
+			id: 'shelf-iem-711',
+			attribution: 'Synthetic independent target',
+			provenance: { revision: 'fixture' }
+		});
+		expect(targets[0]?.values).toHaveLength(GRID.length);
+		expect(targets[0]?.values[0]).toBeCloseTo(3 / (1 + 0.1 ** 4), 12);
+		expect(structuredClone(targets)).toEqual(targets);
+		if (targets[0]) targets[0].values[0] = 99;
+		expect((await service.targets('iem'))[0]?.values[0]).not.toBe(99);
+		expect(calls).toEqual(['manifest.json', 'v1/targets.json.gz']);
+	});
+	it('refuses cross-rig reference EQ and fits an independently specified 3 dB shelf', async () => {
+		const { service } = fixture();
+		expect(
+			await service.peq({ measurementId: 'a1', target: { kind: 'reference', targetId: 'shelf-iem-5128' } })
+		).toMatchObject({ ok: false, error: 'not-measured-on-rig' });
+		expect(
+			await service.peq({ measurementId: 'd1', target: { kind: 'reference', targetId: 'shelf-iem-711' } })
+		).toMatchObject({ ok: false, error: 'not-measured-on-rig' });
+		expect(
+			await service.peq({ measurementId: 'a1', target: { kind: 'reference', targetId: 'missing' } })
+		).toMatchObject({ ok: false, error: 'unknown-target' });
+		const request = {
+			measurementId: 'a1',
+			target: { kind: 'reference' as const, targetId: 'shelf-iem-711' }
+		};
+		const before = await service.peq({ ...request, maxFilters: 0 });
+		const after = await service.peq({ ...request, maxFilters: 5 });
+		expect(before.ok && after.ok).toBe(true);
+		if (!before.ok || !after.ok) return;
+		expect(before.result.residualDistanceDb).toBeGreaterThan(1);
+		expect(after.result.residualDistanceDb).toBeLessThan(before.result.residualDistanceDb / 2);
+		expect(after.result.filters.length).toBeGreaterThan(0);
+		const upload = service.parseUpload(Array.from(GRID, (hz) => `${hz} 0`).join('\n'), 'fixture.txt');
+		if (!upload.ok) throw new Error('fixture upload');
+		expect(await service.peq({ uploadId: upload.uploadId, target: request.target })).toMatchObject({
+			ok: false,
+			error: 'partition-required'
+		});
+	});
+	it.each([
+		'validated',
+		'low-support',
+		'absent',
+		'negative-fold',
+		'zero-fold',
+		'empty-folds',
+		'missing-fold',
+		'null-fold',
+		'negative-pooled',
+		'missing-validation',
+		'no-offsets'
+	] as const)(
+		'defaults similar and taste correction only with supported, positive validation: %s',
+		async (scenario) => {
+			const { service, catalog, packs, files } = fixture();
+			const pack = packs[0];
+			if (!pack) throw new Error('fixture');
+			const summary = {
+				pairs: 10,
+				meanBefore: 2,
+				meanAfter: 1,
+				meanImprovement: 1,
+				medianImprovement: 1,
+				improved: true
+			};
+			const stats: PartitionStatistics = {
+				spread: Array.from(RANK_GRID, () => 1),
+				populationMedian: Array.from(RANK_GRID, () => 0),
+				sourceOffsets: { s2: Array.from(RANK_GRID, (_, i) => (i < 60 ? -4 : 4)) },
+				support: {
+					status: 'sufficient',
+					reason: null,
+					minimumProducts: 10,
+					multiSourceProducts: 20,
+					sources: 2,
+					spread: Array.from(RANK_GRID, () => 20),
+					sourceProducts: {},
+					sourceBins: {}
+				},
+				harmonisation: {
+					...summary,
+					foldCount: 2,
+					folds: [0, 1].map((fold) => ({ ...summary, fold, trainingProducts: 10, heldOutProducts: 10 }))
+				}
+			};
+			const validation = stats.harmonisation;
+			if (!validation || !stats.support || !validation.folds[0]) throw new Error('fixture validation');
+			if (scenario === 'low-support') stats.support.status = 'low';
+			if (scenario === 'negative-fold') validation.folds[0].meanImprovement = -1;
+			if (scenario === 'zero-fold') validation.folds[0].meanImprovement = 0;
+			if (scenario === 'null-fold') validation.folds[0].meanImprovement = null;
+			if (scenario === 'empty-folds') {
+				validation.folds = [];
+				validation.foldCount = 0;
+			}
+			if (scenario === 'missing-fold') validation.folds.pop();
+			if (scenario === 'negative-pooled') validation.meanImprovement = -1;
+			if (scenario === 'missing-validation') delete stats.harmonisation;
+			if (scenario === 'no-offsets') stats.sourceOffsets = {};
+			// Older rank packs can defer statistics to catalog JSON, including incomplete validation.
+			if (scenario === 'empty-folds' || scenario === 'missing-fold') {
+				if (!catalog.partitions[0]) throw new Error('fixture partition');
+				catalog.partitions[0].statistics = stats;
+				files.set('v1/catalog-iem.json.gz', new TextEncoder().encode(JSON.stringify(catalog)));
+			} else pack.statistics = scenario === 'absent' ? null : stats;
+			files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+			const expected = scenario === 'validated';
+			const similar = await service.similar({ productId: 'a', partition: 'iem-711' });
+			expect(similar.ok && similar.harmonised).toBe(expected);
+			const items = [{ productId: 'a', rating: 'like' as const, strength: 1, soundRelated: true }];
+			const taste = await service.taste({ items, partition: 'iem-711' });
+			expect(taste.ok && taste.harmonised).toBe(expected);
+			const raw = await service.similar({ productId: 'a', partition: 'iem-711', harmonise: false });
+			expect(raw.ok && raw.harmonised).toBe(false);
+			const rawTaste = await service.taste({ items, partition: 'iem-711', harmonise: false });
+			expect(rawTaste.ok && rawTaste.harmonised).toBe(false);
+			if (expected) {
+				// a1 is unchanged; a2 receives [+4, -4]. After LS alignment the median is [2, 0], not [0, 2].
+				expect(taste.ok && taste.model.tastes[0]?.centre[0]).toBeCloseTo(2, 8);
+				expect(taste.ok && taste.model.tastes[0]?.centre[119]).toBeCloseTo(0, 8);
+				expect(rawTaste.ok && rawTaste.model.tastes[0]?.centre[0]).toBeCloseTo(0, 8);
+				expect(
+					similar.ok && raw.ok && similar.results.find((r) => r.candidate.id === 'b')?.distance
+				).toBeGreaterThan(raw.ok ? (raw.results[0]?.distance ?? Infinity) : Infinity);
+				const peq = await service.peq({
+					productId: 'a',
+					target: { kind: 'product', productId: 'b' },
+					maxFilters: 0
+				});
+				expect(peq.ok && peq.result.residualDistanceDb).toBeCloseTo(0, 8);
+			}
+			if (scenario === 'low-support' || scenario === 'absent') {
+				expect(await service.similar({ productId: 'a', harmonise: true })).toMatchObject({
+					ok: false,
+					error: 'insufficient-data'
+				});
+				expect(await service.taste({ items, harmonise: true })).toMatchObject({
+					ok: false,
+					error: 'insufficient-data'
+				});
+			}
+		}
+	);
 	it('requires a typed reference identity while preserving product and explicit-measurement calls', () => {
 		expectTypeOf<{ productId: string }>().toExtend<SimilarRequest>();
 		expectTypeOf<{ measurementId: string }>().toExtend<SimilarRequest>();

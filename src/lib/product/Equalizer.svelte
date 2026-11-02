@@ -7,6 +7,7 @@
 	import type { SearchItem } from '#lib/search.ts';
 	import { analysis } from '#lib/atlas.ts';
 	import type { PeqResponse, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
+	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import { GRID } from '#core/grid.ts';
 	import { responseDistance } from '#core/analysis/distance.ts';
@@ -18,6 +19,10 @@
 	}: { detail: ProductDetail; products: ProductListItem[]; partition: string } = $props();
 	let query = $state('');
 	let targetId = $state('');
+	let targetKind = $state<'product' | 'reference'>('product');
+	let references = $state.raw<ReferenceTarget[]>([]);
+	let referenceError = $state('');
+	let fittedReference = $state.raw<ReferenceTarget | null>(null);
 	let maxFilters = $state(5);
 	let busy = $state(false);
 	let error = $state('');
@@ -40,17 +45,43 @@
 			.map((p) => ({ id: p.id, label: `${p.brand} ${p.model}`, sources: p.sourceCount }))
 	);
 	$effect(() => {
-		request = { productId: detail.product.id, partition };
+		const product = detail.product,
+			rig = partition;
+		let active = true;
+		request = { productId: product.id, partition: rig };
 		result = null;
+		fittedReference = null;
 		series = [];
 		targetId = '';
+		targetKind = 'product';
 		query = '';
 		error = '';
 		busy = false;
+		references = [];
+		referenceError = '';
+		void analysis()
+			.then((service) => service.targets(product.form))
+			.then((targets) => {
+				if (active) references = targets.filter((target) => target.partitions.includes(rig));
+			})
+			.catch((e: unknown) => {
+				if (active) referenceError = `Reference targets unavailable: ${String(e)}`;
+			});
+		return () => {
+			active = false;
+			request = {};
+		};
 	});
-	async function fit(id = targetId, filters = maxFilters) {
+	function attribution(data: ProductDetail, ids: string[]) {
+		return data.measurements
+			.filter((m) => ids.includes(m.measurement.id))
+			.map((m) => `${m.source.name} ${m.measurement.provenance.databaseUrl}`)
+			.join('; ');
+	}
+	async function fit(id = targetId, kind = targetKind, filters = maxFilters) {
 		if (!id) return;
 		targetId = id;
+		targetKind = kind;
 		const token = {};
 		request = token;
 		const product = detail,
@@ -58,37 +89,47 @@
 		busy = true;
 		error = '';
 		result = null;
+		fittedReference = null;
 		try {
 			const service = await analysis();
+			const reference = kind === 'reference' ? references.find((target) => target.id === id) : null;
+			if (kind === 'reference' && !reference) throw new Error('Choose a reference target on this rig.');
 			const [response, target] = await Promise.all([
 				service.peq({
 					productId: product.product.id,
 					partition: rig,
-					target: { kind: 'product', productId: id },
+					target: kind === 'reference' ? { kind, targetId: id } : { kind, productId: id },
 					maxFilters: filters
 				}),
-				service.productDetail(id)
+				reference
+					? Promise.resolve({
+							values: Float64Array.from(reference.values),
+							label: reference.name,
+							attribution: reference.attribution
+						})
+					: service.productDetail(id).then((data) => {
+							if (!data.ok) throw new Error(data.message);
+							const spread = data.spread.find((s) => s.partition === rig);
+							if (!spread) throw new Error('Target product needs a default consensus on this rig.');
+							return {
+								values: spread.centre,
+								label: `${data.product.brand} ${data.product.model}`,
+								attribution: attribution(data, spread.measurementIds)
+							};
+						})
 			]);
 			if (token !== request) return;
 			if (!response.ok) throw new Error(response.message);
-			if (!target.ok) throw new Error(target.message);
-			const sourceSpread = product.spread.find((s) => s.partition === rig),
-				targetSpread = target.spread.find((s) => s.partition === rig);
-			if (!sourceSpread || !targetSpread)
-				throw new Error('Both products need a default consensus on this rig.');
+			const sourceSpread = product.spread.find((s) => s.partition === rig);
+			if (!sourceSpread) throw new Error('Source product needs a default consensus on this rig.');
 			const source = sourceSpread.centre,
-				targetValues = targetSpread.centre;
+				targetValues = target.values;
 			const distance = responseDistance(source, targetValues, { frequencies: GRID, maxHz: 10000 });
 			before = distance?.distance ?? null;
 			const alignedTarget = Float64Array.from(targetValues, (v) => v + (distance?.offset ?? 0));
 			const corrected = Float64Array.from(source, (v, i) => v + (response.result.response[i] ?? NaN));
 			const offset =
 				responseDistance(corrected, alignedTarget, { frequencies: GRID, maxHz: 10000 })?.offset ?? 0;
-			const attribution = (data: ProductDetail, ids: string[]) =>
-				data.measurements
-					.filter((m) => ids.includes(m.measurement.id))
-					.map((m) => `${m.source.name} ${m.measurement.provenance.databaseUrl}`)
-					.join('; ');
 			series = [
 				{
 					id: 'original',
@@ -98,10 +139,10 @@
 				},
 				{
 					id: 'target',
-					label: `${target.product.brand} ${target.product.model} · target`,
+					label: `${target.label} · target`,
 					values: alignedTarget,
 					reference: true,
-					attribution: attribution(target, targetSpread.measurementIds)
+					attribution: target.attribution
 				},
 				{
 					id: 'eq',
@@ -111,6 +152,7 @@
 				}
 			];
 			result = response;
+			fittedReference = reference ?? null;
 		} catch (e) {
 			if (token === request) error = String(e);
 		} finally {
@@ -135,9 +177,32 @@
 		<h2 id="eq-heading">EQ this toward…</h2>
 	</div>
 	<Notice kind="caution"
-		>EQ toward a coupler measurement of another product approximates it on the rig; fit and unit variation
+		>EQ toward a reference target or another product approximates its curve on the rig; fit and unit variation
 		still apply. It does not reproduce comfort, distortion or spatial perception.</Notice
 	>
+	<label class="reference-choice">
+		Reference target
+		<select
+			aria-label="EQ reference target"
+			value={targetKind === 'reference' ? targetId : ''}
+			onchange={(event) => {
+				const id = event.currentTarget.value;
+				if (id) void fit(id, 'reference');
+				else {
+					request = {};
+					targetKind = 'product';
+					targetId = '';
+					result = null;
+					series = [];
+					busy = false;
+				}
+			}}
+		>
+			<option value="">Another product (choose below)</option>
+			{#each references as target (target.id)}<option value={target.id}>{target.name}</option>{/each}
+		</select>
+	</label>
+	{#if referenceError}<p class="small muted">{referenceError}</p>{/if}
 	<div class="eq-controls">
 		<SearchCombobox
 			{items}
@@ -145,7 +210,7 @@
 			filter={false}
 			label="EQ target product"
 			emptyText="No other default product is available on this rig. Try another rig partition."
-			onselect={(item: SearchItem) => void fit(item.id)}
+			onselect={(item: SearchItem) => void fit(item.id, 'product')}
 		/><Slider
 			label="Maximum filters"
 			bind:value={maxFilters}
@@ -161,6 +226,10 @@
 	{#if busy}<p role="status">Fitting a constrained parametric EQ in your browser…</p>{/if}
 	{#if error}<Notice kind="caution" title="EQ unavailable">{error}</Notice>{/if}
 	{#if result}
+		{#if fittedReference}<p class="small reference-attribution">
+				{fittedReference.name} · {fittedReference.attribution}
+				<a href={fittedReference.provenance.upstream} rel="external">Target source</a>
+			</p>{/if}
 		<p class="mono small">
 			Response distance, 20 Hz–10 kHz: {before?.toFixed(1) ?? '—'} dB before → {result.result.residualDistanceDb.toFixed(
 				1
@@ -235,6 +304,12 @@
 		grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr) auto;
 		gap: 24px;
 		align-items: end;
+	}
+	.reference-choice {
+		display: grid;
+		gap: 8px;
+		max-width: 480px;
+		font-size: var(--text-sm);
 	}
 	.table-scroll {
 		overflow-x: auto;

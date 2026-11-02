@@ -146,6 +146,15 @@ Per-source/per-bin counts and actual fold pair counts remain essential; the part
 establish adequate support for every correction bin or source. Low-support estimates are exploratory,
 unsupported bins remain missing (JSON `null`), and this label never enables harmonisation by itself.
 
+Similar/taste requests omitting `harmonise` enable correction only when support is sufficient and
+pooled mean improvement is finite and positive both overall and in every reported fold (with a
+complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
+explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
+`harmonised` only when finite published offsets were applied. Detail charts and PEQ remain uncorrected.
+In the **2026-11 dataset build**, five-fold iem-711 validation reduced held-out same-product pair
+distance **1.781 → 1.588 dB (−10.9%)**, with fold improvements **0.184–0.202 dB** over **50,823 pairs**.
+This validates correction for this dataset, not physical calibration or listener preference.
+
 ### Estimation and held-out validation
 
 The ingestion caller supplies one curve per product/source within a partition, after choosing

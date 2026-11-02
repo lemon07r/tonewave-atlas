@@ -44,9 +44,9 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
 - **Uncertainty is measured, not assumed.** Many products are measured by several reviewers on the
   same rig family. Partition statistics can carry estimated per-frequency cross-source spread and
   per-source systematic offsets from that overlap; the engine uses them for weighting and confidence
-  when present. The current partial dataset has null statistics, so the service uses the documented
-  conservative default spread and does not silently estimate or enable source correction. See
-  `METHODOLOGY.md`.
+  when present. Similar/taste correction defaults on only with sufficient support and positive pooled
+  improvement overall and in every validation fold; results report actual application. Missing
+  statistics use the conservative default spread, never on-demand estimation. See `METHODOLOGY.md`.
 - **Products vs measurements vs variants.** A product (brand + model) has measurements (one per source
   and variant). Variants keep their verbatim labels plus a heuristic kind: `default`, `tuning`
   (switches, impedance modes, nozzles, DSP), `fit` (tips, insertion), `setup` (adapters), `unit`
@@ -63,7 +63,7 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
   are never sent to a server. Upload-to-dataset comparisons require the caller to choose the rig.
 - **Caching.** Dataset files live under a content-hashed version path and are served immutable;
   `manifest.json` is revalidated by the browser HTTP cache. The service pins its first manifest for
-  its lifetime; dispose/recreate to pick up a new dataset. Decoded catalogs, rank packs and indexes
+  its lifetime; dispose/recreate to pick up a new dataset. Decoded reference targets, catalogs, rank packs and indexes
   stay in worker memory; decoded detail shards use an eight-shard LRU (configurable in the pure
   service). Concurrent requests share pending loads; failed loads can be retried. No decoded-pack
   IndexedDB cache is implemented.
@@ -72,7 +72,7 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
 
 `AtlasService({ baseUrl, fetch, detailCacheSize? })` has no UI or worker dependency. Its public
 `Analysis` type and the request/result types in `src/core/atlas/types.ts` define the worker contract.
-`summary`, `products`, `measurements`, `similar`, `taste`, `compare`, `productDetail`, `curves` and `peq` are async;
+`summary`, `products`, `targets`, `measurements`, `similar`, `taste`, `compare`, `productDetail`, `curves` and `peq` are async;
 `parseUpload` is synchronous locally (async through Comlink). Missing identities/rig support return
 `{ ok: false, error, message }`; invalid numeric settings throw `RangeError`, and failed dataset
 requests reject. `curves` preserves request order and returns missing-channel/identity errors per row.
@@ -89,10 +89,16 @@ count, or the greatest coverage of usable rated/reference items for taste/compar
 id order. Explicit measurement references keep their own rig, including non-default variants. A product with no
 usable default on that rig requires an explicit measurement id rather than substituting a fit variant.
 
+`targets(form)` lazily caches published GRID reference curves with attribution and artifact provenance.
+PEQ accepts product, raw curve or `{ kind: 'reference', targetId }` targets. Reference targets must
+explicitly include the measurement's partition; uploads require an explicit matching partition.
+Compare, detail and PEQ retain uncorrected measurements, independent of similar/taste defaults.
+
 ## Dataset files (`static/data/`)
 
 - `manifest.json` — dataset version, build time, per-file hashes and sizes, source list.
 - `<version>/catalog-<form>.json.gz` — products, measurements, sources (metadata only).
+- `<version>/targets.json.gz` — rig-specific reference curves on GRID, attribution and source provenance.
 - `<version>/rank-<partition>.bin.gz` — 1/12-octave channel-averaged curves for ranking, plus
   partition statistics (spread, source offsets, population median).
 - `<version>/detail-<partition>-<n>.bin.gz` — per-channel 1/24-octave curves, sharded, loaded on demand.

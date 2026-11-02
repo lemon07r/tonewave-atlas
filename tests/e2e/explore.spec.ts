@@ -9,7 +9,7 @@ mkdirSync(shots, { recursive: true });
 for (const theme of ['light', 'dark'] as const) {
 	test.describe(theme, () => {
 		test.use({ colorScheme: theme });
-		test('filters the real catalog, opens provenance and exports product-to-product EQ', async ({
+		test('filters the real catalog, opens provenance and exports product and reference EQ', async ({
 			page
 		}, info) => {
 			test.setTimeout(60000);
@@ -105,6 +105,19 @@ for (const theme of ['light', 'dark'] as const) {
 					element.scrollIntoView({ block: 'start' });
 				});
 			await page.screenshot({ path: join(shots, `pages-eq-chart-${info.project.name}-${theme}.png`) });
+			const reference = page.getByRole('combobox', { name: 'EQ reference target', exact: true });
+			await expect(reference.getByRole('option', { name: 'Harman in-ear 2019', exact: true })).toHaveCount(1);
+			await expect(reference.getByRole('option', { name: 'Diffuse field 5128', exact: true })).toHaveCount(0);
+			await reference.selectOption('harman-in-ear-2019');
+			await expect(page.locator('.reference-attribution')).toContainText('Harman in-ear 2019');
+			await expect(page.locator('.reference-attribution')).toContainText('Olive');
+			await expect(page.locator('.reference-attribution a')).toHaveAttribute('href', /AutoEq\/blob\//);
+			await expect(table).toBeVisible();
+			expect(await table.getByRole('row').count()).toBeGreaterThan(1);
+			await expect(page.getByText(/Response distance, 20 Hz–10 kHz:/)).toContainText(
+				/dB before → \d+\.\d dB after/
+			);
+			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 			expect(errors).toEqual([]);
 		});
 	});

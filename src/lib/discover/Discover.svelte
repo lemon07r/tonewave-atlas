@@ -647,6 +647,9 @@
 				<p class="distance-note">
 					Response distance (dB) · lower is closer, not better. Up to five chart overlays.
 				</p>
+				{#if activeResult?.harmonised}<p class="distance-note">
+						Reviewer offsets corrected (<a href={resolve('/method#harmonisation')}>method</a>)
+					</p>{/if}
 				{#if loading}<Skeleton rows={4} />{:else if queryError}<Notice kind="caution">{queryError}</Notice
 					>{:else}
 					{#if taste && urlState.mode === 'profile'}<section class="model" aria-label="Taste model summary">
