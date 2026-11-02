@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import type { Catalog, Manifest } from '#core/dataset/types.ts';
+import type { Catalog, Manifest, ReferenceTarget } from '#core/dataset/types.ts';
 import { decodePack } from '#core/dataset/codec.ts';
 import { GRID } from '#core/grid.ts';
 import { build } from './build.ts';
 import { HttpCache } from './cache.ts';
-import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL } from './common.ts';
+import { datasetVersion, DIRECTORY_URL, OPT_OUT_URL, ROOT, sha256 } from './common.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -31,9 +31,11 @@ async function fixture(configBody: string | null = config, extraBodies: [string,
 	roots.push(root);
 	const paths = { root, cache: resolve(root, 'cache'), output: resolve(root, 'output') };
 	await mkdir(resolve(root, 'data'));
+	await cp(resolve(ROOT, 'data/targets'), resolve(root, 'data/targets'), { recursive: true });
 	for (const [name, value] of Object.entries({
 		exclusions: { sources: [], files: [], products: [] },
 		aliases: { brands: {} },
+		products: { aliases: {} },
 		sources: { overrides: {} }
 	}))
 		await writeFile(resolve(root, `data/${name}.json`), JSON.stringify(value));
@@ -76,11 +78,135 @@ async function result(paths: { cache: string; output: string }) {
 	const report = JSON.parse(await readFile(resolve(paths.cache, 'report.json'), 'utf8')) as {
 		excluded: { reason: string }[];
 		issues: { reason: string }[];
+		retainedFailures: { url: string; status: number | null }[];
+		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		groupwiseMerges: {
+			merged: number;
+			groups: { productId: string; originalKeys: string[]; merged: number }[];
+		};
+		statistics: { partition: string; statistics: unknown }[];
+		targets: ({ id: string } & ReferenceTarget['provenance'])[];
 	};
 	return { manifest, catalog, report };
 }
 
 describe('cached dataset build safety', () => {
+	it('counts unique original keys and net reduction separately from groupwise merges when a key splits', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: 'Model' },
+							{ name: 'Brand Model', file: 'Model2' },
+							{ name: 'BrandModel', file: 'Model3' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)]
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products).toHaveLength(2);
+		expect(report.identityMerges).toEqual({ productsBefore: 2, productsAfter: 2, merged: 0 });
+		expect(report.groupwiseMerges).toEqual({
+			merged: 1,
+			groups: [
+				{
+					productId: expect.any(String) as unknown,
+					originalKeys: ['iem:brand:brandmodel', 'iem:brand:model'],
+					merged: 1
+				}
+			]
+		});
+	});
+	it('records successful target parse warnings in both the report and published target provenance', async () => {
+		const { paths } = await fixture();
+		const file = resolve(paths.root, 'data/targets/Harman in-ear 2019.csv');
+		const bytes = `${await readFile(file, 'utf8')}\n20.00,7.61\nbroken row\n`;
+		await writeFile(file, bytes);
+		await build(paths);
+		const { manifest, report } = await result(paths);
+		const targets = JSON.parse(
+			gunzipSync(await readFile(resolve(paths.output, manifest.version, 'targets.json.gz'))).toString()
+		) as ReferenceTarget[];
+		const expected = [
+			'Dropped 1 malformed/nonfinite rows',
+			'Sorted frequencies',
+			'Merged 1 duplicate frequencies (dB mean)'
+		];
+		expect(targets[0]?.provenance.warnings).toEqual(expected);
+		expect(report.targets[0]?.warnings).toEqual(expected);
+		expect(report.targets[0]?.sha256).toBe(sha256(bytes));
+		expect(report.targets[0]).toEqual({ id: targets[0]?.id, ...targets[0]?.provenance });
+	});
+	it('counts identity merges even when the same file/index becomes a duplicate measurement', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: 'Model' },
+							{ name: 'Brand Model', file: 'Model' }
+						]
+					}
+				])
+			]
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.measurements).toHaveLength(1);
+		expect(report.identityMerges).toEqual({ productsBefore: 2, productsAfter: 1, merged: 1 });
+	});
+	it('reports actual brand-prefix and explicit alias product merges', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: 'Model' },
+							{ name: 'Brand Model', file: 'Model2' },
+							{ name: 'Model II', file: 'Model3' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)]
+		]);
+		await writeFile(
+			resolve(paths.root, 'data/products.json'),
+			JSON.stringify({ aliases: { 'Brand|Model II': 'Brand|Model' } })
+		);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products).toHaveLength(1);
+		expect(catalog.measurements).toHaveLength(3);
+		expect(report.identityMerges).toEqual({ productsBefore: 3, productsAfter: 1, merged: 2 });
+	});
+	it.each([DIRECTORY_URL, OPT_OUT_URL, `${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
+		'reports stale discovery/calibration/measurement %s',
+		async (url) => {
+			const { paths, http } = await fixture();
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })));
+			await http.fetch(url);
+			await build(paths);
+			const { report, catalog } = await result(paths);
+			expect(catalog.measurements).toHaveLength(1);
+			expect(report.retainedFailures).toEqual([expect.objectContaining({ url, status: 404 })]);
+			if ([DIRECTORY_URL, OPT_OUT_URL].includes(url))
+				expect(report.retainedFailures[0]).toMatchObject({ source: 'discovery' });
+			expect(report.issues.some((issue) => issue.reason.includes('last-good'))).toBe(true);
+		}
+	);
 	it.each([configUrl, bookUrl])(
 		'retains calibration and partition after a last-good %s later 404s',
 		async (url) => {
@@ -131,6 +257,21 @@ describe('cached dataset build safety', () => {
 		await build(paths);
 		expect((await result(paths)).manifest).toEqual(before.manifest);
 		expect((await stat(resolve(paths.output, before.manifest.version))).ino).toBe(inode);
+		const rankFile = before.catalog.partitions[0]?.rankFile;
+		if (!rankFile) throw new Error('Missing rank file');
+		const rank = decodePack(
+			gunzipSync(await readFile(resolve(paths.output, before.manifest.version, rankFile)))
+		);
+		expect(rank.statistics).toEqual(before.catalog.partitions[0]?.statistics);
+		expect(rank.statistics?.support?.status).toBe('low');
+		expect(before.report.statistics[0]?.statistics).toEqual(rank.statistics);
+		expect(before.manifest.files.some((f) => f.path === `${before.manifest.version}/targets.json.gz`)).toBe(
+			true
+		);
+		const targets = JSON.parse(
+			gunzipSync(await readFile(resolve(paths.output, before.manifest.version, 'targets.json.gz'))).toString()
+		) as ReferenceTarget[];
+		expect(targets.map((t) => t.id)).toEqual(['harman-in-ear-2019', 'diffuse-field-5128']);
 		expect(
 			datasetVersion(
 				before.manifest.files.map((f) => ({ ...f, path: f.path.slice(before.manifest.version.length + 1) })),
@@ -198,7 +339,7 @@ describe('cached dataset build safety', () => {
 		const { catalog } = await result(paths);
 		expect(catalog.measurements[0]?.channels).toContain('L');
 	});
-	it.each(['exclusions', 'aliases', 'sources'])(
+	it.each(['exclusions', 'aliases', 'sources', 'products'])(
 		'fails before publishing when %s.json is malformed',
 		async (name) => {
 			const { paths } = await fixture();

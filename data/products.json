@@ -1,0 +1,11 @@
+{
+	"_note": "Explicit aliases verified in catalog 3c9d923462f8b79c98aa4ef9: aden's Aria II uses files MD Aria 2 BBR, Chu 2 uses Moondrop Chu II, and Timeless II uses 7Hz Timeless 2. Canonical brand spellings only; no tuning, fit, or sample variants are removed.",
+	"aliases": {
+		"_note": "Collaboration spellings verified in dataset 82c0a5df23cc64e5d7268caa: enemyspider lists QKZxHBB (QKZHBB WT/BT), ankramutt QKZ X HBB; eplv lists BLONxHBB Z300, achoreviews Blon Z300. Closest default rank-curve distances across spellings are 1.041 and 0.887 dB respectively (20 Hz-20 kHz, LS level alignment); no same-source pair exists. Measurement variants remain separate.",
+		"MOONDROP|Aria II": "MOONDROP|Aria 2",
+		"MOONDROP|Chu II": "MOONDROP|Chu 2",
+		"7Hz|Timeless II": "7Hz|Timeless 2",
+		"QKZ|QKZxHBB": "QKZ|x HBB",
+		"BLON|BLONxHBB Z300": "BLON|x HBB Z300"
+	}
+}

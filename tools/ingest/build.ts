@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -40,8 +40,18 @@ import {
 	sha256,
 	unwanted
 } from './common.ts';
-import { identity, normalise, sourceFor, suspiciousNames, usdPrice, variant } from './transform.ts';
-import { publishDataset } from './publish.ts';
+import {
+	collisionGroups,
+	identity,
+	normalise,
+	sourceFor,
+	suspiciousNames,
+	usdPrice,
+	variant
+} from './transform.ts';
+import { publishDataset, removeStaging } from './publish.ts';
+import { medianSpreadByBand, rankStatistics } from './statistics.ts';
+import { referenceTargets } from './targets.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -49,11 +59,9 @@ export interface PartitionCurve {
 	rank: PackedCurve;
 }
 
-/** Integration hook: analysis lane supplies cross-source statistics here; null means not computed. */
-export function computePartitionStatistics(curves: readonly PartitionCurve[]): PartitionStatistics | null {
-	// Access makes the hook's input explicit without computing statistics owned by another lane.
-	if (!curves.length) return null;
-	return null;
+/** Engine integration on default, product-balanced rank curves; support is always explicit. */
+export function computePartitionStatistics(curves: readonly PartitionCurve[]): PartitionStatistics {
+	return rankStatistics(curves);
 }
 
 export function compressPack(pack: CurvePack): {
@@ -83,7 +91,8 @@ interface SourceCount {
 }
 
 export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
-	const { excluded, brands, overrides } = await readInputs(paths.root);
+	const { excluded, brands, overrides, productAliases } = await readInputs(paths.root);
+	const targets = await referenceTargets(paths.root);
 	const [directory, optScript] = await Promise.all([
 		cached(DIRECTORY_URL, paths.cache),
 		cached(OPT_OUT_URL, paths.cache)
@@ -98,20 +107,52 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	const products = new Map<string, Product>();
 	const identities = new Map<string, Set<string>>();
+	const originalIdentities = new Map<string, Set<string>>();
+	const trackIdentity = (product: ReturnType<typeof identity>, originalName: string) => {
+		const names = identities.get(product.id) ?? new Set<string>();
+		names.add(originalName);
+		identities.set(product.id, names);
+		const originals = originalIdentities.get(product.id) ?? new Set<string>();
+		originals.add(product.originalKey);
+		originalIdentities.set(product.id, originals);
+	};
 	const unmatchedBrands = new Set<string>();
 	const sources: Source[] = [];
 	const partitions = new Map<string, PartitionCurve[]>();
 	const acceptedIds = new Set<string>();
 	const report = {
+		targets: targets.map(({ id, provenance }) => ({ id, ...provenance })),
 		counts: {} as Record<string, SourceCount>,
 		excluded: [] as { id: string; reason: string }[],
 		issues: [] as { source: string; file: string; reason: string }[],
-		layouts: [] as { file: string; layout: string; curveMajorBytes: number; frequencyMajorBytes: number }[]
+		retainedFailures: [] as {
+			source: string;
+			url: string;
+			status: number | null;
+			at: string;
+			error: string;
+		}[],
+		layouts: [] as { file: string; layout: string; curveMajorBytes: number; frequencyMajorBytes: number }[],
+		statistics: [] as {
+			partition: string;
+			statistics: PartitionStatistics;
+			medianSpreadByBand: Record<string, number | null>;
+		}[]
 	};
 	let builtAt = directory.entry.fetchedAt;
 	const useTime = (time: string) => {
 		if (time > builtAt) builtAt = time;
 	};
+	const retained = (source: string, response: NonNullable<Awaited<ReturnType<typeof cached>>>) => {
+		if (!response.entry.lastFailure) return;
+		report.retainedFailures.push({ source, url: response.entry.url, ...response.entry.lastFailure });
+		report.issues.push({
+			source,
+			file: response.entry.url,
+			reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
+		});
+	};
+	for (const response of [directory, optScript]) retained('discovery', response);
 	const raw: unknown = JSON.parse(new TextDecoder().decode(directory.body));
 	if (Array.isArray(raw))
 		for (const site of raw as unknown[]) {
@@ -147,13 +188,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}
 		const config = new TextDecoder().decode(configCache.body);
 		useTime(configCache.entry.fetchedAt);
-		for (const response of [configCache, bookCache])
-			if (response.entry.lastFailure)
-				report.issues.push({
-					source: db.id,
-					file: response.entry.url,
-					reason: `Using last-good cached response: ${response.entry.lastFailure.error}`
-				});
+		for (const response of [configCache, bookCache]) retained(db.id, response);
 		const counts: SourceCount = {
 			phones: 0,
 			variants: 0,
@@ -188,6 +223,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		if (calUrl) {
 			const c = await cached(calUrl, paths.cache);
 			if (c?.entry.status === 200) {
+				retained(db.id, c);
 				const p = parseMeasurement(new TextDecoder().decode(c.body), {
 					minPoints: 2,
 					maxStartHz: Infinity,
@@ -231,9 +267,10 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					reject(file, 'local exclusion');
 					continue;
 				}
-				const product = identity(phone.brand, phone.name, source.form, aliases);
+				const product = identity(phone.brand, phone.name, source.form, aliases, productAliases);
 				const id = `m-${sha256(`${db.id}\0${product.id}\0${file}\0${index}`).slice(0, 20)}`;
 				if (acceptedIds.has(id)) {
+					trackIdentity(product, `${phone.brand} ${phone.name}`);
 					reject(file, 'duplicate normalised identity/file/index; first accepted entry retained');
 					continue;
 				}
@@ -254,6 +291,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 						continue;
 					}
 					useTime(response.entry.fetchedAt);
+					retained(db.id, response);
+					if (response.entry.lastFailure)
+						warnings.push(
+							`${channel}: using last-good cached body after ${response.entry.lastFailure.error}`
+						);
 					const parsed = parseMeasurement(new TextDecoder().decode(response.body));
 					if (!parsed.ok) {
 						report.issues.push({ source: db.id, file: `${file} ${channel}`, reason: parsed.error });
@@ -369,9 +411,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					products.set(p.id, p);
 				}
 				p.measurementIds.push(id);
-				const names = identities.get(p.id) ?? new Set<string>();
-				names.add(`${phone.brand} ${phone.name}`);
-				identities.set(p.id, names);
+				trackIdentity(product, `${phone.brand} ${phone.name}`);
 				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
 				const group = partitions.get(source.partition) ?? [];
 				group.push({
@@ -391,6 +431,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		);
 	}
 	const artifacts = new Map<string, Uint8Array>();
+	artifacts.set('targets.json.gz', gzipSync(JSON.stringify(targets), { level: 9 }));
 	const partitionMetadata: Partition[] = [];
 	for (const [id, curves] of [...partitions].sort(([a], [b]) => a.localeCompare(b, 'en'))) {
 		curves.sort(
@@ -399,6 +440,11 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				a.measurement.id.localeCompare(b.measurement.id, 'en')
 		);
 		const stats = computePartitionStatistics(curves);
+		const bands = medianSpreadByBand(stats);
+		report.statistics.push({ partition: id, statistics: stats, medianSpreadByBand: bands });
+		console.log(
+			`Statistics ${id}: ${stats.support?.multiSourceProducts ?? 0} multi-source products (${stats.support?.status ?? 'unknown'}); median spread dB ${JSON.stringify(bands)}; harmonisation ${JSON.stringify(stats.harmonisation)}`
+		);
 		const rankFile = `rank-${id}.bin.gz`;
 		const rank = compressPack({
 			kind: 'rank',
@@ -476,6 +522,21 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		});
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
+	const productsBefore = new Set([...originalIdentities.values()].flatMap((ids) => [...ids])).size;
+	const identityMergeGroups = [...originalIdentities]
+		.filter(([, ids]) => ids.size > 1)
+		.map(([productId, ids]) => ({ productId, originalKeys: [...ids].sort(), merged: ids.size - 1 }))
+		.sort((a, b) => a.productId.localeCompare(b.productId, 'en'));
+	const groupwiseMerges = {
+		merged: identityMergeGroups.reduce((n, group) => n + group.merged, 0),
+		groups: identityMergeGroups
+	};
+	const remainingCollisionGroups = collisionGroups(sortedProducts);
+	const identityMerges = {
+		productsBefore,
+		productsAfter: products.size,
+		merged: productsBefore - products.size
+	};
 	for (const p of sortedProducts) p.measurementIds.sort();
 	for (const form of ['iem', 'headphone'] as const) {
 		const catalog: Catalog = {
@@ -510,7 +571,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		for (const [name, bytes] of artifacts) await atomicWrite(resolve(staging, name), bytes);
 		await publishDataset(paths.output, staging, manifest, JSON.stringify(manifest, null, 2) + '\n');
 	} finally {
-		await rm(staging, { recursive: true, force: true });
+		await removeStaging(staging);
 	}
 	await atomicWrite(
 		resolve(paths.cache, 'report.json'),
@@ -521,6 +582,9 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				builtAt,
 				sourcesIncluded: sources.length,
 				products: products.size,
+				identityMerges,
+				groupwiseMerges,
+				remainingCollisionGroups,
 				measurements: partitionMetadata.map((p) => ({ partition: p.id, count: p.measurementCount })),
 				files: manifest.files,
 				unmatchedBrands: [...unmatchedBrands].sort(),
@@ -535,6 +599,12 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	);
 	console.log(
 		`Built ${version}: ${products.size} products, ${sources.length} databases, ${files.length} files, ${files.reduce((n, f) => n + f.bytes, 0)} compressed bytes. Report: ${resolve(paths.cache, 'report.json')}`
+	);
+	console.log(
+		`Identity: net reduction ${identityMerges.merged} products (${productsBefore} unique original keys before, ${products.size} after); ${groupwiseMerges.merged} groupwise merges`
+	);
+	console.log(
+		`Top remaining identity collision candidates (not merged): ${JSON.stringify(remainingCollisionGroups.slice(0, 5))}`
 	);
 }
 
