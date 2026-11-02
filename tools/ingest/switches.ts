@@ -168,18 +168,16 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 		const first = group[0]?.measurement;
 		const product = first && products.get(first.productId);
 		if (!first || !product) continue;
-		const descriptor = (m: Measurement) =>
-			`${m.variant.file} ${m.variant.label}`.replaceAll(
-				new RegExp(product.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-				' '
-			);
-		const impedanceContext = group.some((r) =>
-			switchState(descriptor(r.measurement))?.startsWith('impedance:')
-		);
+		const withoutModel = (text: string) =>
+			text.replaceAll(new RegExp(product.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
+		const descriptor = (m: Measurement) => withoutModel(`${m.variant.file} ${m.variant.label}`);
+		const explicitState = (m: Measurement) =>
+			switchState(withoutModel(m.variant.label)) ?? switchState(withoutModel(m.variant.file));
+		const impedanceContext = group.some((r) => explicitState(r.measurement)?.startsWith('impedance:'));
 		const state = (m: Measurement): string | null => {
 			const text = descriptor(m);
 			const primary =
-				switchState(text) ??
+				explicitState(m) ??
 				(impedanceContext
 					? (() => {
 							const short = text.match(/\b(high|low)(?=\b|\+)|\(([lh])\)/i);

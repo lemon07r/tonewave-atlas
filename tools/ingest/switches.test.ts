@@ -198,6 +198,45 @@ describe('switch-state identity and source-balanced defaults', () => {
 		expect(rows[2]?.measurement.variant.kind).toBe('fit');
 		expect(rows[3]?.measurement.variant.kind).toBe('tuning');
 	});
+	it('does not use adapter fallback when every stock measurement is a replacement unit', () => {
+		const p: Phone = {
+			brand: 'CrinEar',
+			name: 'Reference',
+			file: ['CrinEar Reference S2', 'CrinEar Reference 75'],
+			suffix: ['', '(75ohm Adapter)'],
+			price: null,
+			reviewLink: null
+		};
+		expect(variant(p, 0, 'm-unit').kind).toBe('unit');
+		expect(variant(p, 1, 'm-adapter')).toMatchObject({ kind: 'tuning', isDefault: false });
+	});
+	it('reads filename switch codes even when the suffix uses words', () => {
+		const products = new Map([['parent', product()]]);
+		const rows = [
+			row('a', 'Volume S DD'),
+			row('b', 'Volume S DD'),
+			row('c', 'Volume S UU'),
+			row('c', 'Volume S DD', false)
+		];
+		for (const r of rows)
+			r.measurement.variant.label = r.measurement.variant.file.endsWith('DD') ? '(down - down)' : '(up - up)';
+		const result = reconcileSwitchDefaults(products, rows);
+		expect(result.decisions[0]?.preferred).toBe('switch:du:dd');
+		expect(rows[2]?.measurement.variant.isDefault).toBe(false);
+		expect(rows[3]?.measurement.variant.isDefault).toBe(true);
+	});
+	it('removes stock model words from suffixes before classifying', () => {
+		const p: Phone = {
+			brand: 'CrinEar',
+			name: 'Reference',
+			file: ['CrinEar Reference', 'CrinEar Reference CP145', 'CrinEar Reference unidentified'],
+			suffix: ['', 'CrinEar Reference CP145', 'CrinEar Reference unidentified'],
+			price: null,
+			reviewLink: null
+		};
+		expect(variant(p, 1, 'm-tip').kind).toBe('fit');
+		expect(variant(p, 2, 'm-unknown').kind).toBe('unknown');
+	});
 	it('abstains on ties and never equates 00 with DD', () => {
 		const products = new Map([['parent', product()]]);
 		const rows = [row('a', '(switches: DD)'), row('b', '(switches: 00)')];

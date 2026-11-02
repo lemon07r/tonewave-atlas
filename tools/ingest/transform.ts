@@ -2,7 +2,7 @@ import type { Database, Phone } from './common.ts';
 import { configString, formFor, nonProductName, productAliasKey, record, sha256 } from './common.ts';
 import type { Form, Product, Source, Variant } from '#core/dataset/types.ts';
 import { classifyEq, factoryMode } from './eq.ts';
-import { cableDescriptor, tipDescriptor, tuningDescriptor } from './variant-labels.ts';
+import { adapterState, cableDescriptor, tipDescriptor, tuningDescriptor } from './variant-labels.ts';
 
 export function normalise(value: string): string {
 	return value
@@ -112,11 +112,8 @@ function descriptor(phone: Phone, index: number): string {
 	);
 	return (
 		phone.suffix[index]?.trim() ||
-		(index === 0 ? firstDescriptor : file.slice(commonPrefix(phone.file[0] ?? '', file))).replace(
-			modelPattern,
-			''
-		)
-	);
+		(index === 0 ? firstDescriptor : file.slice(commonPrefix(phone.file[0] ?? '', file)))
+	).replace(modelPattern, '');
 }
 
 function sampleDescriptor(phone: Phone, index: number): string {
@@ -141,6 +138,7 @@ export function defaultVariantIndex(phone: Phone): number | null {
 		if (
 			eq === 'ambiguous' ||
 			nonProductName(eqLabel(phone, index)) ||
+			adapterState(`${phone.file[index] ?? ''} ${text}`) !== null ||
 			unitPattern.test(withoutSampleOne(sampleDescriptor(phone, index)))
 		)
 			return [];
