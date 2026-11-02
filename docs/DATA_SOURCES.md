@@ -43,13 +43,17 @@ local ingestion state, never part of the published dataset. Discovery must succe
   Curves are linearly interpolated in log Hz on the canonical 240-bin 1/24-octave grid, never
   extrapolated. Flat raw curves (<0.05 dB range), >100 dB ranges, calibrated values outside ±200 dB,
   and calibrated curves with fewer than 16 finite bins are rejected. Targets, calibration curves,
-  delta-symbol (∆/Δ) curves, averages and EQ-applied curves are non-products. EQ matching uses tokens,
+  delta-symbol (∆/Δ) curves, averages and explicit post-hoc EQ curves are non-products. EQ matching uses tokens,
   not substrings: Fatfreq, bleqk, SuperEQ and Tequila are retained, as is the genuine Ecoustic EQ-100.
   Explicit no/default/blank/zero/flat-EQ labels, and `EQ: Neutral/Normal/Original` states
   (including `EQ: None` and `PEQ - no gain`)
-  are retained; these are source labels, not independently verified zero processing. Numbered EQ
-  presets, named custom “Neutral EQ”, and neutral-plus-boost states are excluded. The word “Delta”
-  alone is not an exclusion.
+  are retained; these are source labels, not independently verified zero processing. Only explicit
+  user/third-party processing (`+ EQ`, EQ'd/EQed, user/custom EQ, Oratory1990/h0llow EQ, EQ to a target,
+  AutoEQ, PEQ without an explicit zero/off/default state, “with EQ”, or evident gain/filter settings) is excluded. Zero-gain PEQ/custom
+  slots remain. Factory app/DSP/ANC/ambient/transparency and voicing presets are retained as tuning
+  alternatives. Uncertain labels, including EQ1/EQ2 and Qudelix's “Sunrise Neutral EQ”, are non-default
+  tuning, listed under `quality.ambiguousEqLabelsKeptAsTuning` (“ambiguous EQ labels kept as tuning”).
+  `+ HiFi EQ` is not the explicit `+ EQ` operation. The word “Delta” alone is not an exclusion.
 - Detail packs retain each available channel and numbered repetition. Ranking uses finite dB means
   within repeated channels, then the L/R dB mean (or available channel), 1/12-octave smoothing and
   every second canonical bin. Missing data stays missing. Channel contribution masks and paired-bin
@@ -160,8 +164,13 @@ with a report entry. Fuzzy names are never
 automatically merged. Abbreviations may remain separate products. Variant kinds retain the original
 label: replacement samples (`S2`, sample/unit 2, `(by person)`) take precedence as `unit`; tips, foam,
 insertion and pads are `fit`; switches, filters, impedance, nozzles and DSP are `tuning`; cables and
-adapters are `setup`. Classification uses descriptors rather than the stock model's words. The first
-stock file remains default, including explicitly labelled sample 1; a replacement sample 2 does not.
+adapters are `setup`. Classification uses descriptors rather than the stock model's words. Default
+selection prefers explicit default/stock, neutral EQ/normal/standard/original, then ANC-off states;
+ties use source order. Without an obvious stock state, the first non-excluded, non-ambiguous file
+remains the fallback, including mode-only products such as CMF Buds Pro. Other modes are non-default
+tuning and cannot train consensus/statistics. Explicit sample 1 can be default; sample 2 cannot.
+B&W generation labels such as Pi7 S2, Px7 S3 and Px8 S2 are not replacement-sample labels. `quality.defaultSelections` and
+`quality.tuningModes` retain the selection and accepted mode audit.
 Newer index schemas without `file` lists are reported as
 unsupported, not silently guessed. Source hardware, raw calibration, insertion, tips, seal and prices
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
@@ -305,45 +314,107 @@ Switch encodings are retained as supplied: no unverified DD ↔ 00 correspondenc
 
 ### Catalog-quality audit (November 2026)
 
-The offline rebuild from `ef7ead8fc680aae919189e39` to `abae8ab46fc2d5afd215c344` changes
-**10,013 → 10,001 products** and **41,064 → 39,798 measurements**, retaining all **138 databases /
-118 publishers**. The 1,266 previously published exclusions are 1,102 EQ-applied curves, 70 explicitly
-fake/replica/counterfeit/clone/copy entries, 84 placeholder brand/model identities, two unidentified
-one-character customs, two population averages and six target/calibration/delta/sandbox entries.
-There are **zero legitimate duplicate-default removals**; the duplicate guard is tested but finds no
-new matches in this cache. The report's 1,403 quarantine candidates also include uncached or
-previously rejected entries, so they are not the published before/after removal total.
+The corrected offline rebuild from `ef7ead8fc680aae919189e39` to `6417dab7343144186a57d2d9` changes
+**10,013 → 10,065 products** and **41,064 → 40,814 measurements**, retaining all **138 databases /
+118 publishers**. Product totals include distinct modified-product identities, not just exclusions.
+The earlier `abae8ab46fc2d5afd215c344` build incorrectly excluded factory EQ presets. This correction
+restores **1,016 measurements / 64 products** relative to that build, with **no further removals**.
+Of its 1,205 EQ quarantines, 1,016 now publish, 94 remain explicit post-hoc EQ exclusions, and 95
+remain unpublished for other existing reasons (missing/invalid channels or local exclusions).
+
+The **250 previously published exclusions** are 86 explicit post-hoc EQ curves, 70 fake/replica/
+counterfeit/clone/copy entries, 84 placeholder identities, two unidentified one-character customs,
+two population averages and six target/calibration/delta/sandbox entries. There are **zero legitimate
+removals in every partition**, including zero duplicate-default removals. All 20 requested filename
+examples survive in their real source groups; Sunrise Neutral EQ is non-default tuning, ANC-off
+stock states are selected deterministically, and the sole CMF Buds Pro mode retains its fallback default.
+
+#### Exclusions by original partition
+
+Each cell is **raw quarantine candidates / previously published removals**. Identity includes
+placeholder/marker failures and unidentified customs; fake includes clone/copy product identities.
+Raw candidates also include uncached or previously rejected entries. All unlisted partitions have
+zero exclusions. Source-specific headphone rows use the source username; their exact partition IDs
+are retained in `quarantineSummary`. The legitimate-removal numerator is zero in every row.
+
+| Original partition         | Post-hoc EQ |        Fake |     Identity | Target/calibration/delta/sandbox |   Average |         Total |
+| -------------------------- | ----------: | ----------: | -----------: | -------------------------------: | --------: | ------------: |
+| iem-711                    |     48 / 41 |     40 / 40 |      96 / 82 |                           22 / 5 |     0 / 0 |     206 / 168 |
+| iem-5128                   |     16 / 16 |     13 / 12 |        2 / 2 |                            1 / 0 |     2 / 2 |       34 / 32 |
+| headphone-5128             |       5 / 5 |     11 / 11 |        0 / 0 |                            0 / 0 |     0 / 0 |       16 / 16 |
+| headphone-minidsp-ears-pro |       4 / 4 |       0 / 0 |        0 / 0 |                            0 / 0 |     0 / 0 |         4 / 4 |
+| boizoff                    |       5 / 5 |       3 / 2 |        0 / 0 |                            0 / 0 |     0 / 0 |         8 / 7 |
+| capraaudio                 |       0 / 0 |       1 / 1 |        0 / 0 |                            0 / 0 |     0 / 0 |         1 / 1 |
+| elrics                     |       3 / 3 |       0 / 0 |        0 / 0 |                            0 / 0 |     0 / 0 |         3 / 3 |
+| filk                       |       1 / 1 |       0 / 0 |        0 / 0 |                            1 / 1 |     0 / 0 |         2 / 2 |
+| gadgetrytech               |       1 / 1 |       0 / 0 |        0 / 0 |                            0 / 0 |     0 / 0 |         1 / 1 |
+| kuulokenurkka              |       3 / 3 |       3 / 3 |        0 / 0 |                            0 / 0 |     0 / 0 |         6 / 6 |
+| sai                        |       6 / 6 |       1 / 1 |        2 / 2 |                            0 / 0 |     0 / 0 |         9 / 9 |
+| silicagel                  |       2 / 0 |       0 / 0 |        0 / 0 |                            0 / 0 |     0 / 0 |         2 / 0 |
+| superreview                |       1 / 1 |       0 / 0 |        0 / 0 |                            0 / 0 |     0 / 0 |         1 / 1 |
+| **Total**                  | **95 / 86** | **72 / 70** | **100 / 86** |                       **24 / 6** | **2 / 2** | **293 / 250** |
+
+#### Tuning and ambiguous EQ audit
+
+Relative to the incorrect build, **695 previously accepted measurements become tuning**, including
+164 formerly default curves. The 1,016 restored measurements are 901 tuning, 91 deterministically
+selected defaults and 24 separately labelled units. Explicit DSP presets take precedence over incidental
+stock-tip metadata; unrelated tip/fit and replacement-unit protections remain. Across all quality rules,
+the report records 4,393 corrections against the historical classifier, not just this EQ follow-up.
+
+**479 ambiguous EQ labels are kept as non-default tuning**, with IDs/labels/source filenames in
+`quality.ambiguousEqLabelsKeptAsTuning`. Fifteen examples (not claims about their origin):
+
+| Source                      | Filename or original label                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| achoreviews                 | Sony Linkbuds S (Foam Tips, ANC OFF, EQ1)                                              |
+| aden                        | AME T71 (Aden), label “Aden EQ”                                                        |
+| aftersound                  | ANKER LIBERTY 4NC EQ                                                                   |
+| arn                         | Enco X2 EQ Real                                                                        |
+| atechreviews                | Moondrop Rays EQ Equalized                                                             |
+| audioamigo (headphones)     | Noble Audio Artemis Wireless Bluetooth Audio Amigo EQ                                  |
+| audioamigo (IEMs)           | Hidizs x DucBloke MK12 Turris Sparkle EQ                                               |
+| boizoff (headphones)        | Headphone Pro (2025 sample, fresh stock pads, ANC max, EQ electro, bass 0, ideal seal) |
+| boizoff (IEMs)              | G30 (DSP cable, EQ pure, TENNMAK SoFoam tips)                                          |
+| bukanaudiophile             | Variations (EQ)                                                                        |
+| csi-zone                    | JCALLY Space G Gam, label “EQ: Game”                                                   |
+| dchpgall                    | T71 IEM S1 (by s_g, EQ AME 1, CP100+ Tip)                                              |
+| dentreviews                 | ER4S Foam EQ                                                                           |
+| dhrme                       | BeoPlayEx NeutralOptimal, label “EQ: Optimal”                                          |
+| earphonesarchive (IEM 5128) | Qudelix QX Over (Sunrise Neutral EQ)                                                   |
 
 All 142 available source indexes were audited (four have no accepted curves). Data-preserving form
-corrections move **651 measurements across 30 databases**: 161 IEM-tagged → headphone and 490
-headphone-tagged → IEM. [Listener's protected 5128 database](https://listener.squig.link/5128/) retains
+corrections move **656 measurements across 30 databases**, including five newly restored modes.
+[Listener's protected 5128 database](https://listener.squig.link/5128/) retains
 its measurements: 47 headphone measurements / 38 prior product identities move to `headphone-5128`.
 The preliminary 45/36 count missed the case variants HD660s2 and HD800s. Maker/model rules also catch
 headphones in HBB, Hu-Fi and Regancipher, and IEMs in Sai's explicit `[IEMs]` group and Auriculares
-Argentina. There are 120 category/marker corrections and 2,876 variant-kind corrections; named mods
+Argentina. There are 120 category/marker corrections; named mods
 retain distinct identities and their original file URLs. KZ Unknown (`Kz Un`) and CVJ Unknown
 (`Cvj Un`) came directly from HBB's index: the parser previously validated strings without a semantic
 placeholder check. Both are now quarantined, not assigned invented models.
 
-Rig evidence uses 236 direction products and 116/120 rank bins. The nearest leave-source-out control
-interval bounds are **0.390095 / 0.844076**, giving threshold **0.617086**. At four products the least
-stable control classifies correctly in 197/200 trials; at **eight products all 37 eligible controls
+Rig evidence uses 241 direction products and 116/120 rank bins. The nearest leave-source-out control
+interval bounds are **0.379746 / 0.846510**, giving threshold **0.613128**. At four products the least
+stable control classifies correctly in 196/200 trials; at **eight products all 37 eligible controls
 achieve 200/200**, so eight is the minimum. Larger 24/32-product trials lack two eligible 5128 controls
 and cannot establish sufficiency. Among databases with accepted IEMs: 35 are config-verified 711,
-three directory-verified 5128, 70 evidenced 711, and 15 unknown. The latter retain 1,158 IEM
+three directory-verified 5128, 72 evidenced 711, and 13 unknown. The latter retain 288 IEM
 measurements in source-specific partitions. No unverified source becomes a 5128 control.
 
 | Partition      | Multi-source products before → after | Held-out pairs before → after | Current mean before → after dB | Current fold mean-improvement range dB |
 | -------------- | -----------------------------------: | ----------------------------: | -----------------------------: | -------------------------------------: |
-| IEM 711        |                        2,500 → 2,410 |               83,575 → 79,910 |            1.758759 → 1.568341 |                    0.180169 … 0.196132 |
-| IEM 5128       |                              22 → 22 |                       28 → 28 |            1.633987 → 1.627507 |                   −0.009648 … 0.094329 |
-| Headphone 5128 |                               3 → 19 |                        3 → 19 |            1.574191 → 1.564997 |                   −0.025221 … 0.038159 |
+| IEM 711        |                        2,500 → 2,442 |               83,575 → 82,018 |            1.766370 → 1.577893 |                    0.178694 … 0.194419 |
+| IEM 5128       |                              22 → 22 |                       28 → 28 |            1.641486 → 1.634150 |                   −0.004896 … 0.101559 |
+| Headphone 5128 |                               3 → 20 |                        3 → 20 |            1.549378 → 1.533225 |                   −0.022837 … 0.053253 |
 
-Headphone 5128 remains low-support (19 products, below 20), despite its increased overlap. IEM 5128's
-pooled median improvement is slightly negative (−0.000032 dB); these results do not justify claiming
-universal benefit from harmonisation. The full support, fold and band-spread arrays remain in the
-report. All 231 artifact sizes/hashes and 228 binary packs were checked: 39,798 rank curves and
-78,452 detail-channel curves, with catalog references intact. Retained measurements preserve channel
+IEM 711 has 107 contributing sources, per-bin product support 1,971–2,442, pooled mean/median
+improvements 0.188477 / 0.170002 dB. IEM 5128 has three sources, per-bin support 20–22, and pooled
+mean/median improvements 0.007337 / 0.007767 dB. All three partitions meet the support rule, but
+headphone 5128 is exactly at its 20-product threshold, and negative individual 5128 folds do not
+justify claiming universal benefit from harmonisation. The full support, fold and band-spread arrays
+remain in the report. All 232 artifact sizes/hashes and 229 binary packs were checked: 40,814 rank
+curves and 80,349 detail-channel curves, with catalog references intact. Retained measurements preserve channel
 metadata, dates, prices, review URLs and original/calibration URLs.
 
 Remaining cross-form names are reported, not merged: 1MORE Triple Driver genuinely names both forms;
