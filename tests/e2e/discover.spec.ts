@@ -1,9 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-// The parallel pages lane owns localhost's IPv6 preview; this worktree serves IPv4 on the same port.
-test.use({ baseURL: 'http://127.0.0.1:4173' });
-
 async function pick(page: Page, searchLabel: string, model: string) {
 	await page.getByRole('combobox', { name: searchLabel, exact: true }).fill(model);
 	await page.getByRole('option', { name: new RegExp(`^${model} `) }).click();
@@ -23,7 +20,7 @@ test('real similar search, dB explanations, overlays, URL controls and reload', 
 	await pick(page, 'An IEM you enjoy', 'Truthear Hexa');
 	const first = page.locator('.result-row').first();
 	await expect(first).toBeVisible();
-	await expect(first.locator('.distance')).toHaveText(/Response distance: \d+\.\d dB/);
+	await expect(first.locator('.distance')).toHaveText(/Response distance:\s\d+\.\d\sdB/);
 	await expect(page).toHaveURL(/ref=p-/);
 	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
 	await expect(page.locator('.legend-row')).toHaveCount(2);
@@ -45,6 +42,24 @@ test('real similar search, dB explanations, overlays, URL controls and reload', 
 	await first.locator('summary').click();
 	await expect(first.getByRole('table')).toBeVisible();
 	await expect(first.getByText(/Tilt .* dB\/oct/)).toBeVisible();
+	await page.getByRole('switch', { name: 'Regions', exact: true }).check();
+	const regions = page.getByRole('group', { name: 'Frequency regions', exact: true }).getByRole('button');
+	await expect(regions).toHaveCount(7);
+	expect(
+		await regions.evaluateAll((buttons) =>
+			buttons.every((button) => {
+				const range = document.createRange();
+				range.selectNodeContents(button);
+				const label = range.getBoundingClientRect();
+				const target = button.getBoundingClientRect();
+				return (
+					getComputedStyle(button).writingMode === 'horizontal-tb' &&
+					label.left >= target.left &&
+					label.right <= target.right
+				);
+			})
+		)
+	).toBe(true);
 	await accessible(page);
 	expect(errors).toEqual([]);
 });

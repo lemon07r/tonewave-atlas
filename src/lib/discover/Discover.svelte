@@ -40,6 +40,7 @@
 	} from '#lib/profile/profile.ts';
 	import { bandLabels } from './describe.ts';
 	import { rankToGrid } from './rank-to-grid.ts';
+	import { alignDisplaySeries } from './align-display.ts';
 	import { candidateCurve, displayCurve, detail, curveSources, type CurveSource } from './display.ts';
 	import ResultRow from './ResultRow.svelte';
 
@@ -329,6 +330,7 @@
 		const result = activeResult;
 		const overlays = urlState.overlays;
 		const mode = urlState.mode;
+		const displayFocus = mode === 'similar' ? urlState.focus : 'balanced';
 		const sim = similar,
 			model = taste;
 		const measurement = urlState.measurement;
@@ -384,7 +386,7 @@
 					links.push(...curve.sources);
 				}
 				if (!controller.signal.aborted) {
-					series = base;
+					series = alignDisplaySeries(base, displayFocus);
 					provenance = [...new Map(links.map((link) => [link.url, link])).values()];
 				}
 			} catch (cause) {
@@ -726,8 +728,9 @@
 					Loading display curves…
 				</p>{/if}{#if chartError}<Notice kind="caution">Chart unavailable: {chartError}</Notice>{/if}
 			{#if series.length}<p class="chart-note">
-					Measured products use full-resolution detail data. Taste centres are derived, interpolated model
-					curves, not measurements. Above 8 kHz is less reliable.
+					Display curves are level-aligned to the first curve (weighted least squares on the full grid).
+					Measured products use detail data; taste centres are derived, interpolated model curves, not
+					measurements. Above 8 kHz is less reliable.
 				</p>
 				<details class="chart-sources">
 					<summary>Curve sources</summary>
@@ -918,6 +921,12 @@
 	}
 	.chart-sources ul {
 		padding-left: 20px;
+	}
+	.chart-sources a {
+		display: inline-flex;
+		align-items: center;
+		min-block-size: 28px;
+		min-inline-size: 24px;
 	}
 	@media (max-width: 1150px) {
 		.discover-grid {

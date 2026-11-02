@@ -82,9 +82,11 @@ not the surrounding layout. The fixture page has no production counterpart: use
   form-factor radios reflected in `?form=headphones`. Theme cycles system → light → dark, persists
   locally when storage is available and follows system changes in system mode. The document applies
   theme before paint. Query state is browser-only so the four routes remain prerenderable.
-- Discover presents single-reference and taste-profile modes together above the search. The empty
-  profile explains adding, rating and optional reasons without a wizard; controls remain disabled
-  until a real product can be added. It does not manufacture a saved profile or recommendation.
+- Discover presents single-reference and taste-profile modes together above the real catalog search.
+  Products are grouped by brand, with variant/source counts. Similar-mode reference, optional
+  measurement/rig, focus, budget, tunings, advanced source/treble controls and up to five overlays
+  are URL state; reload restores them. Worker requests ignore stale responses. Taste updates debounce
+  for 300 ms; neither worker errors nor missing support become successful empty results.
 - Search: input retains focus while `aria-activedescendant` follows grouped listbox options. Arrows
   wrap, Home/End jump within an open list, Enter selects, Escape/Tab dismiss. Literal substring
   highlights are text nodes, never injected HTML. Loading and empty feedback are announced. Callers
@@ -95,12 +97,54 @@ not the surrounding layout. The fixture page has no production counterpart: use
 - Advanced controls use native details/summary. Popovers and action menus use native auto popovers
   for Escape/light dismissal; menu items support arrows and Home/End. Tooltips work on hover/focus,
   expose descriptions and dismiss with Escape. Toasts keep Undo available until dismissed rather
-  than racing a timer. Notices are inline; skeletons reserve 88 px per result row.
+  than racing a timer. Notices are inline; generic skeletons reserve 88 px per row, overridden to
+  160 px for Discover result rows. The result section reserves space while analysis loads.
+
+## Discover evidence and profile patterns
+
+Results are a dense ordered list separated by hairlines, not a card grid. Each row leads with rank,
+brand/model, verbatim tuning label and one-decimal response distance in dB (lower is closer, not better).
+Numbers and units stay together. Reviewer ranges appear only when the service supplies them, with
+its participating-source count. USD listings retain source and crawl month/year; no raw-currency
+conversion or current-price claim is implied. Show/remove chart buttons expose pressed state;
+Compare uses product IDs, and Product page links carry the selected product. Action targets are at
+least 24×24 px (currently 36 px tall) and wrap only as whole items, with 16 px gaps. View chart/back
+links connect the stacked mobile instrument and results without moving keyboard focus unexpectedly.
+
+The wording policy lives in `src/lib/discover/describe.ts` and the plain-language section of
+`docs/METHODOLOGY.md`: omit absolute band means below 0.75 dB, “slightly” below 2 dB, plain more/less
+below 4 dB, “much” from 4 dB. These are editorial thresholds, not audibility or significance claims.
+Treble/air statements flag lower reliability above 8 kHz. Expandable details retain signed band means,
+RMS, coverage, contribution, tilt, measured-source links and uncertainty rather than hiding the evidence
+behind a summary. Profile results separately explain nearest-liked distance, matched/differing bands,
+tolerance-weighted fit and each dislike constraint; the combined ranking score is not labelled dB.
+
+Profile products use hairline-separated rows with named native rating groups, optional liked aspects
+or engine-supported dislike reasons, a fit/comfort-only checkbox and Remove. Decorative selected-tag
+checks are hidden from assistive technology so reason names remain stable. New additions start as Love,
+explicitly explained above the rows. Neutral and non-sound ratings stay stored but do not inform the
+model. Until there is a sound-related Like/Love, the page explains what is needed rather than querying
+an invented taste. Model groups list their actual members, service statements, qualitative confidence
+reasons, conflicts and unused evidence. Advanced per-band corrections alter model centres, not the
+learned statements or confidence.
+
+Profiles use `tonewave.profile.v1` localStorage, separated by form factor. Export includes both forms;
+import validates schema, reasons, aspects, strengths and IDs before replacing anything. Malformed or
+oversized files produce an inline error. Storage failures explain session-only operation and export.
+Clear and successful import offer persistent Undo; there is no account or server-side profile upload.
 
 ## Chart conventions
 
 - Input arrays must match the canonical 240-point GRID, as Float32Array or Float64Array. NaNs become
   explicit gaps; the chart does not smooth, extrapolate, normalise or invent measurements.
+  Discover fetches detail consensus for default products and measured detail curves for explicit
+  measurements/tunings. Derived taste centres alone are log-frequency interpolated from the service's
+  corrected 120-point model, labelled “Taste N centre (derived)”; even samples remain exact, missing
+  neighbours remain gaps and the final point is not extrapolated. Corrections are not applied twice.
+  Chart source disclosure links to each contributor's provenance database; export retains attribution.
+  Discover level-aligns displayed curves to the first curve with weighted LS on GRID, so arbitrary
+  source levels do not masquerade as broadband tonal differences. This display-only processing is
+  labelled below the instrument and in export attribution; ranking/explanations remain unchanged.
 - Logarithmic 20 Hz–20 kHz x axis; explicit 20/50/100/200/500/1k/2k/5k/10k/20k labels.
   Axis, table and export labels use Level (dB) / Frequency (Hz), or Difference (dB) in difference mode.
   Adaptive y bounds include supplied envelopes, with outward 5 dB boundaries and padding.
@@ -112,7 +156,7 @@ not the surrounding layout. The fixture page has no production counterpart: use
   Legend buttons toggle visibility; hover/focus highlights a curve. The octave-spaced table retains
   every series, including hidden ones, and uses a dash for missing values.
 - Optional regions are approximately perceptual descriptions, not universal sound claims. Focus or
-  hover reveals the range and caveat; compact mobile labels have complete accessible names. The
+  hover reveals the range and caveat; abbreviated mobile labels remain horizontal with complete accessible names. The
   span-aligned label strip has no filled cells or rules; alternating shading stays inside the plot.
 - PNG export preserves the displayed plot's aspect ratio, adds mode, units, numbered/dashed legend
   and supplied attribution, and wraps long labels/source text. The in-app footer links to Sources and
@@ -126,9 +170,11 @@ loading animation. There is no animated chart entrance, scroll trapping or timed
 Commitments: keyboard access, visible 2 px focus rings, native semantics before ARIA, text contrast
 at WCAG AA levels, non-colour chart identities, named controls and an inspectable table. Automated
 tests cover combobox navigation/async replacement, native rating semantics, chart subtraction,
-missing coverage, series controls, keyboard inspection and the table. Browser review covers light
+missing coverage, series controls, keyboard inspection, derived-centre identities, wording thresholds,
+profile imports, result actions and the table. Real-data Discover e2e journeys cover search, distance,
+overlays and reload, love/reasoned dislike, model explanations, profile persistence, Undo, import errors
+and axe in both modes on desktop/mobile. Browser review covers light
 and dark at 1440×900, 834×1112 and 390×844. These checks do not replace real screen-reader testing.
 
-Phase 2 owns the catalog, worker connection, result explanations, measurement provenance, taste
-profile persistence, comparison URL serialization, alignment/smoothing controls and sharing. The
-current routes deliberately do not pretend those behaviours exist.
+Discover uses the published catalog and analysis worker. Compare/Explore/Method integration is owned
+by the separate pages lane; their route implementation is not described here as Discover behaviour.

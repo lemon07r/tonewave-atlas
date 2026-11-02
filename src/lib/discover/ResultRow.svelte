@@ -67,7 +67,7 @@
 				>{/if}
 		</h3>
 		<span class="distance mono"
-			><span class="sr-only">Response distance:&nbsp;</span>{distance.toFixed(1)} <span>dB</span></span
+			><span class="sr-only">Response distance:&nbsp;</span>{distance.toFixed(1)}&nbsp;<span>dB</span></span
 		>
 	</div>
 	{#if match}<p class="reviewers">
@@ -207,6 +207,14 @@
 		text-underline-offset: 3px;
 		cursor: pointer;
 	}
+	.actions > a,
+	.actions > button {
+		display: inline-flex;
+		align-items: center;
+		min-block-size: 36px;
+		min-inline-size: 24px;
+		white-space: nowrap;
+	}
 	.actions button:disabled {
 		color: var(--muted);
 		cursor: not-allowed;
@@ -244,6 +252,12 @@
 	.sources {
 		margin: 12px 0 0;
 		padding-left: 16px;
+	}
+	.sources a {
+		display: inline-flex;
+		align-items: center;
+		min-block-size: 28px;
+		min-inline-size: 24px;
 	}
 	@media (max-width: 640px) {
 		.row-heading {

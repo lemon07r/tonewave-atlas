@@ -294,7 +294,12 @@ the tolerance-weighted fit distance; the combined ranking score/constraint penal
 is not presented as response distance. “Matched” bands means below the editorial 0.75 dB threshold,
 not perceptual equivalence. Confidence and constraints retain the service's qualitative explanations.
 
-Measured product displays use GRID detail curves/consensus. “Taste N centre (derived)” is a model,
+Measured product displays use GRID detail curves/consensus. Discover removes arbitrary source levels
+by weighted LS alignment of display curves to the first curve on GRID, using the active similar-mode
+focus (balanced in profile mode) and default reliability weights. This display-only offset does not
+change ranking or explanations, which use RANK_GRID and the service's weights. Missing samples stay
+missing; display difference mode then subtracts the fixed baseline without further alignment.
+“Taste N centre (derived)” is a model,
 not a measurement: the returned corrected 120-point rank centre is mapped exactly to even GRID
 indices, with odd indices linearly interpolated in log frequency between finite neighbours. Missing
 neighbours remain gaps, and GRID index 239 is NaN (no extrapolation past the last rank point).

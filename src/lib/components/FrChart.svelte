@@ -70,6 +70,7 @@
 			: []
 	);
 	const octaveIndices = Array.from({ length: 10 }, (_, i) => i * 24);
+	const compactRegionLabels = ['Sub', 'Bass', 'Low', 'Vocal', 'Upper', 'Treb.', 'Air'];
 	function colour(index: number, reference: boolean | undefined) {
 		return reference ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
 	}
@@ -408,7 +409,10 @@
 					onkeydown={(event) => {
 						if (event.key === 'Escape') activeRegion = null;
 					}}
-					aria-label={`${region.label}, ${region.lo} to ${region.hi} Hz`}>{region.short}</button
+					aria-label={`${region.label}, ${region.lo} to ${region.hi} Hz`}
+					><span class="region-label-wide">{region.short}</span><span class="region-label-compact"
+						>{compactRegionLabels[i] ?? region.short}</span
+					></button
 				>{/each}
 		</div>
 		<p class="region-description" id={`${id}-region-description`}>
@@ -603,6 +607,9 @@
 		text-decoration: underline;
 		text-underline-offset: 4px;
 	}
+	.region-label-compact {
+		display: none;
+	}
 	.region-description {
 		font-size: var(--text-xs);
 		color: var(--muted);
@@ -701,7 +708,13 @@
 		.regions button {
 			min-height: 44px;
 			font-size: 9px;
-			padding: 6px 0;
+			padding: 6px 2px;
+		}
+		.region-label-wide {
+			display: none;
+		}
+		.region-label-compact {
+			display: inline;
 		}
 		.legend-value {
 			font-size: 10px;
