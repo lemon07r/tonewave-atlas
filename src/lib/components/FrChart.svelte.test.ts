@@ -25,6 +25,9 @@ test('renders all series and an accessible octave-resolution table', async () =>
 	await expect.element(screen.getByRole('button', { name: 'Hide Curve B' })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: 'Hide Reference' })).toBeVisible();
 	expect(screen.container.querySelectorAll('canvas')).toHaveLength(1);
+	await expect
+		.element(screen.getByRole('link', { name: 'Sources and limitations' }))
+		.toHaveAttribute('href', '/method');
 	await screen.getByText('View chart data', { exact: true }).click();
 	await expect.element(screen.getByRole('table')).toBeVisible();
 	await expect.element(screen.getByRole('columnheader', { name: 'Curve A' })).toBeVisible();

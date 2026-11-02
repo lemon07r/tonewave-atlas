@@ -108,7 +108,8 @@ not the surrounding layout. The fixture page has no production counterpart: use
 - Optional regions are approximately perceptual descriptions, not universal sound claims. Focus or
   hover reveals the range and caveat; compact mobile labels have complete accessible names.
 - PNG export preserves the displayed plot's aspect ratio, adds mode, units, numbered/dashed legend
-  and supplied attribution, and wraps long labels/source text. Theme changes redraw the canvas.
+  and supplied attribution, and wraps long labels/source text. The in-app footer links to Sources and
+  limitations rather than displaying the plain-text export attribution. Theme changes redraw the canvas.
 
 ## Motion, accessibility and verification
 

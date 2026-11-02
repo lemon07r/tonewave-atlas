@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import uPlot from 'uplot';
 	import { GRID, GRID_SIZE } from '#core/grid.ts';
 	import {
@@ -507,7 +508,7 @@
 			>Chart unavailable: every curve and uncertainty bound must use the {GRID_SIZE}-point frequency grid.</Notice
 		>{/if}
 	{#if exportError}<p class="small" role="alert">{exportError}</p>{/if}
-	<figcaption>{attribution}</figcaption>
+	<figcaption><a href={resolve('/method')}>Sources and limitations</a></figcaption>
 </figure>
 
 <style>
@@ -682,6 +683,9 @@
 		font-size: 10px;
 		line-height: 1.6;
 		margin-top: 16px;
+	}
+	figcaption a {
+		color: var(--muted);
 	}
 	@media (min-width: 1200px) {
 		.plot {
