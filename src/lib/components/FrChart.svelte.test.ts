@@ -30,6 +30,10 @@ test('renders all series and an accessible octave-resolution table', async () =>
 		.toHaveAttribute('href', '/method');
 	await screen.getByText('View chart data', { exact: true }).click();
 	await expect.element(screen.getByRole('table')).toBeVisible();
+	await expect
+		.element(screen.getByRole('columnheader', { name: 'Frequency (Hz)', exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByText('Level (dB)', { exact: true })).toBeVisible();
 	await expect.element(screen.getByRole('columnheader', { name: 'Curve A' })).toBeVisible();
 	await expect.element(screen.getByRole('rowheader', { name: '20 Hz', exact: true })).toBeVisible();
 	expect(screen.container.querySelectorAll('tbody tr')).toHaveLength(10);

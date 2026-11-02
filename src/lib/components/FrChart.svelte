@@ -46,6 +46,7 @@
 	let readIndex = $state(120);
 	let activeRegion = $state<number | null>(null);
 	let exportError = $state('');
+	let levelLabel = $derived(mode === 'difference' ? 'Difference (dB)' : 'Level (dB)');
 	let baseline = $derived(series.find((item) => item.id === baselineId) ?? series[0]);
 	let valid = $derived(
 		series.every(
@@ -305,11 +306,7 @@
 				ctx.fillText(line, 24, 32 + index * 22);
 			});
 			ctx.font = '12px "IBM Plex Mono"';
-			ctx.fillText(
-				mode === 'difference' ? 'Difference (dB) · Frequency (Hz)' : 'Relative level (dB) · Frequency (Hz)',
-				24,
-				chartTop - 12
-			);
+			ctx.fillText(`${levelLabel} · Frequency (Hz)`, 24, chartTop - 12);
 			ctx.drawImage(source, 0, chartTop, width, chartHeight);
 			let y = chartTop + chartHeight + 24;
 			series.forEach((item, index) => {
@@ -386,9 +383,7 @@
 					></label
 				>{/if}
 		</div>{/if}
-	<div class="axis-label">
-		{mode === 'difference' ? 'Difference' : 'Relative level'} <span class="mono">/ dB</span>
-	</div>
+	<div class="axis-label">{levelLabel}</div>
 	<div class="plot-wrap">
 		<div class="plot" bind:this={host} aria-hidden="true"></div>
 		{#if series.length === 0}<div class="plot-empty">
@@ -397,7 +392,7 @@
 				<p>Add a measured product to see its response here.</p>
 			</div>{/if}
 	</div>
-	<div class="x-label">Frequency <span class="mono">/ Hz</span></div>
+	<div class="x-label">Frequency (Hz)</div>
 	{#if regions}<div class="regions" role="group" aria-label="Frequency regions">
 			{#each REGIONS as region, i (region.label)}<button
 					type="button"
@@ -484,13 +479,11 @@
 			<div class="table-scroll" tabindex="0" role="region" aria-label="Frequency response data table">
 				<table class="data-table">
 					<caption
-						>Octave-spaced samples on the canonical grid, in {mode === 'difference'
-							? 'difference dB'
-							: 'relative dB'}. A dash means no measurement. The full chart uses 240 points; no values are
-						extrapolated.</caption
+						>Octave-spaced samples on the canonical grid: {levelLabel} against Frequency (Hz). A dash means no measurement.
+						The full chart uses 240 points; no values are extrapolated.</caption
 					><thead
 						><tr
-							><th scope="col">Frequency</th>{#each curves as curve (curve.id)}<th scope="col"
+							><th scope="col">Frequency (Hz)</th>{#each curves as curve (curve.id)}<th scope="col"
 									>{curve.label}</th
 								>{/each}</tr
 						></thead

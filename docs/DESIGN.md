@@ -98,6 +98,7 @@ not the surrounding layout. The fixture page has no production counterpart: use
 - Input arrays must match the canonical 240-point GRID, as Float32Array or Float64Array. NaNs become
   explicit gaps; the chart does not smooth, extrapolate, normalise or invent measurements.
 - Logarithmic 20 Hz–20 kHz x axis; explicit 20/50/100/200/500/1k/2k/5k/10k/20k labels.
+  Axis, table and export labels use Level (dB) / Frequency (Hz), or Difference (dB) in difference mode.
   Adaptive y bounds include supplied envelopes, with outward 5 dB boundaries and padding.
 - Difference view subtracts the selected baseline pointwise. It performs no extra alignment and
   retains missing baseline coverage. Supplied envelopes are shifted by that same fixed baseline;
