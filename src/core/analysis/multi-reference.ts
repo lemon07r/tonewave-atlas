@@ -3,6 +3,8 @@ import { distanceSummary, type DistanceOptions } from './distance.ts';
 
 export interface MultiReferenceResult {
 	distances: (number | null)[];
+	/** Per-reference LS offsets from the scoring pass; null means inadequate overlap. */
+	offsets: (number | null)[];
 	mean: number | null;
 	minimax: number | null;
 	pareto: boolean;
@@ -105,13 +107,17 @@ export function compareReferences(
 ): MultiReferenceResult[] {
 	if (references.length < 2 || references.length > 4) throw new RangeError('Use 2–4 references');
 	const results = candidates.map((candidate) => {
+		const offsets: (number | null)[] = [];
 		const distances = references.map((r) => {
-			const distance = distanceSummary(candidate, r, options)?.distance;
+			const summary = distanceSummary(candidate, r, options);
+			offsets.push(summary?.offset ?? null);
+			const distance = summary?.distance;
 			return distance !== undefined && Number.isFinite(distance) ? distance : null;
 		});
 		const complete = distances.every((d): d is number => d !== null);
 		return {
 			distances,
+			offsets,
 			mean: complete ? distances.reduce((a, b) => a + b, 0) / distances.length : null,
 			minimax: complete ? Math.max(...distances) : null,
 			pareto: false

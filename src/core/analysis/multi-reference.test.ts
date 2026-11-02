@@ -79,8 +79,8 @@ describe('Pareto sweep against exhaustive oracle', () => {
 		const missing = new Float64Array(RANK_GRID.length).fill(NaN);
 		const results = compareReferences([flat, missing], [flat, flat]);
 		expect(results).toEqual([
-			{ distances: [0, 0], mean: 0, minimax: 0, pareto: true },
-			{ distances: [null, null], mean: null, minimax: null, pareto: false }
+			{ distances: [0, 0], offsets: [0, 0], mean: 0, minimax: 0, pareto: true },
+			{ distances: [null, null], offsets: [null, null], mean: null, minimax: null, pareto: false }
 		]);
 	});
 });
