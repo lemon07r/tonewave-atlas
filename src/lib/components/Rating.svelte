@@ -3,14 +3,20 @@
 	let {
 		label = 'Your impression',
 		value = $bindable(),
+		compact = false,
 		onchange
-	}: { label?: string; value?: RatingValue; onchange?: (value: RatingValue) => void } = $props();
+	}: {
+		label?: string;
+		value?: RatingValue;
+		compact?: boolean;
+		onchange?: (value: RatingValue) => void;
+	} = $props();
 	const id = $props.id();
 	const ratings = ['unrated', 'love', 'like', 'neutral', 'dislike'] as const;
 </script>
 
-<fieldset>
-	<legend class="field-label">{label}</legend>
+<fieldset class:compact>
+	<legend class={compact ? 'sr-only' : 'field-label'}>{label}</legend>
 	<div class="ratings">
 		{#each ratings as rating (rating)}<label
 				><input
@@ -37,6 +43,8 @@
 								d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.4L12 17.5l-5.7 3.1 1.1-6.4-4.6-4.5 6.4-.9Z"
 							/>{:else if rating === 'neutral'}<circle cx="12" cy="12" r="8" /><path
 								d="M8 12h8"
+							/>{:else if rating === 'dislike'}<circle cx="12" cy="12" r="8" /><path
+								d="m8.5 8.5 7 7m0-7-7 7"
 							/>{:else}<circle cx="12" cy="12" r="8" /><path d="m6.5 17.5 11-11" />{/if}</svg
 					><span>{rating === 'unrated' ? 'Not rated' : `${rating[0]?.toUpperCase()}${rating.slice(1)}`}</span
 					></span
@@ -85,5 +93,18 @@
 	input:focus-visible + span {
 		outline: 2px solid var(--accent);
 		outline-offset: 3px;
+	}
+	.compact .ratings {
+		gap: 4px;
+	}
+	.compact label > span {
+		min-height: 32px;
+		padding: 4px 6px;
+		gap: 4px;
+		font-size: 12px;
+	}
+	.compact svg {
+		width: 16px;
+		height: 16px;
 	}
 </style>

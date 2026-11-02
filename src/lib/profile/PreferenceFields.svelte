@@ -5,17 +5,23 @@
 	let {
 		item,
 		name,
+		showRating = true,
 		onchange
-	}: { item: WorkspaceItem; name: string; onchange: (item: WorkspaceItem) => void } = $props();
+	}: {
+		item: WorkspaceItem;
+		name: string;
+		showRating?: boolean;
+		onchange: (item: WorkspaceItem) => void;
+	} = $props();
 </script>
 
-<Rating
-	label={`Rating for ${name}`}
-	value={item.rating}
-	onchange={(rating: WorkspaceItem['rating']) => {
-		onchange({ ...item, rating, strength: strength(rating) });
-	}}
-/>
+{#if showRating}<Rating
+		label={`Rating for ${name}`}
+		value={item.rating}
+		onchange={(rating: WorkspaceItem['rating']) => {
+			onchange({ ...item, rating, strength: strength(rating) });
+		}}
+	/>{/if}
 {#if item.rating === 'dislike'}
 	<TagPicker
 		label="Sound reasons (optional)"

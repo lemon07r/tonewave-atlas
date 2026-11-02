@@ -65,6 +65,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await item.getByRole('radio', { name: 'Like', exact: true }).check();
 			await ready();
 			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+			await item.locator('summary').click();
 			await page
 				.locator('.result-row')
 				.first()

@@ -145,6 +145,7 @@ test('explicit Love and reasoned Dislike persist, explain measured constraints a
 	await page.reload();
 	await expect(hexa.getByRole('radio', { name: 'Love', exact: true })).toBeChecked();
 	await expect(nova.getByRole('radio', { name: 'Dislike', exact: true })).toBeChecked();
+	await nova.locator('summary').click();
 	await expect(nova.getByRole('checkbox', { name: reason, exact: true })).toBeChecked();
 	await expect(
 		page.locator('.result-row').getByRole('heading', { name: /^Truthear (Hexa|Nova)$/i })
@@ -253,6 +254,7 @@ test('row rating drafts keep comfort-only evidence out of ranking and support re
 	await first.getByRole('button', { name: 'Save rating', exact: true }).click();
 	const item = page.getByRole('region', { name, exact: true });
 	await expect(item.getByRole('radio', { name: 'Dislike', exact: true })).toBeChecked();
+	await item.locator('summary').click();
 	await expect(item.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true })).toBeChecked();
 	await expect(page.getByRole('heading', { name: 'Measured matches', exact: true })).toBeVisible();
 	await item.getByRole('button', { name: `Remove ${name}`, exact: true }).click();

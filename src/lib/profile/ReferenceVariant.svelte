@@ -15,11 +15,9 @@
 		measurementId?: string | undefined;
 		onchange: (id: string) => void;
 	} = $props();
-	let open = $state<boolean>(false);
 	let data = $state.raw<ProductDetail>();
 	let error = $state('');
 	$effect(() => {
-		if (!open) return;
 		let active = true;
 		void detail(productId).then(
 			(value) => {
@@ -35,8 +33,7 @@
 	});
 </script>
 
-<details bind:open>
-	<summary>Reference variant{measurementId ? ' · explicit measurement selected' : ''}</summary>
+<div class="variant">
 	{#if data}<label class="field-label"
 			>Measurement for {name}<select
 				value={measurementId ?? ''}
@@ -54,21 +51,17 @@
 				{/each}
 			</select></label
 		>{:else}<p role="status">{error || 'Loading reference measurements…'}</p>{/if}
-</details>
+</div>
 
 <style>
-	details {
+	.variant {
 		font-size: var(--text-xs);
 		color: var(--muted);
-	}
-	summary {
-		cursor: pointer;
-		padding: 8px 0;
-		min-height: 36px;
 	}
 	select {
 		display: block;
 		width: 100%;
+		min-width: 0;
 		margin-top: 8px;
 	}
 </style>

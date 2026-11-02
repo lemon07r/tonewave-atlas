@@ -24,3 +24,12 @@ test('uses native arrow-key radio navigation', async () => {
 	await expect.element(screen.getByRole('radio', { name: 'Dislike', exact: true })).toHaveFocus();
 	expect(onchange).toHaveBeenLastCalledWith('dislike');
 });
+
+test('Not rated and Dislike have different symbols as well as text labels', async () => {
+	const screen = await render(Rating, { compact: true });
+	const paths = [...screen.container.querySelectorAll('label')].map(
+		(label) => label.querySelector('svg')?.innerHTML
+	);
+	expect(paths[0]).not.toBe(paths[4]);
+	await expect.element(screen.getByRole('group', { name: 'Your impression' })).toBeVisible();
+});
