@@ -1,7 +1,8 @@
 # Measurement sources
 
 Tonewave Atlas discovers reviewer databases from the public [squig.link directory](https://squig.link/squigsites.json).
-Each database supplies its configuration, brand/model index (`data/phone_book.json`), and channel text
+Each database supplies its configuration (`config.js` at the database root, or the config script
+its page references), brand/model index (`data/phone_book.json`), and channel text
 files. The manifest and catalogs attribute every included database; each measurement records its
 original file URLs, database link, REW date when present, HTTP Last-Modified, and processing steps.
 Reviewer-listed prices are retained verbatim; only explicit dollar/USD forms are parsed, with no
