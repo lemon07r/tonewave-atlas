@@ -44,6 +44,7 @@
 	let expanded = $derived(open);
 	function choose(item: Item) {
 		query = item.label;
+		onquery?.(query);
 		open = false;
 		activeId = null;
 		onselect(item);
@@ -116,7 +117,10 @@
 <div
 	class="search"
 	onfocusout={(event) => {
-		if (!event.currentTarget.contains(event.relatedTarget as Node | null)) open = false;
+		if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+			open = false;
+			activeId = null;
+		}
 	}}
 >
 	<label class="field-label" for={id}>{label}</label>
@@ -157,6 +161,15 @@
 	<span class="sr-only" id={`${id}-hint`}
 		>Use up and down arrows to review results, Enter to select, and Escape to close.</span
 	>
+	<p class="sr-only" role="status">
+		{open
+			? loading
+				? 'Searching…'
+				: filtered.length === 0
+					? emptyText
+					: `${filtered.length} results available.`
+			: ''}
+	</p>
 	<div class="popup" hidden={!open}>
 		<div id={`${id}-results`} role="listbox" aria-label={label} aria-busy={loading}>
 			{#each groups as group (group.name)}<div role="group" aria-label={group.name}>
@@ -191,12 +204,11 @@
 						>{/each}
 				</div>{/each}
 		</div>
-		{#if loading}<p class="search-state" role="status">Searching…</p>{:else if filtered.length === 0}<p
+		{#if loading}<p class="search-state">Searching…</p>{:else if filtered.length === 0}<p
 				class="search-state"
-				role="status"
 			>
 				{emptyText}
-			</p>{:else}<p class="sr-only" role="status">{filtered.length} results available.</p>{/if}
+			</p>{/if}
 	</div>
 </div>
 

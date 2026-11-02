@@ -19,6 +19,8 @@
 					? 'dark'
 					: 'light';
 			}
+			document.querySelector('meta[name="theme-color"]').content =
+				document.documentElement.dataset.theme === 'dark' ? '#1c211f' : '#f6f4ee';
 		</script>
 		%sveltekit.head%
 	</head>

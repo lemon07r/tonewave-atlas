@@ -54,8 +54,8 @@
 		font-weight: 400;
 		text-align: left;
 	}
-	.tooltip-wrap:hover [role='tooltip'],
-	.tooltip-wrap:focus-within [role='tooltip'] {
+	.tooltip-wrap:hover [role='tooltip']:not(.hidden),
+	.tooltip-wrap:focus-within [role='tooltip']:not(.hidden) {
 		visibility: visible;
 	}
 	[role='tooltip'].hidden {

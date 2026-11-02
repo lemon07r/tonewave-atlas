@@ -16,9 +16,11 @@ test('provides a named native radio group with mutually exclusive choices', asyn
 });
 
 test('uses native arrow-key radio navigation', async () => {
-	const screen = await render(Rating, { value: 'neutral' });
+	const onchange = vi.fn();
+	const screen = await render(Rating, { value: 'neutral', onchange });
 	await screen.getByRole('radio', { name: 'Neutral', exact: true }).click();
 	await userEvent.keyboard('{ArrowRight}');
 	await expect.element(screen.getByRole('radio', { name: 'Dislike', exact: true })).toBeChecked();
 	await expect.element(screen.getByRole('radio', { name: 'Dislike', exact: true })).toHaveFocus();
+	expect(onchange).toHaveBeenLastCalledWith('dislike');
 });

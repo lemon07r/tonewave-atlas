@@ -758,16 +758,16 @@
 		</aside>
 	</div>
 </div>
-{#if undo}<Toast
-		message="Profile changed. Previous profile is available to restore."
-		onundo={() => {
-			if (undo) save(undo);
-			undo = undefined;
-		}}
-		ondismiss={() => {
-			undo = undefined;
-		}}
-	/>{/if}
+<Toast
+	message={undo ? 'Profile changed. Previous profile is available to restore.' : ''}
+	onundo={() => {
+		if (undo) save(undo);
+		undo = undefined;
+	}}
+	ondismiss={() => {
+		undo = undefined;
+	}}
+/>
 
 <style>
 	.discover-grid {
@@ -787,6 +787,7 @@
 	}
 	.chart-column {
 		position: sticky;
+		z-index: var(--z-sticky);
 		top: 24px;
 		min-width: 0;
 	}

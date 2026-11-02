@@ -9,7 +9,7 @@
 </script>
 
 <div class={['notice', kind]}>
-	<Icon name="info" size={18} />
+	<Icon name={kind === 'caution' ? 'warning' : 'info'} size={18} />
 	<div>
 		{#if title}<strong>{title}</strong>{/if}
 		<div>{@render children()}</div>

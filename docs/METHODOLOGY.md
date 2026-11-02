@@ -311,6 +311,12 @@ confidence or the original inferred summary.
 
 ## Plain-language wording and Discover presentation
 
+Chart inspection shows frequency rounded to the nearest whole Hz, while compact axis labels use kHz
+above 1 kHz. Levels are rounded to one decimal dB, with rounded zero always unsigned. Non-finite
+samples or overflowing baseline differences remain gaps. Both lower and upper uncertainty envelopes
+must be supplied together on the same 240-point display grid; invalid arrays are rejected rather
+than silently shown without their bounds.
+
 Discover describes signed, level-aligned candidate-minus-reference band means (candidate minus the
 best-fitting taste centre in profile mode). Absolute means below 0.75 dB are omitted; 0.75 to below
 2 dB uses “slightly”, 2 to below 4 dB uses unqualified “more”/“less”, and 4 dB or greater uses “much”.

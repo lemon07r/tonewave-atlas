@@ -90,9 +90,9 @@ export function frequencyLabel(hz: number): string {
 	return hz >= 1000 ? `${Number((hz / 1000).toFixed(1))}k` : `${Math.round(hz)}`;
 }
 export function dbLabel(value: number | null | undefined, signed = false): string {
-	return value == null || !Number.isFinite(value)
-		? '—'
-		: `${signed && value > 0 ? '+' : ''}${value.toFixed(1)}`;
+	if (value == null || !Number.isFinite(value)) return '—';
+	const text = value.toFixed(1).replace(/^-0\.0$/, '0.0');
+	return `${signed && Number(text) > 0 ? '+' : ''}${text}`;
 }
 
 /** Nulls, rather than NaNs, tell uPlot to preserve an explicit gap. No interpolation or alignment. */
@@ -102,9 +102,10 @@ export function chartValues(values: ArrayLike<number>, baseline?: ArrayLike<numb
 	return Array.from(GRID, (_, i) => {
 		const value = values[i];
 		const base = baseline ? baseline[i] : 0;
-		return value !== undefined && base !== undefined && Number.isFinite(value) && Number.isFinite(base)
-			? value - base
-			: null;
+		if (value === undefined || base === undefined || !Number.isFinite(value) || !Number.isFinite(base))
+			return null;
+		const difference = value - base;
+		return Number.isFinite(difference) ? difference : null;
 	});
 }
 

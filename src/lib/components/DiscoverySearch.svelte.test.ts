@@ -8,6 +8,13 @@ test('offers single-reference and taste-profile discovery upfront with native ra
 	const screen = await render(DiscoverySearch);
 	await expect.element(screen.getByRole('radio', { name: 'Similar to one IEM', exact: true })).toBeChecked();
 	await expect.element(screen.getByRole('combobox', { name: 'An IEM you enjoy' })).toBeVisible();
+	await expect
+		.element(
+			screen.getByText(
+				'Matches will use measurements from the same rig family once the catalog is connected.'
+			)
+		)
+		.toBeVisible();
 	await screen.getByRole('radio', { name: 'Similar to one IEM', exact: true }).click();
 	await userEvent.keyboard('{ArrowRight}');
 	await expect
@@ -18,6 +25,13 @@ test('offers single-reference and taste-profile discovery upfront with native ra
 	await expect.element(screen.getByRole('radio', { name: 'Love', exact: true })).toBeDisabled();
 	await expect.element(screen.getByRole('checkbox', { name: 'Bass weight' })).toBeDisabled();
 	await expect.element(screen.getByText('No IEMs in your profile yet.')).toBeVisible();
+	await expect
+		.element(
+			screen.getByText(
+				'Matches will use measurements from the same rig family once the catalog is connected.'
+			)
+		)
+		.toBeVisible();
 });
 
 test('keeps headphone copy honest and exposes the unavailable catalog', async () => {

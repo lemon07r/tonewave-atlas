@@ -13,12 +13,13 @@ once, rather than repeating it under the chart or substituting slogans for instr
 sizes, while moderate weight and tight title spacing give the publication its character without a
 second display family. IBM Plex Mono 400 earns its place on chart axes, values and small section
 indexes. Tabular figures are enabled globally. Body text is 16 px, secondary text 14 px, metadata
-12 px; titles scale from 32 to 48 px. Small chart annotations are supplementary to the accessible
+12 px, with 11 px microtype for eyebrows and compact chart annotations; titles scale from 32 to 48 px.
+Small chart annotations are supplementary to the accessible
 table and named controls, not the only way to read a value.
 
 ## Tokens and colour
 
-The source of truth is `src/lib/styles/app.css`. Spacing is 4/8/12/16/20/24/32/40/48/64 px;
+The source of truth is `src/lib/styles/app.css`. Spacing is 4/8/12/16/20/24/28/32/36/40/48/64 px;
 radius 4 px; hairlines 1 px. Layers: sticky 10, popup 30, toast 50. No gradients or shadows.
 
 | Role                  | Light                 | Dark                  |
@@ -68,7 +69,7 @@ offsets. Compare uses a 300 px selection rail; Explore and Method use
 - At 1150 px: tighten navigation and column gaps.
 - At 1050 px: gutters become 32 px; secondary rails narrow.
 - At 900 px: navigation becomes a button-controlled disclosure; Discover and Compare stack.
-- At 700 px: Explore filters move after the catalog; Method contents precede the article.
+- At 700 px: Explore stacks filters before the catalog, matching DOM order; Method contents precede the article.
 - At 640 px: 20 px gutters, smaller titles, mobile-only form switch inside navigation.
 
 The chart reserves a 280 px plotting height, 304 px from 1200 px, and 244 px at mobile widths; Compare
@@ -81,7 +82,8 @@ not the surrounding layout. The fixture page has no production counterpart: use
 - Shell: skip link, current-page navigation, mobile disclosure with Escape/focus return, native
   form-factor radios reflected in `?form=headphones`. Theme cycles system → light → dark, persists
   locally when storage is available and follows system changes in system mode. The document applies
-  theme before paint. Query state is browser-only so the four routes remain prerenderable.
+  theme and browser chrome colour before paint; both follow subsequent theme changes. Query state is
+  browser-only in production so the four routes remain prerenderable.
 - Discover presents single-reference and taste-profile modes together above the real catalog search.
   Products are grouped by brand, with variant/source counts. Similar-mode reference, optional
   measurement/rig, focus, budget, tunings, advanced source/treble controls and up to five overlays
@@ -89,7 +91,9 @@ not the surrounding layout. The fixture page has no production counterpart: use
   for 300 ms; neither worker errors nor missing support become successful empty results.
 - Search: input retains focus while `aria-activedescendant` follows grouped listbox options. Arrows
   wrap, Home/End jump within an open list, Enter selects, Escape/Tab dismiss. Literal substring
-  highlights are text nodes, never injected HTML. Loading and empty feedback are announced. Callers
+  highlights are text nodes, never injected HTML. Loading, empty and result-count feedback update one
+  persistent live region outside the popup. Selection also notifies query listeners; blur clears the
+  active option. Callers
   can supply asynchronously filtered items with `filter={false}` and own cancellation/race handling.
   Only the page's primary search enables `/` and Command/Ctrl+K; `/` does not interrupt typing.
 - Segments and ratings use native radios; optional reason tags use checkboxes. Labels and SVGs are
@@ -97,7 +101,8 @@ not the surrounding layout. The fixture page has no production counterpart: use
 - Advanced controls use native details/summary. Popovers and action menus use native auto popovers
   for Escape/light dismissal; menu items support arrows and Home/End. Tooltips work on hover/focus,
   expose descriptions and dismiss with Escape. Toasts keep Undo available until dismissed rather
-  than racing a timer. Notices are inline; generic skeletons reserve 88 px per row, overridden to
+  than racing a timer, with an always-mounted status region. Caution notices use a warning triangle,
+  not colour alone; generic skeletons reserve 88 px per row, overridden to
   160 px for Discover result rows. The result section reserves space while analysis loads.
 
 ## Discover evidence and profile patterns

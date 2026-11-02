@@ -270,7 +270,7 @@
 		content="Compare real frequency-response measurements, sources and rig-aware product consensus curves."
 	/></svelte:head
 >
-{#if dev && browser && page.url.searchParams.has('visual')}
+{#if dev && page.url.searchParams.has('visual')}
 	<VisualHarness />
 {:else}
 	<div class="page">
@@ -466,6 +466,7 @@
 	}
 	.chart {
 		position: sticky;
+		z-index: var(--z-sticky);
 		top: 24px;
 		min-width: 0;
 	}

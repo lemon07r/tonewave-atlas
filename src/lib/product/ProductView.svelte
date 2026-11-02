@@ -269,6 +269,7 @@
 	}
 	.product-chart {
 		position: sticky;
+		z-index: var(--z-sticky);
 		top: 24px;
 		min-width: 0;
 	}
