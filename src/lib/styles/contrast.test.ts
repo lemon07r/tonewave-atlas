@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 
-const css = readFileSync(new URL('./direction.css', import.meta.url), 'utf8');
+const css = readFileSync(new URL('./app.css', import.meta.url), 'utf8');
 function luminance(hex: string): number {
 	const channels = [1, 3, 5].map((offset) => {
 		const n = parseInt(hex.slice(offset, offset + 2), 16) / 255;
