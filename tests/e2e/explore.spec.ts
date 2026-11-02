@@ -1,0 +1,76 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from '@playwright/test';
+
+const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/phase2');
+mkdirSync(shots, { recursive: true });
+
+for (const theme of ['light', 'dark'] as const) {
+	test.describe(theme, () => {
+		test.use({ colorScheme: theme });
+		test('filters the real catalog, opens provenance and exports product-to-product EQ', async ({
+			page
+		}, info) => {
+			test.setTimeout(60000);
+			if (info.project.name === 'mobile') await page.setViewportSize({ width: 390, height: 844 });
+			const errors: string[] = [];
+			page.on('pageerror', (error) => errors.push(error.message));
+			await page.goto('/explore');
+			await page.getByRole('searchbox', { name: 'Filter IEMs' }).fill('Truthear');
+			await expect(page.getByRole('link', { name: 'Hexa', exact: true })).toBeVisible();
+			await expect(page.locator('.catalog-row')).not.toHaveCount(40);
+			await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('Truthear');
+			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+			await page.screenshot({ path: join(shots, `pages-explore-${info.project.name}-${theme}.png`) });
+			await page.getByRole('link', { name: 'Hexa', exact: true }).click();
+			await expect(page.getByRole('heading', { name: 'Hexa', exact: true })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'Measurements & provenance' })).toBeVisible();
+			await expect(page.getByRole('link', { name: 'Source database', exact: true }).first()).toHaveAttribute(
+				'href',
+				/^https?:\/\//
+			);
+			await expect(page.getByRole('link', { name: 'Original file 1', exact: true }).first()).toHaveAttribute(
+				'href',
+				/^https?:\/\//
+			);
+			await expect(page.getByRole('link', { name: 'Find similar' })).toHaveAttribute('href', /\?ref=p-/);
+			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+			await page.screenshot({ path: join(shots, `pages-product-${info.project.name}-${theme}.png`) });
+			const target = page.getByRole('combobox', { name: 'EQ target product', exact: true });
+			await target.fill('Truthear Nova');
+			await page
+				.getByRole('option')
+				.filter({ has: page.getByText('Truthear Nova', { exact: true }) })
+				.click();
+			await target.press('Escape');
+			const table = page.getByRole('table', { name: 'Parametric EQ filters' });
+			await expect(table).toBeVisible();
+			expect(await table.getByRole('row').count()).toBeGreaterThan(1);
+			await expect(page.getByText(/Response distance, 20 Hz–10 kHz:/)).toBeVisible();
+			const downloadPromise = page.waitForEvent('download');
+			await page.getByRole('button', { name: 'Download Equalizer APO', exact: true }).click();
+			const download = await downloadPromise;
+			expect(download.suggestedFilename()).toMatch(/^tonewave-p-.*-eq\.txt$/);
+			const stream = await download.createReadStream();
+			const chunks: Buffer[] = [];
+			for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+			expect(Buffer.concat(chunks).toString()).toMatch(/Preamp:.*dB[\s\S]*Filter 1: ON/);
+			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+			await page.locator('.eq').scrollIntoViewIfNeeded();
+			await page.screenshot({ path: join(shots, `pages-eq-${info.project.name}-${theme}.png`) });
+			expect(errors).toEqual([]);
+		});
+	});
+}
+
+test('headphone catalog states its limited coverage and opens real measurements', async ({ page }) => {
+	await page.goto('/explore?form=headphones');
+	await expect(page.getByText('A small headphone dataset', { exact: true })).toBeVisible();
+	await expect(page.locator('.catalog-row').first()).toBeVisible();
+	await page.locator('.catalog-row').first().getByRole('link').click();
+	await expect(page.getByRole('heading', { name: 'Measurements & provenance' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Source database', exact: true }).first()).toBeVisible();
+	await expect(page).toHaveURL(/form=headphones/);
+	await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
