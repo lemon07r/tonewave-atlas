@@ -83,7 +83,7 @@ interface SourceCount {
 }
 
 export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
-	const { excluded, brands, overrides } = await readInputs(paths.root);
+	const { excluded, brands, overrides, productAliases } = await readInputs(paths.root);
 	const [directory, optScript] = await Promise.all([
 		cached(DIRECTORY_URL, paths.cache),
 		cached(OPT_OUT_URL, paths.cache)
@@ -98,6 +98,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	const products = new Map<string, Product>();
 	const identities = new Map<string, Set<string>>();
+	const originalIdentities = new Map<string, Set<string>>();
 	const unmatchedBrands = new Set<string>();
 	const sources: Source[] = [];
 	const partitions = new Map<string, PartitionCurve[]>();
@@ -242,7 +243,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					reject(file, 'local exclusion');
 					continue;
 				}
-				const product = identity(phone.brand, phone.name, source.form, aliases);
+				const product = identity(phone.brand, phone.name, source.form, aliases, productAliases);
 				const id = `m-${sha256(`${db.id}\0${product.id}\0${file}\0${index}`).slice(0, 20)}`;
 				if (acceptedIds.has(id)) {
 					reject(file, 'duplicate normalised identity/file/index; first accepted entry retained');
@@ -388,6 +389,9 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				const names = identities.get(p.id) ?? new Set<string>();
 				names.add(`${phone.brand} ${phone.name}`);
 				identities.set(p.id, names);
+				const originals = originalIdentities.get(p.id) ?? new Set<string>();
+				originals.add(product.originalKey);
+				originalIdentities.set(p.id, originals);
 				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
 				const group = partitions.get(source.partition) ?? [];
 				group.push({
@@ -492,6 +496,12 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		});
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
+	const productsBefore = [...originalIdentities.values()].reduce((n, ids) => n + ids.size, 0);
+	const identityMerges = {
+		productsBefore,
+		productsAfter: products.size,
+		merged: productsBefore - products.size
+	};
 	for (const p of sortedProducts) p.measurementIds.sort();
 	for (const form of ['iem', 'headphone'] as const) {
 		const catalog: Catalog = {
@@ -537,6 +547,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				builtAt,
 				sourcesIncluded: sources.length,
 				products: products.size,
+				identityMerges,
 				measurements: partitionMetadata.map((p) => ({ partition: p.id, count: p.measurementCount })),
 				files: manifest.files,
 				unmatchedBrands: [...unmatchedBrands].sort(),
@@ -551,6 +562,9 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	);
 	console.log(
 		`Built ${version}: ${products.size} products, ${sources.length} databases, ${files.length} files, ${files.reduce((n, f) => n + f.bytes, 0)} compressed bytes. Report: ${resolve(paths.cache, 'report.json')}`
+	);
+	console.log(
+		`Identity: ${identityMerges.merged} products merged (${productsBefore} before, ${products.size} after)`
 	);
 }
 

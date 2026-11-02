@@ -23,6 +23,7 @@ async function fixture(config = '') {
 	for (const [name, value] of Object.entries({
 		exclusions: { sources: [], files: [], products: [] },
 		aliases: { brands: {} },
+		products: { aliases: {} },
 		sources: { overrides: {} }
 	}))
 		await writeFile(resolve(root, `data/${name}.json`), JSON.stringify(value));

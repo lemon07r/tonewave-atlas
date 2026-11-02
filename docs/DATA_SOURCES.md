@@ -84,3 +84,10 @@ wrong and always retain the original label. Newer index schemas without `file` l
 unsupported, not silently guessed. Source hardware, raw calibration, insertion, tips, seal and prices
 are not independently verified. 711/5128 data is not converted between rigs; high-frequency response
 and inter-source differences require caution.
+
+Product identity removes repeated leading brand names (case/spacing-insensitive, never an empty
+remainder). `data/products.json` contains only explicit, terminal brand/model aliases; malformed,
+duplicate, cyclic or chained mappings stop ingestion. Initial Roman/Arabic numeral aliases were
+verified against catalog/file names in dataset `3c9d923462f8b79c98aa4ef9` (evidence in the input note).
+Tuning/fit/sample suffixes are not stripped. The report records pre/post identity counts, merged
+name groups and remaining suspicious near-name pairs for manual review, never fuzzy auto-merging.

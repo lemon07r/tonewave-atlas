@@ -1,5 +1,5 @@
 import type { Database, Phone } from './common.ts';
-import { configString, formFor, record, sha256 } from './common.ts';
+import { configString, formFor, productAliasKey, record, sha256 } from './common.ts';
 import type { Form, Source, Variant } from '#core/dataset/types.ts';
 
 export function normalise(value: string): string {
@@ -14,12 +14,30 @@ export function identity(
 	brand: string,
 	model: string,
 	form: Form,
-	aliases: Record<string, string>
-): { id: string; brand: string; model: string; key: string } {
-	const canonical = aliases[normalise(brand)] ?? brand.trim().replace(/\s+/g, ' ');
-	const cleanModel = model.trim().replace(/\s+/g, ' ');
+	aliases: Record<string, string>,
+	productAliases: Record<string, string> = {}
+): { id: string; brand: string; model: string; key: string; originalKey: string } {
+	let canonical = aliases[normalise(brand)] ?? brand.trim().replace(/\s+/g, ' ');
+	let cleanModel = model.trim().replace(/\s+/g, ' ');
+	const originalKey = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
+	// Compare case/spacing-insensitively, but require a whole leading brand and nonempty remainder.
+	const prefix = new RegExp(
+		`^${Array.from(canonical.replace(/\s/g, ''), (c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*')}\\s+(.+)$`,
+		'i'
+	);
+	for (;;) {
+		const rest = prefix.exec(cleanModel)?.[1]?.trim();
+		if (!rest) break;
+		cleanModel = rest;
+	}
+	const alias = productAliases[productAliasKey(canonical, cleanModel)];
+	if (alias) {
+		const [targetBrand = '', targetModel = ''] = alias.split('|');
+		canonical = aliases[normalise(targetBrand)] ?? targetBrand.trim().replace(/\s+/g, ' ');
+		cleanModel = targetModel.trim().replace(/\s+/g, ' ');
+	}
 	const key = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
-	return { id: `p-${sha256(key).slice(0, 20)}`, brand: canonical, model: cleanModel, key };
+	return { id: `p-${sha256(key).slice(0, 20)}`, brand: canonical, model: cleanModel, key, originalKey };
 }
 
 export function variant(phone: Phone, index: number, measurementId: string): Variant {

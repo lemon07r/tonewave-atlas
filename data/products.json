@@ -1,0 +1,8 @@
+{
+	"_note": "Explicit aliases verified in catalog 3c9d923462f8b79c98aa4ef9: aden's Aria II uses files MD Aria 2 BBR, Chu 2 uses Moondrop Chu II, and Timeless II uses 7Hz Timeless 2. Canonical brand spellings only; no tuning, fit, or sample variants are removed.",
+	"aliases": {
+		"MOONDROP|Aria II": "MOONDROP|Aria 2",
+		"MOONDROP|Chu II": "MOONDROP|Chu 2",
+		"7Hz|Timeless II": "7Hz|Timeless 2"
+	}
+}

@@ -9,6 +9,7 @@ import {
 	measurementUrl,
 	parseOptOuts,
 	phoneBook,
+	validateProducts,
 	supportedChannels,
 	unwanted
 } from './common.ts';
@@ -119,6 +120,22 @@ describe('source transforms', () => {
 				{ id: 'b', brand: 'Brand', model: 'Referenc' }
 			])
 		).toEqual([{ left: 'b', right: 'a' }]);
+	});
+	it.each([
+		['Moondrop', 'moondrop Moondrop Kato', 'Kato'],
+		['Moondrop', ' MOON DROP   Kato ', 'Kato'],
+		['64 Audio', '64Audio U12t', 'U12t'],
+		['Moondrop', 'Moondrop', 'Moondrop'],
+		['KZ', 'KZfoo', 'KZfoo']
+	])('strips only a complete repeated leading brand: %s / %s', (brand, model, expected) => {
+		expect(identity(brand, model, 'iem', {}).model).toBe(expected);
+	});
+	it('applies explicit product aliases without merging variants or crossing forms', () => {
+		const aliases = validateProducts({ aliases: { 'MOONDROP|Aria II': 'MOONDROP|Aria 2' } });
+		const a = identity('MOONDROP', 'Aria II', 'iem', {}, aliases);
+		expect(a.id).toBe(identity('MOONDROP', 'Aria 2', 'iem', {}, aliases).id);
+		expect(a.id).not.toBe(identity('MOONDROP', 'Aria II DSP', 'iem', {}, aliases).id);
+		expect(a.id).not.toBe(identity('MOONDROP', 'Aria II', 'headphone', {}, aliases).id);
 	});
 	it.each([
 		['Balanced cable', 'setup'],

@@ -34,6 +34,7 @@ async function fixture(configBody: string | null = config, extraBodies: [string,
 	for (const [name, value] of Object.entries({
 		exclusions: { sources: [], files: [], products: [] },
 		aliases: { brands: {} },
+		products: { aliases: {} },
 		sources: { overrides: {} }
 	}))
 		await writeFile(resolve(root, `data/${name}.json`), JSON.stringify(value));
@@ -77,11 +78,40 @@ async function result(paths: { cache: string; output: string }) {
 		excluded: { reason: string }[];
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
+		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
 	};
 	return { manifest, catalog, report };
 }
 
 describe('cached dataset build safety', () => {
+	it('reports actual brand-prefix and explicit alias product merges', async () => {
+		const { paths } = await fixture('', [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Brand',
+						phones: [
+							{ name: 'Model', file: 'Model' },
+							{ name: 'Brand Model', file: 'Model2' },
+							{ name: 'Model II', file: 'Model3' }
+						]
+					}
+				])
+			],
+			[`${base}data/Model2%20L.txt`, curve(80)],
+			[`${base}data/Model3%20L.txt`, curve(80)]
+		]);
+		await writeFile(
+			resolve(paths.root, 'data/products.json'),
+			JSON.stringify({ aliases: { 'Brand|Model II': 'Brand|Model' } })
+		);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products).toHaveLength(1);
+		expect(catalog.measurements).toHaveLength(3);
+		expect(report.identityMerges).toEqual({ productsBefore: 3, productsAfter: 1, merged: 2 });
+	});
 	it.each([`${base}data/offset.txt`, `${base}data/Model%20L.txt`])(
 		'reports stale calibration/measurement %s',
 		async (url) => {
@@ -212,7 +242,7 @@ describe('cached dataset build safety', () => {
 		const { catalog } = await result(paths);
 		expect(catalog.measurements[0]?.channels).toContain('L');
 	});
-	it.each(['exclusions', 'aliases', 'sources'])(
+	it.each(['exclusions', 'aliases', 'sources', 'products'])(
 		'fails before publishing when %s.json is malformed',
 		async (name) => {
 			const { paths } = await fixture();
