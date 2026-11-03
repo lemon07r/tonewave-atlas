@@ -340,3 +340,34 @@ test('invalid import and unknown references remain errors without overwriting sa
 	await expect(page.locator('.profile-row')).toHaveCount(1);
 	await accessible(page);
 });
+
+test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {
+	await page.goto(shared([reference]));
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await settled(page);
+	await page.evaluate(() => {
+		const seen = { updating: false };
+		Object.assign(window, { rerank: seen });
+		new MutationObserver(() => {
+			if (document.querySelector('.updating')) seen.updating = true;
+		}).observe(document.body, { childList: true, subtree: true });
+	});
+	await page
+		.locator('.result-row')
+		.first()
+		.getByRole('button', { name: 'Show on chart', exact: true })
+		.click();
+	await expect(page).toHaveURL(/chart=/);
+	await expect(page.locator('.legend-row')).toHaveCount(2);
+	await page
+		.locator('.result-row')
+		.nth(1)
+		.getByRole('button', { name: 'Show on chart', exact: true })
+		.click();
+	await expect(page.locator('.legend-row')).toHaveCount(3);
+	await page.waitForTimeout(500);
+	expect(
+		await page.evaluate(() => (window as unknown as { rerank: { updating: boolean } }).rerank.updating)
+	).toBe(false);
+	await settled(page);
+});
