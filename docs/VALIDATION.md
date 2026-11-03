@@ -37,6 +37,83 @@ numerical semantics, not an execution on Windows or a Wavelet listening test.
 definition on seeded 2/3/4-objective sets, ties, duplicates, NaN/null/infinite objectives and 3,000
 all-nondominated adversarial points for every supported objective count.
 
+## Frozen-cache identity audit (2026-11-03)
+
+Both builds start from `4199d08ffc44cf0977b5bae0` and the same frozen crawl. B0 is origin/main
+`d031d7e`, dataset `25fd1290788e29311d0a9e01`; B1 is `a8958c8` plus eight reviewed maker aliases,
+dataset `4faef5c62875b2b41735c95e`. B0/B1 contain **9,490 / 9,155 products**, respectively, with the
+same **40,821 measurements / 138 databases / 118 publishers**. Scripted comparison keys measurements
+by source and unordered original URL/channel pairs, retains multiplicity and decodes rank-pack int16
+arrays: **zero unmatched measurements / zero changed rank curves**. All **234 / 231** manifest-listed
+artifacts pass byte-count and SHA-256 checks. Every changed grouping component is within the approved
+brand/plus/placeholder/CJK/alias categories; full grouping and redirect findings are recorded in
+[DATA_SOURCES.md](DATA_SOURCES.md).
+
+The frozen-input fingerprint is
+`9a0f28798869e899e2c39f9e0ac24518716733765bf5f51ddad68816950e263c`, checked unchanged in the
+read-only frozen cache and both build copies after all three builds. Local scripts and complete
+outputs are retained under `~/.local/tmp/tw2`: `identity-rebuild-audit.py`, `identity-projections.ts`,
+`identity-rebuild-audit.md`, `grouping-differences.json`, `identity-outliers.json`, `redirect-audit.json`,
+`redirect-exceptions.json`, `upstream-drift.json`, `spot-checks.json`, `validation-b0-b1.json`,
+`glued-brand-evidence.{py,json,md}` and `reviewed-alias-impact.json`.
+
+LOCO is **37 scored / 37 correct / one insufficient-support / zero wrong** in both builds. The
+following are pooled held-out mean pair distances in dB, not a mean of fold summaries:
+
+| Partition      | Multi-source products B0 / B1 |   Pairs B0 / B1 | B0 before → after   | B1 before → after   | Default correction B0 / B1 |
+| -------------- | ----------------------------: | --------------: | ------------------- | ------------------- | -------------------------- |
+| iem-711        |                 2,450 / 2,430 | 85,266 / 89,586 | 1.763363 → 1.575243 | 1.763404 → 1.575473 | on / on                    |
+| iem-5128       |                       21 / 21 |         27 / 27 | 1.666392 → 1.641151 | 1.666392 → 1.638392 | on / off                   |
+| headphone-5128 |                       20 / 20 |         20 / 20 | 1.549378 → 1.533225 | 1.549378 → 1.531698 | off / off                  |
+
+All three partitions meet the support guard. B1 iem-711 fold mean improvements range
+**0.177737–0.194987 dB** (B0 **0.178207–0.194183**). B1 iem-5128 fold 3 is **−0.001716 dB**;
+headphone-5128 fold 0 is **−0.022837 dB** in both builds. Positive pooled means alone do not enable
+default correction. Rekeyed product IDs change hash-fold assignments, so unchanged measured curves
+do not imply unchanged validation folds. The 160 yoshiultra measurements reclassified into iem-711
+also affect that partition's population. Full per-partition support, spread and fold outputs are in
+`validation-b0-b1.json`; these observations are not physical calibration or listener validation.
+
+The independent B0/seed comparison isolates upstream drift: five products and 27 measurements added,
+four products and eight measurements removed, one matched rank curve changed, no databases or
+publishers added/removed. Six disappeared seed product IDs remain unmapped in B1 (four without any
+surviving raw-file identity, one tied split and one duplicate-file ambiguity), so **universal
+historical-product redirect coverage fails**; no arbitrary redirects were substituted to hide this.
+The automated equality/grouping/spot checks pass; missing redirects are inspected separately, not
+counted as an equality-test success.
+
+### Redirect-only refinement
+
+Dataset `f9ba2374a78706b8379bfed8` rebuilds from the same frozen cache and `4199d08` seed after
+general redirect disambiguation rules. Versus audited `4faef5c`, **all 9,155 products / 40,821
+measurements and every non-redirect catalog field are identical**. All **229 non-catalog artifacts**,
+including **57 rank packs**, are byte-identical; the headphone catalog is byte-identical too.
+Only the IEM catalog's redirects change, adding **two product / two measurement routes**, with no
+removed or retargeted routes. Its compressed size rises **105 bytes**; version-prefixed manifest
+paths and that catalog's size/hash change accordingly; `builtAt` stays identical because it derives
+from cached fetch times, not the build clock. All **231 artifacts**
+pass manifest size/SHA-256 checks. Build-report fields other than redirects and derived publication
+metadata are unchanged, including all rig evidence, statistics, defaults and modified/base-link counts.
+
+The PR #19 review fixes (accepted-source placeholder recovery, exact-measurement redirect priority,
+collection brand keys, plus-sign boundaries, product-alias base links) rebuild the same frozen cache
+to the same `f9ba2374a78706b8379bfed8`: all 231 artifacts are byte-identical. Only the identity audit
+in the build report changes, because it now uses final published defaults (see `DATA_SOURCES.md`).
+
+Coverage becomes **1,237 / 1,241 disappeared seed products**, leaving only the four accepted upstream
+removals unmapped. NF ACOUS NM2+ follows its two-of-three overall measurement majority after a 1–1
+former-default tie. Limited's variant kind/label disambiguates the source's explicit non-default
+foam-tip reuse under Ultra; this is not a second stock default. Product resolution also handles
+multiple eligible rows with one parent without inventing a measurement redirect. Still-tied cases
+remain unmapped. Regression fixtures exercise default/count/identity priority, current brand/product
+aliases and plus keys, duplicate-row vote inflation, metadata fallback and unresolved ties.
+
+The rebuild's **182,761 read-only input files / 1,875,054,088 bytes** retain the frozen fingerprint
+above. Focused scripts and outputs under `~/.local/tmp/tw2` are `redirects-refinement-scan.{ts,json}`,
+`redirects-refinement-audit.{py,json,log}`, `redirects-source-reuse.json`, `build-b1-redirects.log`
+and `verify-redirects-refinement.log`. The previous dataset and report are preserved locally in
+`b1-before-redirects/`; the final dataset remains in `static/data/f9ba2374a78706b8379bfed8/`.
+
 ## Benchmarks
 
 Run `pnpm bench` (plain Node TypeScript stripping, no build). Deterministic synthetic curves, one

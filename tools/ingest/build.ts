@@ -46,13 +46,16 @@ import {
 	DisplayNames,
 	defaultVariantIndex,
 	identity,
-	normalise,
 	sampleContext,
 	sourceFor,
 	suspiciousNames,
 	usdPrice,
 	variant
 } from './transform.ts';
+import type { KnownBrand } from './transform.ts';
+import { brandKey, canonicalBrandKey, identityKey, modelIdentity } from './identity-keys.ts';
+import { identityAudit, type IdentityOrigin } from './identity-audit.ts';
+import { markModifiedProducts } from './product-flags.ts';
 import { publishDataset, removeStaging } from './publish.ts';
 import { medianSpreadByBand, rankStatistics } from './statistics.ts';
 import { referenceTargets } from './targets.ts';
@@ -112,20 +115,28 @@ interface SourceCount {
 	reasons: Record<string, number>;
 }
 
-export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
+interface BuildPaths {
+	root: string;
+	cache: string;
+	output: string;
+}
+
+/** First used without recovery to collect only makers with accepted, calibrated curves. */
+async function ingest(paths: BuildPaths, knownBrands: readonly KnownBrand[]) {
 	const { excluded, brands, overrides, productAliases } = await readInputs(paths.root);
 	const targets = await referenceTargets(paths.root);
 	const directory = await cached(DIRECTORY_URL, paths.cache);
 	if (directory?.entry.status !== 200) throw new Error('Run data:crawl first (source directory required)');
 	const aliases: Record<string, string> = {};
 	for (const [a, b] of Object.entries(brands)) {
-		aliases[normalise(a)] = b;
-		aliases[normalise(b)] = b;
+		aliases[brandKey(a)] = b;
+		aliases[brandKey(b)] = b;
 	}
 	const products = new Map<string, Product>();
 	const displayNames = new DisplayNames();
 	const identities = new Map<string, Set<string>>();
 	const originalIdentities = new Map<string, Set<string>>();
+	const identityOrigins = new Map<string, IdentityOrigin>();
 	const trackIdentity = (product: ReturnType<typeof identity>, originalName: string) => {
 		const names = identities.get(product.id) ?? new Set<string>();
 		names.add(originalName);
@@ -377,7 +388,15 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					file: index === null ? null : (cleanPhone.file[index] ?? null)
 				});
 			}
-			const originalProduct = identity(cleanPhone.brand, cleanPhone.name, form, aliases, productAliases);
+			const originalProduct = identity(
+				cleanPhone.brand,
+				cleanPhone.name,
+				form,
+				aliases,
+				productAliases,
+				knownBrands,
+				db.id
+			);
 			const originalProblem = identityProblem(originalProduct.brand, originalProduct.model);
 			for (const [index, file] of cleanPhone.file.entries()) {
 				const phone = modification(cleanPhone, index);
@@ -411,7 +430,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					reject(file, 'local exclusion');
 					continue;
 				}
-				const product = identity(phone.brand, phone.name, form, aliases, productAliases);
+				const product = identity(phone.brand, phone.name, form, aliases, productAliases, knownBrands, db.id);
 				const problem = originalProblem ?? identityProblem(product.brand, product.model);
 				if (problem) {
 					quarantine(problem, false);
@@ -623,8 +642,14 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				}
 				p.measurementIds.push(id);
 				displayNames.observe(product);
+				identityOrigins.set(id, {
+					brand: phone.brand,
+					model: phone.name,
+					key: `${form}:${identityKey(phone.brand)}:${identityKey(phone.name)}`,
+					placeholder: /^Unbranded\s*\(/i.test(phone.brand) && product.observedBrand !== phone.brand
+				});
 				trackIdentity(product, `${phone.brand} ${phone.name}`);
-				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
+				if (!aliases[brandKey(phone.brand)]) unmatchedBrands.add(phone.brand);
 				const group = partitions.get(measurement.partition) ?? [];
 				const row = {
 					measurement,
@@ -649,6 +674,54 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		);
 	}
 	displayNames.apply(products.values());
+	return {
+		aliases,
+		targets,
+		productAliases,
+		products,
+		identities,
+		originalIdentities,
+		identityOrigins,
+		unmatchedBrands,
+		sources,
+		partitions,
+		report,
+		builtAt,
+		originalPartitions
+	};
+}
+
+async function acceptedBrands(paths: BuildPaths): Promise<KnownBrand[]> {
+	const evidence = await ingest(paths, []);
+	const brands = new Map<string, KnownBrand>();
+	for (const row of [...evidence.partitions.values()].flat()) {
+		const origin = evidence.identityOrigins.get(row.measurement.id);
+		if (!origin) throw new Error('Missing accepted maker evidence');
+		const brand = { brand: origin.brand, sourceId: row.measurement.sourceId };
+		brands.set(JSON.stringify(brand), brand);
+	}
+	return [...brands.values()];
+}
+
+export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
+	// The first pass never recovers placeholders; the second uses only accepted maker/source evidence.
+	// Reuse the actual ingestion gates rather than maintaining a weaker index-only eligibility check.
+	const knownBrands = await acceptedBrands(paths);
+	const {
+		aliases,
+		targets,
+		productAliases,
+		products,
+		identities,
+		originalIdentities,
+		identityOrigins,
+		unmatchedBrands,
+		sources,
+		partitions,
+		report,
+		builtAt,
+		originalPartitions
+	} = await ingest(paths, knownBrands);
 	const allCurves = [...partitions.values()].flat();
 	// Preserve established exact-parent accessory folds before inventing any fit-only base.
 	const initialSamples = mergeSampleIdentities(products, allCurves, aliases, productAliases);
@@ -781,7 +854,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	const formGroups = Map.groupBy(
 		[...products.values()],
-		(p) => `${normalise(p.brand)}:${normalise(p.model)}`
+		(p) => `${canonicalBrandKey(p.brand, aliases)}:${identityKey(modelIdentity(p.model))}`
 	);
 	const remainingFormConflicts = [...formGroups.values()]
 		.filter((ps) => new Set(ps.map((p) => p.form)).size > 1)
@@ -890,6 +963,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		});
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
+	const productFlags = markModifiedProducts(sortedProducts, aliases, productAliases);
 	const productsBefore = new Set([...originalIdentities.values()].flatMap((ids) => [...ids])).size;
 	const identityMergeGroups = [...originalIdentities]
 		.filter(([, ids]) => ids.size > 1)
@@ -925,7 +999,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const redirects = {
 		baselineVersion: previous.version,
 		warnings: previous.warnings,
-		...buildRedirects(previous.catalogs, catalogs)
+		...buildRedirects(previous.catalogs, catalogs, { aliases, productAliases, knownBrands })
 	};
 	for (const catalog of catalogs)
 		artifacts.set(`catalog-${catalog.form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));
@@ -987,6 +1061,8 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				publishersIncluded: new Set(sources.map((s) => s.username)).size,
 				products: products.size,
 				identityMerges,
+				productFlags,
+				identityAudit: identityAudit(sortedProducts, allCurves, identityOrigins, aliases),
 				groupwiseMerges,
 				remainingCollisionGroups,
 				measurements: partitionMetadata.map((p) => ({ partition: p.id, count: p.measurementCount })),

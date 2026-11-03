@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { brandKey } from './identity-keys.ts';
 import {
 	configChannels,
 	configScriptUrl,
@@ -19,6 +20,7 @@ import {
 	DisplayNames,
 	identity,
 	normalise,
+	sampleContext,
 	sourceFor,
 	suspiciousNames,
 	usdPrice,
@@ -264,8 +266,8 @@ describe('source transforms', () => {
 		const { brands, productAliases } = await readInputs();
 		const aliases: Record<string, string> = {};
 		for (const [from, to] of Object.entries(brands)) {
-			aliases[normalise(from)] = to;
-			aliases[normalise(to)] = to;
+			aliases[brandKey(from)] = to;
+			aliases[brandKey(to)] = to;
 		}
 		const canonical = identity('Binary', 'EP321', 'iem', aliases, productAliases);
 		for (const brand of ['Binary', 'BINARYACOUSTICS', 'Binary Acoustic']) {
@@ -330,6 +332,135 @@ describe('source transforms', () => {
 			['Bridge Reference B', 'Bridge Reference C', 'First Reference A', 'Second Reference D']
 		]);
 		expect(collisionGroups([...products.slice(4), ...products.slice(0, 4)])).toHaveLength(1);
+	});
+	it.each([
+		['Campfire', 'Campfire Audio'],
+		['Final', 'Final Audio'],
+		['Noble', 'Noble Audio'],
+		['7Hz', '7Hz(七赫兹)'],
+		['Moondrop', 'MOONDROP（水月雨）'],
+		['Night Oblivion', 'Night Oblivion [忘夜]'],
+		['YU9', 'YU9 Audio(鱼9的音频)'],
+		['Maker', 'Maker Acoustic'],
+		['Maker', 'Maker Acoustics'],
+		['I/O', 'I/O Audio'],
+		['Effect Audio x Elysian Acoustics', 'EFFECT AUDIO X ELYSIAN']
+	])('joins brand-key spellings %s / %s without changing observed display votes', (a, b) => {
+		expect(identity(a, 'Reference', 'iem', {}).id).toBe(identity(b, 'Reference', 'iem', {}).id);
+		const names = new DisplayNames();
+		const first = identity(a, 'Reference', 'iem', {});
+		names.observe(first);
+		names.observe(identity(b, 'Reference', 'iem', {}));
+		names.observe(identity(b, 'Reference', 'iem', {}));
+		names.apply([first]);
+		expect(first.brand).toBe(b);
+	});
+	it('keeps plus significant only in identity and alias keys', () => {
+		expect(normalise('NM2+')).toBe(normalise('NM2'));
+		expect(identity('NF Audio', 'NM2+', 'iem', {}).id).not.toBe(identity('NF Audio', 'NM2', 'iem', {}).id);
+		expect(identity('Maker+', 'Model', 'iem', {}).id).not.toBe(identity('Maker', 'Model', 'iem', {}).id);
+		expect(identity('NF Audio', 'NA2+', 'iem', {}).id).toBe(identity('NF Audio', 'NA2 Plus', 'iem', {}).id);
+		const aliases = validateProducts({ aliases: { 'NF Audio|NA2+': 'NF Audio|Reference' } });
+		expect(identity('NF Audio', 'NA2 Plus', 'iem', {}, aliases).model).toBe('Reference');
+		expect(identity('NF Audio', 'NA2', 'iem', {}, aliases).model).toBe('NA2');
+	});
+	it('does not share shorthand sample evidence between plus and non-plus model identities', () => {
+		const phones = ['Model+ S1', 'Model S2'].map((name) => ({
+			brand: 'Maker',
+			name,
+			file: [name],
+			suffix: [],
+			price: null,
+			reviewLink: null
+		}));
+		expect(sampleContext(phones).size).toBe(0);
+	});
+	it.each([
+		['KBEAR', 'ORMOSIA (红豆）', 'Ormosia'],
+		['KBEAR', 'QINGLONG （青龙）', 'Qinglong'],
+		['MOONDROP(水月雨)', 'BLOCK(方糖)', 'Block'],
+		['TANGZU(唐族)', 'WanEr SG (上官婉儿) Studio Edition', 'WanEr SG Studio Edition'],
+		['Acoustune', 'HS2000MX SHO -笙-', 'HS2000MX SHO'],
+		['Maker', 'Model [한글]', 'Model'],
+		['Maker', 'Model （カタカナ）', 'Model']
+	])('strips only a bracketed/dash-wrapped model translation: %s %s', (brand, a, b) => {
+		expect(identity(brand, a, 'iem', {}).id).toBe(identity(brand, b, 'iem', {}).id);
+	});
+	it('preserves real Audio names, mixed annotations, CJK-only names and bare CJK tokens', () => {
+		for (const [brand, key] of [
+			['Audio-Technica', 'audiotechnica'],
+			['Thieaudio', 'thieaudio'],
+			['Audio', 'audio'],
+			['Audio Maker', 'audiomaker']
+		] as const) {
+			expect(identity(brand, 'Model', 'iem', {}).brand).toBe(brand);
+			expect(identity(brand, 'Model', 'iem', {}).key).toBe(`iem:${key}:model`);
+		}
+		expect(identity('Thieaudio', 'Model', 'iem', {}).id).not.toBe(identity('Thie', 'Model', 'iem', {}).id);
+		for (const model of ['Model (2025 青龙)', 'Model (Deep 青龙)', '红豆', 'x Z Reviews Defiant 鳴神']) {
+			expect(identity('Maker', model, 'iem', {}).model).toBe(model);
+			expect(identity('Maker', model, 'iem', {}).id).not.toBe(identity('Maker', 'Model', 'iem', {}).id);
+		}
+		// Empty punctuation is not a CJK annotation, but ordinary punctuation still has no key weight.
+		for (const model of ['Model ( )', 'Model - -']) {
+			expect(identity('Maker', model, 'iem', {}).model).toBe(model);
+			expect(identity('Maker', model, 'iem', {}).id).toBe(identity('Maker', 'Model', 'iem', {}).id);
+		}
+	});
+	it.each(['Custom', 'Unbranded'])('preserves CJK source-local %s collection keys', (collection) => {
+		expect(brandKey(`${collection} (甲)`)).not.toBe(brandKey(`${collection} (乙)`));
+		expect(identity(`${collection} (甲)`, 'Reference', 'iem', {}).id).not.toBe(
+			identity(`${collection} (乙)`, 'Reference', 'iem', {}).id
+		);
+	});
+	it('does not treat plus as a placeholder brand boundary', () => {
+		expect(
+			identity(
+				'Unbranded (sai)',
+				'Maker+ Reference',
+				'iem',
+				{},
+				{},
+				[{ brand: 'Maker', sourceId: 'other' }],
+				'sai'
+			)
+		).toMatchObject({ brand: 'Unbranded (sai)', model: 'Maker+ Reference' });
+	});
+	it('recovers only complete known brands from other sources in Unbranded collections', () => {
+		const known = [
+			{ brand: 'Truthear', sourceId: 'other' },
+			{ brand: 'Noble', sourceId: 'other' },
+			{ brand: 'Noble Audio', sourceId: 'third' }
+		];
+		const recovered = identity('Unbranded (sai)', 'Truthear Pure', 'iem', {}, {}, known, 'sai');
+		expect(recovered).toMatchObject({
+			id: identity('Truthear', 'Pure', 'iem', {}).id,
+			brand: 'Truthear',
+			model: 'Pure'
+		});
+		expect(identity('Unbranded (sai)', 'Noble Audio Kronos', 'iem', {}, {}, known, 'sai').model).toBe(
+			'Kronos'
+		);
+		for (const [brand, model] of [
+			['Unbranded (sai)', 'China Eastern freebie buds'],
+			['Unbranded (sai)', 'Truthearing Pure'],
+			['Custom (earphonesarchive)', 'GRID-SR (Final GRID01 mod)'],
+			['Custom Art', 'Model']
+		] as const)
+			expect(identity(brand, model, 'iem', {}, {}, known, 'sai')).toMatchObject({ brand, model });
+		expect(identity('Unbranded (sai)', 'Truthear Pure', 'iem', {}, {}, known, 'other').brand).toBe(
+			'Unbranded (sai)'
+		);
+	});
+	it('uses the reviewed Truthears alias without merging different models', async () => {
+		const { brands } = await readInputs();
+		const aliases = Object.fromEntries(Object.entries(brands).map(([from, to]) => [brandKey(from), to]));
+		expect(identity('Truthears', 'Hexa', 'iem', aliases).id).toBe(
+			identity('Truthear', 'Hexa', 'iem', aliases).id
+		);
+		expect(identity('Truthears', 'Hexa', 'iem', aliases).id).not.toBe(
+			identity('Truthear', 'Pure', 'iem', aliases).id
+		);
 	});
 	it('normalises spelling only, and reports rather than merges near names', () => {
 		expect(normalise('SÓFT Ears')).toBe('softears');

@@ -17,7 +17,13 @@ export async function removeStaging(path: string): Promise<void> {
 	}
 }
 
-async function sweep(output: string, staging: string, manifest: Manifest, committed: boolean): Promise<void> {
+async function sweep(
+	output: string,
+	staging: string,
+	manifest: Manifest,
+	committed: boolean,
+	previousVersion: string | null
+): Promise<void> {
 	await removeStaging(staging);
 	try {
 		// Only the committed manifest can authorize deletion of recovery data. On any failed
@@ -29,6 +35,7 @@ async function sweep(output: string, staging: string, manifest: Manifest, commit
 				record(live) &&
 				live.formatVersion === manifest.formatVersion &&
 				live.version === manifest.version &&
+				live.previousVersion === manifest.previousVersion &&
 				Array.isArray(live.files) &&
 				live.files.length === manifest.files.length &&
 				live.files.every(
@@ -48,7 +55,12 @@ async function sweep(output: string, staging: string, manifest: Manifest, commit
 			if (!verifiedCommit && entry.name.startsWith('.backup-')) continue;
 			if (
 				/^\.(?:build|pull|backup|interrupted)-/.test(entry.name) ||
-				(verifiedCommit && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== manifest.version)
+				(verifiedCommit &&
+					// Re-publishing the same manifest does not advance history or identify an older version.
+					previousVersion !== manifest.version &&
+					/^[a-f0-9]{24}$/.test(entry.name) &&
+					entry.name !== manifest.version &&
+					entry.name !== previousVersion)
 			)
 				await removeStaging(resolve(output, entry.name));
 		}
@@ -90,14 +102,56 @@ export async function publishDataset(
 	output: string,
 	staging: string,
 	manifest: Manifest,
-	manifestText: string
+	manifestText: string,
+	options: { activate?: boolean } = {}
 ): Promise<void> {
 	const target = resolve(output, manifest.version);
 	const backup = resolve(output, `.backup-${manifest.version}`);
 	let committed = false;
+	let previousVersion: string | null = null;
+	const activate = options.activate !== false;
+	const commitManifest = async () => {
+		await atomicWrite(resolve(target, 'manifest.json'), manifestText);
+		if (activate) await atomicWrite(resolve(output, 'manifest.json'), manifestText);
+	};
 	try {
+		if (activate) {
+			try {
+				const previousText = await readFile(resolve(output, 'manifest.json'), 'utf8');
+				const previous: unknown = JSON.parse(previousText);
+				if (
+					record(previous) &&
+					typeof previous.version === 'string' &&
+					/^[a-f0-9]{24}$/.test(previous.version)
+				) {
+					previousVersion = previous.version;
+					if (previous.version !== manifest.version) {
+						const oldTarget = resolve(output, previous.version);
+						if ((await exists(oldTarget)) && (await lstat(oldTarget)).isDirectory())
+							await atomicWrite(resolve(oldTarget, 'manifest.json'), previousText);
+					} else if (
+						typeof previous.previousVersion === 'string' &&
+						/^[a-f0-9]{24}$/.test(previous.previousVersion) &&
+						previous.previousVersion !== manifest.version
+					) {
+						previousVersion = previous.previousVersion;
+					}
+				}
+			} catch (error) {
+				if (!missing(error) && !(error instanceof SyntaxError)) throw error;
+			}
+			const retained =
+				manifest.previousVersion ?? (previousVersion !== manifest.version ? previousVersion : null);
+			if (retained) {
+				previousVersion = retained;
+				if (manifest.previousVersion !== retained) {
+					manifest = { ...manifest, previousVersion: retained };
+					manifestText = JSON.stringify(manifest, null, 2) + '\n';
+				}
+			}
+		}
 		if (await matches(target, manifest)) {
-			await atomicWrite(resolve(output, 'manifest.json'), manifestText);
+			await commitManifest();
 		} else {
 			// Recover a crash between old→backup and staging→target before starting a new repair.
 			if (await exists(backup)) {
@@ -122,7 +176,7 @@ export async function publishDataset(
 				}
 				await rename(staging, target);
 				installed = true;
-				await atomicWrite(resolve(output, 'manifest.json'), manifestText);
+				await commitManifest();
 			} catch (error) {
 				if (installed) await rename(target, staging);
 				if (backedUp) await rename(backup, target);
@@ -131,6 +185,10 @@ export async function publishDataset(
 		}
 		committed = true;
 	} finally {
-		await sweep(output, staging, manifest, committed);
+		if (activate) await sweep(output, staging, manifest, committed, previousVersion);
+		else {
+			await removeStaging(staging);
+			if (committed) await removeStaging(backup);
+		}
 	}
 }

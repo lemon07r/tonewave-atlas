@@ -30,6 +30,89 @@ async function output(): Promise<string> {
 }
 
 describe('dataset pull', () => {
+	it('retains current plus previous on fresh code-only redeploys without following older history', async () => {
+		const oldBytes = new TextEncoder().encode('previous payload');
+		const oldFile = { ...file, bytes: oldBytes.length, sha256: sha256(oldBytes) };
+		const previousVersion = datasetVersion([oldFile], []);
+		const old = {
+			...manifest,
+			version: previousVersion,
+			previousVersion: 'b'.repeat(24),
+			files: [{ ...oldFile, path: `${previousVersion}/${file.path}` }]
+		};
+		const current = { ...manifest, previousVersion };
+		const responses = new Map<string, string | Uint8Array<ArrayBuffer>>([
+			['manifest.json', JSON.stringify(current)],
+			[`${version}/${file.path}`, bytes],
+			[`${previousVersion}/manifest.json`, JSON.stringify(old)],
+			[`${previousVersion}/${file.path}`, oldBytes]
+		]);
+		const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
+			const path = new URL(url instanceof Request ? url.url : url.toString()).pathname.slice('/data/'.length);
+			const body = responses.get(path);
+			return Promise.resolve(body === undefined ? new Response(null, { status: 404 }) : new Response(body));
+		});
+		vi.stubGlobal('fetch', fetcher);
+		for (let redeploy = 0; redeploy < 2; redeploy++) {
+			const dir = await output();
+			await pull('https://dataset.invalid/data/', dir);
+			expect(await readFile(resolve(dir, previousVersion, file.path))).toEqual(Buffer.from(oldBytes));
+			expect(await readFile(resolve(dir, version, file.path))).toEqual(Buffer.from(bytes));
+			expect(JSON.parse(await readFile(resolve(dir, 'manifest.json'), 'utf8'))).toEqual(current);
+			expect(JSON.parse(await readFile(resolve(dir, version, 'manifest.json'), 'utf8'))).toEqual(current);
+			expect(await readdir(dir)).toEqual(['manifest.json', version, previousVersion].sort());
+		}
+		expect(
+			fetcher.mock.calls.some(([url]) =>
+				(url instanceof Request ? url.url : url.toString()).includes(`${'b'.repeat(24)}/`)
+			)
+		).toBe(false);
+	});
+	it.each(['missing-manifest', 'wrong-version', 'bad-checksum'])(
+		'warns and publishes current when previous is unavailable: %s',
+		async (failure) => {
+			const oldBytes = new TextEncoder().encode('previous payload');
+			const oldFile = { ...file, bytes: oldBytes.length, sha256: sha256(oldBytes) };
+			const previousVersion = datasetVersion([oldFile], []);
+			const old = {
+				...manifest,
+				version: previousVersion,
+				files: [{ ...oldFile, path: `${previousVersion}/${file.path}` }]
+			};
+			vi.stubGlobal(
+				'fetch',
+				vi.fn<typeof fetch>().mockImplementation((url) => {
+					const path = new URL(url instanceof Request ? url.url : url.toString()).pathname;
+					if (path === '/data/manifest.json')
+						return Promise.resolve(new Response(JSON.stringify({ ...manifest, previousVersion })));
+					if (path === `/data/${version}/${file.path}`) return Promise.resolve(new Response(bytes));
+					if (path.endsWith('/manifest.json'))
+						return Promise.resolve(
+							failure === 'missing-manifest'
+								? new Response(null, { status: 404 })
+								: new Response(JSON.stringify(failure === 'wrong-version' ? manifest : old))
+						);
+					return Promise.resolve(new Response('corrupt'));
+				})
+			);
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			try {
+				const dir = await output();
+				await pull('https://dataset.invalid/data/', dir);
+				expect(warn).toHaveBeenCalledWith(expect.stringContaining('Previous dataset'));
+				expect(await readFile(resolve(dir, version, file.path))).toEqual(Buffer.from(bytes));
+				expect(await readdir(dir)).toEqual(['manifest.json', version].sort());
+			} finally {
+				warn.mockRestore();
+			}
+		}
+	);
+	it.each(['../escape', 'z'.repeat(24), version])(
+		'rejects an unsafe or self-referential previous version: %s',
+		(previousVersion) => {
+			expect(() => validateManifest({ ...manifest, previousVersion })).toThrow('previous version');
+		}
+	);
 	it('preserves optional summary counts and rejects invalid counts', () => {
 		const source = {
 			...sourceFor(
