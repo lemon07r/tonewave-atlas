@@ -930,12 +930,12 @@
 							</p>{/if}
 					</RankingMethod>{/if}
 				<p class="distance-note">
-					{result ? `${rigLabel(result.data.partition, summary?.sources)} · ` : ''}{displayRoute === 'taste'
+					{displayRoute === 'taste'
 						? 'Taste ranking score · lower is closer; includes dislike penalties, not a dB distance. Each row also shows ordinary response distance in dB.'
-						: 'Distance in dB · lower is closer, not better.'}{result
+						: 'Distance in dB · lower is closer, not better'}{result
 						? result.data.sourceMode === 'only'
-							? ' · Selected reviewers only.'
-							: ' · All eligible reviewers.'
+							? ' · Selected reviewers only'
+							: ' · All eligible reviewers'
 						: ''}
 				</p>
 				<div class="update-slot">

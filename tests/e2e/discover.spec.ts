@@ -48,12 +48,15 @@ test('unrated additions, real similar matches, exact-rank chart controls, URL mi
 	const first = page.locator('.result-row').first();
 	await expect(first).toBeVisible();
 	await expect(first.locator('.distance')).toHaveText(/Response distance:\s\d+\.\d\sdB/);
-	await expect(page.locator('.results > .distance-note').first()).toContainText('711-family coupler');
+	await expect(page.locator('.method-sentence')).toContainText('on 711-family coupler');
+	await expect(page.locator('.results > .distance-note').first()).toHaveText(
+		'Distance in dB · lower is closer, not better · All eligible reviewers'
+	);
 	await expect(page.locator('.chart-note').first()).toHaveText(
 		'As ranked: smoothed, level-aligned · reviewer offsets corrected.'
 	);
 	await expect(page).toHaveURL(/ratings=/);
-	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
+	await first.getByRole('button', { name: /^Show on chart: .+/ }).click();
 	await expect(page.locator('.legend-row')).toHaveCount(2);
 	const headerJump = page.locator('.results > .section-heading > .chart-jump');
 	const rowJump = first.locator('.actions > .chart-jump');
@@ -151,7 +154,7 @@ test('explicit Love and reasoned Dislike persist, explain measured constraints a
 	await expect(first.locator('.fit')).toContainText(
 		/(Higher|Lower|Equal|Insufficient).*measured|Insufficient measured coverage/
 	);
-	await first.getByRole('button', { name: 'Show on chart', exact: true }).click();
+	await first.getByRole('button', { name: /^Show on chart: .+/ }).click();
 	await expect(page.locator('.legend-row')).toHaveCount(2);
 	await page.reload();
 	await expect(hexa.getByRole('radio', { name: 'Love', exact: true })).toBeChecked();
@@ -189,7 +192,7 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 				exact: true
 			})
 		).toBeVisible();
-	await expect(first.getByRole('link', { name: 'Compare', exact: true })).toHaveAttribute(
+	await expect(first.getByRole('link', { name: /^Compare .+/ })).toHaveAttribute(
 		'href',
 		new RegExp(`${reference}.*${volume}`)
 	);
@@ -310,7 +313,7 @@ test('row rating drafts keep comfort-only evidence out of ranking and support re
 	const first = page.locator('.result-row').first();
 	await expect(first).toBeVisible();
 	const name = (await first.getByRole('heading').textContent())?.trim() ?? '';
-	await first.locator('.rate-row > summary').click();
+	await first.getByRole('button', { name: /^More rating options for .+/ }).click();
 	await expect(first.getByRole('button', { name: 'Save rating', exact: true })).toBeDisabled();
 	await first.getByRole('radio', { name: 'Dislike', exact: true }).check();
 	await first.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true }).check();
@@ -364,7 +367,7 @@ test('quick Like moves similar matches to compare, explains deterministic rank c
 	const picked = rows.nth(3);
 	const productId = await picked.getAttribute('data-product-id');
 	const name = (await picked.getByRole('heading').innerText()).replace(/\s+/g, ' ').trim();
-	await picked.getByRole('button', { name: 'Like', exact: true }).click();
+	await picked.getByRole('button', { name: `Like ${name}`, exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
 	await settled(page);
 	await expect(page.locator('.profile-row')).toHaveCount(2);
@@ -372,7 +375,7 @@ test('quick Like moves similar matches to compare, explains deterministic rank c
 		page.getByRole('region', { name, exact: true }).getByRole('radio', { name: 'Like', exact: true })
 	).toBeChecked();
 	await expect(page.locator('.method-sentence')).toHaveText(
-		'Products that balance your 2 liked references (mean/worst-case)'
+		'Products that balance your 2 liked references (mean/worst-case) on 711-family coupler'
 	);
 	expect(
 		await rows.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-product-id')))
@@ -403,7 +406,7 @@ test('quick Like moves similar matches to compare, explains deterministic rank c
 	await expect(
 		page
 			.locator(`.result-row[data-product-id="${productId}"]`)
-			.getByRole('button', { name: 'Like', exact: true })
+			.getByRole('button', { name: `Like ${name}`, exact: true })
 	).toHaveAttribute('aria-pressed', 'false');
 });
 
@@ -666,6 +669,50 @@ test('single-reference rig failures offer automatic selection without claiming a
 	await expect(page.locator('.result-row')).toHaveCount(20);
 });
 
+test('result actions share one line on desktop and tablet, with product-specific names and grouped mobile links', async ({
+	page
+}) => {
+	await page.goto(shared([reference]));
+	const first = page.locator('.result-row').first();
+	await expect(first).toBeVisible();
+	const name = (await first.getByRole('heading').innerText()).replace(/\s+/g, ' ').trim();
+	for (const action of [
+		`Show on chart: ${name}`,
+		`Like ${name}`,
+		`Dislike ${name}`,
+		`More rating options for ${name}`
+	])
+		await expect(first.getByRole('button', { name: action, exact: true })).toBeVisible();
+	await expect(first.getByRole('link', { name: `Compare ${name}`, exact: true })).toBeVisible();
+	await expect(first.getByRole('link', { name: `Product page for ${name}`, exact: true })).toBeVisible();
+	const actions = await first
+		.locator('.actions > button, .quick-rating button, .action-links a')
+		.evaluateAll((elements) =>
+			elements.map((element) => {
+				const box = element.getBoundingClientRect();
+				return { top: box.top, width: box.width, height: box.height };
+			})
+		);
+	expect(actions).toHaveLength(6);
+	for (const action of actions) {
+		expect(action.width).toBeGreaterThanOrEqual(24);
+		expect(action.height).toBeGreaterThanOrEqual(24);
+	}
+	if ((page.viewportSize()?.width ?? 0) > 640)
+		expect(
+			Math.max(...actions.map((action) => action.top)) - Math.min(...actions.map((action) => action.top))
+		).toBeLessThan(1);
+	expect(actions[4]?.top).toBe(actions[5]?.top);
+	const more = first.getByRole('button', { name: `More rating options for ${name}`, exact: true });
+	await expect(more).toHaveAttribute('aria-expanded', 'false');
+	await more.click();
+	await expect(more).toHaveAttribute('aria-expanded', 'true');
+	await expect(first.getByRole('button', { name: 'Save rating', exact: true })).toBeVisible();
+	await more.click();
+	await expect(first.getByRole('button', { name: 'Save rating', exact: true })).toBeHidden();
+	await accessible(page);
+});
+
 test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {
 	await page.goto(shared([reference]));
 	await expect(page.locator('.result-row')).toHaveCount(20);
@@ -680,14 +727,14 @@ test('charting a match redraws the chart without re-ranking the results', async 
 	await page
 		.locator('.result-row')
 		.first()
-		.getByRole('button', { name: 'Show on chart', exact: true })
+		.getByRole('button', { name: /^Show on chart: .+/ })
 		.click();
 	await expect(page).toHaveURL(/chart=/);
 	await expect(page.locator('.legend-row')).toHaveCount(2);
 	await page
 		.locator('.result-row')
 		.nth(1)
-		.getByRole('button', { name: 'Show on chart', exact: true })
+		.getByRole('button', { name: /^Show on chart: .+/ })
 		.click();
 	await expect(page.locator('.legend-row')).toHaveCount(3);
 	await page.waitForTimeout(500);

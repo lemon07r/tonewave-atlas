@@ -62,6 +62,9 @@
 		compareReferences?: { productId: string; measurementId?: string }[];
 		nameFor?: (id: string) => string;
 	} = $props();
+	const id = $props.id();
+	let productName = $derived(`${candidate.product.brand} ${candidate.product.model}`);
+	let ratingOpen = $state(false);
 	let open = $state<boolean>(false);
 	// Worker responses replace candidate objects even for chart-only updates. Only a new
 	// candidate identity or saved preference should reset an in-progress rating.
@@ -177,49 +180,64 @@
 			Reviewer-listed USD price unavailable
 		</p>{/if}
 	<div class="actions">
-		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
-			>{selected ? 'Remove from chart' : 'Show on chart'}</button
-		>{#if selected}<a class="chart-jump" href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
-				href={resolve(`/compare?${compareQuery(candidate, compareReferences ?? referenceProductId)}`)}
-				>Compare</a
-			>{/if}<a href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}${formQuery}`)}
-			>Product page</a
+		<button
+			type="button"
+			aria-label={`${selected ? 'Remove from chart' : 'Show on chart'}: ${productName}`}
+			aria-pressed={selected}
+			disabled={!selected && limitReached}
+			onclick={onshow}>{selected ? 'Remove from chart' : 'Show on chart'}</button
 		>
+		{#if onrate}<div class="quick-rating" role="group" aria-label={`Quick rating for ${productName}`}>
+				<button
+					type="button"
+					aria-pressed={existing?.rating === 'like'}
+					aria-label={`Like ${productName}`}
+					onclick={() => {
+						quickRate('like');
+					}}>Like</button
+				>
+				<button
+					type="button"
+					aria-pressed={existing?.rating === 'dislike'}
+					aria-label={`Dislike ${productName}`}
+					onclick={() => {
+						quickRate('dislike');
+					}}>Dislike</button
+				>
+				{#if existing && (existing.rating === 'love' || existing.rating === 'neutral' || !existing.soundRelated)}<span
+						class="saved-rating"
+						>{existing.rating === 'love'
+							? 'Love'
+							: existing.rating === 'neutral'
+								? 'Neutral'
+								: ''}{!existing.soundRelated ? ' · comfort only' : ''}</span
+					>{/if}
+			</div>
+			<button
+				type="button"
+				class="more-rating"
+				aria-expanded={ratingOpen}
+				aria-controls={`${id}-rating`}
+				aria-label={`More rating options for ${productName}`}
+				onclick={() => {
+					ratingOpen = !ratingOpen;
+				}}>More <span aria-hidden="true">{ratingOpen ? '▴' : '▾'}</span></button
+			>
+		{/if}
+		<span class="action-links"
+			>{#if referenceProductId}<a
+					href={resolve(`/compare?${compareQuery(candidate, compareReferences ?? referenceProductId)}`)}
+					aria-label={`Compare ${productName}`}>Compare</a
+				><span aria-hidden="true">·</span>{/if}<a
+				href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}${formQuery}`)}
+				aria-label={`Product page for ${productName}`}>Product page</a
+			></span
+		>
+		{#if selected}<a class="chart-jump" href="#discover-chart" aria-label={`View ${productName} on chart`}
+				>View chart</a
+			>{/if}
 	</div>
-	{#if onrate}<div
-			class="quick-rating"
-			role="group"
-			aria-label={`Quick rating for ${candidate.product.brand} ${candidate.product.model}`}
-		>
-			<button
-				type="button"
-				aria-pressed={existing?.rating === 'like'}
-				onclick={() => {
-					quickRate('like');
-				}}>Like</button
-			>
-			<button
-				type="button"
-				aria-pressed={existing?.rating === 'dislike'}
-				onclick={() => {
-					quickRate('dislike');
-				}}>Dislike</button
-			>
-			{#if existing && (existing.rating === 'love' || existing.rating === 'neutral' || !existing.soundRelated)}<span
-					class="saved-rating"
-					>{existing.rating === 'love'
-						? 'Love'
-						: existing.rating === 'neutral'
-							? 'Neutral'
-							: ''}{!existing.soundRelated ? ' · comfort only' : ''}</span
-				>{/if}
-		</div>
-		<details class="rate-row">
-			<summary
-				>More<span class="sr-only">
-					rating options for {candidate.product.brand} {candidate.product.model}</span
-				></summary
-			>
+	{#if onrate}<div class="rate-row" id={`${id}-rating`} hidden={!ratingOpen}>
 			<div class="rating-fields">
 				<PreferenceFields
 					item={draft}
@@ -242,7 +260,7 @@
 					}}>Save rating</button
 				>
 			</div>
-		</details>{/if}
+		</div>{/if}
 	<details bind:open>
 		<summary>Measured differences &amp; sources</summary>
 		{#if referenceReviewers}
@@ -388,7 +406,7 @@
 	}
 	.actions {
 		display: flex;
-		gap: 16px;
+		gap: 8px;
 		flex-wrap: wrap;
 		align-items: center;
 		margin: 8px 0 0 34px;
@@ -405,6 +423,7 @@
 		cursor: pointer;
 	}
 	.actions > a,
+	.action-links a,
 	.actions > button {
 		display: inline-flex;
 		align-items: center;
@@ -418,6 +437,24 @@
 	}
 	.actions > .chart-jump {
 		display: none;
+	}
+	.action-links {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		white-space: nowrap;
+	}
+	.actions .more-rating {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding-inline: 0;
+		border: 0;
+		color: var(--muted);
+		text-decoration: none;
+	}
+	.rate-row {
+		margin-left: 34px;
 	}
 	details {
 		margin-left: 34px;
@@ -477,9 +514,7 @@
 	.quick-rating {
 		display: flex;
 		align-items: center;
-		flex-wrap: wrap;
 		gap: 8px;
-		margin: 8px 0 0 34px;
 		font-size: var(--text-xs);
 	}
 	.quick-rating button {
@@ -512,7 +547,7 @@
 		.reviewers,
 		.price,
 		.actions,
-		.quick-rating,
+		.rate-row,
 		details {
 			margin-left: 28px;
 		}

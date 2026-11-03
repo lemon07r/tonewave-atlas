@@ -19,8 +19,8 @@
 	{route === 'similar'
 		? `Closest measured responses to ${referenceName} on ${rig}`
 		: route === 'compare'
-			? `Products that balance your ${likedCount} liked references (mean/worst-case)`
-			: 'Ranked by your taste profile: likes pull, sound-related dislikes push away'}
+			? `Products that balance your ${likedCount} liked references (mean/worst-case) on ${rig}`
+			: `Ranked by your taste profile on ${rig}: likes pull, sound-related dislikes push away`}
 </p>
 <details class="ranking-method">
 	<summary>How this ranking works</summary>

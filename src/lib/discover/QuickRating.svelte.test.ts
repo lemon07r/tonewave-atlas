@@ -5,8 +5,8 @@ import '#lib/styles/app.css';
 
 test('quick Like adds immediately, Dislike updates, toggling clears, and Undo restores the preceding rating', async () => {
 	const screen = await render(QuickRatingHarness);
-	const like = screen.getByRole('button', { name: 'Like', exact: true });
-	const dislike = screen.getByRole('button', { name: 'Dislike', exact: true });
+	const like = screen.getByRole('button', { name: 'Like Fixture One', exact: true });
+	const dislike = screen.getByRole('button', { name: 'Dislike Fixture One', exact: true });
 	await like.click();
 	await expect.element(like).toHaveAttribute('aria-pressed', 'true');
 	await expect.element(screen.getByTestId('workspace-count')).toHaveTextContent('1');

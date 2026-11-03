@@ -194,7 +194,7 @@ test('a chart selection below the first page survives reload and sharing', async
 	await page
 		.locator('.result-row')
 		.nth(25)
-		.getByRole('button', { name: 'Show on chart', exact: true })
+		.getByRole('button', { name: /^Show on chart: .+/ })
 		.click();
 	await expect(page).toHaveURL(/chart=/);
 	const url = page.url();
@@ -202,7 +202,10 @@ test('a chart selection below the first page survives reload and sharing', async
 		await target.goto(url);
 		await expect(target.locator('.result-row')).toHaveCount(40);
 		await expect(
-			target.locator('.result-row').nth(25).getByRole('button', { name: 'Remove from chart', exact: true })
+			target
+				.locator('.result-row')
+				.nth(25)
+				.getByRole('button', { name: /^Remove from chart: .+/ })
 		).toBeVisible();
 		await expect(target.locator('.legend-row')).toHaveCount(2);
 	}
@@ -334,10 +337,7 @@ test('pending results retain their returned reference headings, evidence and Com
 	await expect(results).toHaveAttribute('aria-busy', 'true');
 	const first = page.locator('.result-row').first();
 	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toBeVisible();
-	await expect(first.getByRole('link', { name: 'Compare', exact: true })).toHaveAttribute(
-		'href',
-		new RegExp(volume)
-	);
+	await expect(first.getByRole('link', { name: /^Compare .+/ })).toHaveAttribute('href', new RegExp(volume));
 	await first.locator('details:not(.rate-row) > summary').click();
 	await expect(
 		first.getByRole('table', {

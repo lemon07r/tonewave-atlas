@@ -245,7 +245,8 @@ body .result-row .description {
 	font-size: var(--text-xs);
 	line-height: 1.7;
 }
-body .result-row .actions button {
+body .result-row .actions > button:not(.more-rating),
+body .result-row .quick-rating button {
 	text-decoration: none;
 	padding: 4px 10px;
 	border: 1px solid var(--strong-line);
@@ -257,7 +258,7 @@ body .result-row .actions button[aria-pressed='true'] {
 	color: var(--accent-ink);
 }
 body .result-row .actions {
-	margin-top: 12px;
+	margin-top: 8px;
 }
 body .result-row details {
 	margin-top: 6px;

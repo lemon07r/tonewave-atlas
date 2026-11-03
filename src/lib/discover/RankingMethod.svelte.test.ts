@@ -24,16 +24,22 @@ test('explains each ranking route in one sentence with details available on dema
 	await screen.rerender({ route: 'compare', likedCount: 3 });
 	await expect
 		.element(
-			screen.getByText('Products that balance your 3 liked references (mean/worst-case)', { exact: true })
+			screen.getByText(
+				'Products that balance your 3 liked references (mean/worst-case) on 711-family coupler',
+				{ exact: true }
+			)
 		)
 		.toBeVisible();
 	await expect.element(screen.getByText(/Each distance is level-aligned independently/)).toBeVisible();
 	await screen.rerender({ route: 'taste' });
 	await expect
 		.element(
-			screen.getByText('Ranked by your taste profile: likes pull, sound-related dislikes push away', {
-				exact: true
-			})
+			screen.getByText(
+				'Ranked by your taste profile on 711-family coupler: likes pull, sound-related dislikes push away',
+				{
+					exact: true
+				}
+			)
 		)
 		.toBeVisible();
 	await expect.element(screen.getByText(/near-duplicate avoidance/)).toBeVisible();

@@ -99,7 +99,7 @@ test('rating an existing row retains preferences, and duplicate reference labels
 		.element(screen.getByText(/No trade-off ranking: at least one reference has insufficient overlap/))
 		.toBeVisible();
 	expect(screen.container.querySelectorAll('thead th[scope="col"]')).toHaveLength(12);
-	await screen.getByRole('button', { name: 'Dislike', exact: true }).click();
+	await screen.getByRole('button', { name: 'Dislike Fixture One', exact: true }).click();
 	expect(onrate).toHaveBeenCalledExactlyOnceWith({ ...existing, rating: 'dislike', strength: 1 });
 	onrate.mockClear();
 	await screen.getByText('More', { exact: false }).click();
@@ -237,12 +237,14 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 		.element(screen.getByText('$129 reviewer-listed price (Reviewer, seen Nov 2026; listing date unknown)'))
 		.toBeVisible();
 	await expect
-		.element(screen.getByRole('link', { name: 'Compare', exact: true }))
+		.element(screen.getByRole('link', { name: 'Compare Brand Model', exact: true }))
 		.toHaveAttribute('href', '/compare?p=product-a&m=tuning-measurement');
-	await screen.getByRole('button', { name: 'Show on chart' }).click();
+	await screen.getByRole('button', { name: 'Show on chart: Brand Model', exact: true }).click();
 	expect(onshow).toHaveBeenCalledOnce();
 	await screen.rerender({ selected: true, limitReached: true });
-	await expect.element(screen.getByRole('button', { name: 'Remove from chart' })).not.toBeDisabled();
+	await expect
+		.element(screen.getByRole('button', { name: 'Remove from chart: Brand Model', exact: true }))
+		.not.toBeDisabled();
 	await screen.rerender({
 		candidate: { ...candidate, product: { ...candidate.product, form: 'headphone' } },
 		fit: {
@@ -262,10 +264,10 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 		.toBeVisible();
 	await expect.element(screen.getByText('Measured by 1 reviewer', { exact: true })).toBeVisible();
 	await expect
-		.element(screen.getByRole('link', { name: 'Compare', exact: true }))
+		.element(screen.getByRole('link', { name: 'Compare Brand Model', exact: true }))
 		.toHaveAttribute('href', '/compare?form=headphones&p=product-a&m=tuning-measurement');
 	await expect
-		.element(screen.getByRole('link', { name: 'Product page', exact: true }))
+		.element(screen.getByRole('link', { name: 'Product page for Brand Model', exact: true }))
 		.toHaveAttribute('href', '/explore?product=product-b&form=headphones');
 	rpc.productDetail.mockRejectedValueOnce(new Error('Detail offline')).mockResolvedValueOnce({
 		ok: true,

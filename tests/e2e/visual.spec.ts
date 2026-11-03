@@ -66,7 +66,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await page
 				.locator('.result-row')
 				.first()
-				.getByRole('button', { name: 'Show on chart', exact: true })
+				.getByRole('button', { name: /^Show on chart: .+/ })
 				.click();
 			await expect(page.locator('.legend-row')).toHaveCount(2);
 			await capture('discover-single');
@@ -79,7 +79,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await page
 				.locator('.result-row')
 				.first()
-				.getByRole('button', { name: 'Show on chart', exact: true })
+				.getByRole('button', { name: /^Show on chart: .+/ })
 				.click();
 			await expect(page.locator('.legend-row')).toHaveCount(3);
 			await capture('discover-multi');
@@ -88,7 +88,11 @@ for (const theme of ['light', 'dark'] as const) {
 			await capture('discover-multi-evidence', '.result-row');
 			await page.goto(ratingsUrl([positive(reference)]));
 			await ready();
-			await page.locator('.result-row').nth(3).getByRole('button', { name: 'Like', exact: true }).click();
+			await page
+				.locator('.result-row')
+				.nth(3)
+				.getByRole('button', { name: /^Like .+/ })
+				.click();
 			await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
 			await expect(page.locator('.rank-change').first()).toBeVisible();
 			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
@@ -134,7 +138,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await page
 				.locator('.result-row')
 				.first()
-				.getByRole('button', { name: 'Show on chart', exact: true })
+				.getByRole('button', { name: /^Show on chart: .+/ })
 				.click();
 			await capture('discover-taste-model', '.model');
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
