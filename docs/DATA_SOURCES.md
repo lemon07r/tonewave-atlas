@@ -195,6 +195,31 @@ pairs within original identity parts, with linear percentile interpolation; larg
 never vetoes, and absent shared-rig/default support or calibration is explicitly missing, not invented.
 Reviewed plural/HiFi/Labs/typo aliases and their shared-model evidence are recorded in `data/aliases.json`.
 
+The frozen-cache `8a730bf5584c9e0011d182ad` supplemental review found 17 glued/hyphenated maker pairs.
+Eight explicit aliases below have distinct-source, shared-model/default evidence in `iem-711`, below
+that build's same-product P90 of **2.625960 dB**. These evidence distances decode the unharmonised
+0.02 dB rank packs, centre each curve, take per-source then equal-source medians and calculate
+shared-finite-bin level-aligned RMS. They corroborate the reviewed maker spellings; no generic
+glued/hyphenated suffix-removal rule is added.
+
+| Reviewed spellings          | Shared model   | RMS dB              |
+| --------------------------- | -------------- | ------------------- |
+| Ear Acoustics / EarAcoustic | SPA Hi-End Max | 1.812640            |
+| Floaudio / Flo Audio        | Lily           | 1.068310            |
+| IOAudio / I/O               | SOGNO          | 1.267324            |
+| MAKINAaudio / Makina Audio  | T-100B         | 1.059586            |
+| MYER-AUDIO / Myer Audio     | SLIIVO SLA3    | 0.481392            |
+| NFaudio / NF Audio          | NM2 / NM2+     | 1.316814 / 1.147201 |
+| OpenAudio / Open Audio      | Mercury        | 1.102714            |
+| See Audio / SeeAudio        | Yume II        | 1.294924            |
+
+MYER-AUDIO/Myer Audio also shares CKLVX D62 at **0.676471 dB**. Six candidate pairs lack an exact
+shared model: Epicaudio/Epic Audio, Jadeaudio/Jade Audio, Meeaudio/MEE Audio, PMGAudio/PMG,
+ShiroAudio/Shiro Audio and ZEMPIREAUDIO/Zempire. RaynAudio/Rayn Audio (one shared model),
+Thieaudio/Thie Audio (one) and XK-Audio/XK Audio (three) lack shared-rig default evidence.
+All nine remain unresolved; embedded `Thieaudio` is never reduced to `thie`. Annotation-bearing
+`NFAudio (NFAcous)` remains a separate, uncorroborated key.
+
 Products receive metadata-only `modified: true` for a `[modified: …]` model marker, a standalone
 case-insensitive `mod`, `modded`, `modified`, `prototype` or `proto` model word, or a source-local
 `Custom (…)` brand (never Custom Art). Removing a terminal marker or those words and an adjacent
@@ -435,37 +460,67 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `4199d08ffc44cf0977b5bae0`: **9,489 products / 40,802 measurements / 138 databases / 118 publishers**
-(7,790 IEM products / 33,488 measurements; 1,699 headphone products / 7,314 measurements).
-Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
-87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
-24 target/calibration/delta/sandbox and two population averages; these are candidates, not counts of
-previously published removals. **86 unresolved state
-groups** have one source-order default each; **zero duplicate source defaults** remain. The **65 existing
-selected-switch-state source exceptions** are the identical groups from the preceding build; every
-newly folded fit source/partition has exactly one default. All 10,949 measured product/partitions have
-a default and an engine candidate in both raw
-and harmonised indexes across 53 partitions.
+Local build `4faef5c62875b2b41735c95e`: **9,155 products / 40,821 measurements / 138 databases /
+118 publishers**, across **57 partitions** (7,477 IEM products / 33,507 measurements; 1,678 headphone
+products / 7,314 measurements). The build has **305 quality-quarantine candidates**, not counts of
+previously published removals. All **10,717 measured product/partition groups** have a default;
+**zero duplicate source defaults**, **45 unresolved state groups** and **67 selected-switch-state
+source exceptions** are reported.
 
-Against published `60e816fc2db9ba2291ea4ece`, **21 IEM / eight headphone fit identities retire**,
-creating ten IEM bases and one headphone base where only fit-labelled products existed: net reductions **11 / 7**.
-All **29 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
-redirects are needed. Complete inherited maps contain **772 product / 890 measurement redirects**, with
-zero invalid targets or lost historical redirects. No accepted raw file, channel or rank curve was
-added, removed or changed: **40,802 rank / 80,342 channel curves** remain byte-equivalent after decoding,
-and no measurement changed rig partition. The **15 changed default flags are all demotions of folded
-fits**, with no existing base default lost or gained. **14 folded fit-descriptor curves remain source
-defaults because no stock reference is available in their source/partition**; labels and provenance
-retain the fit, not a stock claim; the sole pad label among them is worn stock `(used pads)`.
-All **72 folded aftermarket-pad curves are non-default**, with prior same-source/partition stock
-evidence for every fold. Ten pad products lacking stock coverage and ambiguous `PR1(HiFi version foam)`
-retain their baseline IDs and variants without redirects. All **380 modification identities** are unchanged. Eleven mixed/unnamed
-sample descriptors remain outside the exact sample rules, and unidentified `Sample | 1 Deep` remains
-unfolded. Relative to `7108689ce37f48ad83288d35`, preserving incoming unit metadata changes only
-jacstone's `Tanchjim Tanya DSP S2 D` (`m-acdcd88a9568197a26d1`) from `fit` to `unit`; all default flags,
-labels, provenance, identities, partitions, curves, rig evidence and statistics are unchanged.
-The manifest publishes all 138 source counts and 53 partition counts,
-verified against both catalogs; its gzip size is **25,541 bytes**, versus **25,552** before the change.
-LOCO reports
-**37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
-are reported separately.
+The frozen-cache comparison uses origin/main `d031d7e` as B0 (`25fd1290788e29311d0a9e01`) and the
+identity branch plus the eight reviewed aliases as B1 (`4faef5c62875b2b41735c95e`). Both started from
+`4199d08ffc44cf0977b5bae0`. Their **182,761 input files / 1,875,054,088 bytes** have SHA-256 fingerprint
+`9a0f28798869e899e2c39f9e0ac24518716733765bf5f51ddad68816950e263c`, unchanged after all builds.
+The builder reads `cached()` only, with no fetch-on-miss path. The complete **40,821-measurement
+multiset**, keyed by source and unordered original URL/channel pairs, and every matched rank curve's
+decoded int16 bytes are identical between B0 and B1. Repeated raw keys retain their multiplicities.
+
+B0 has **9,490 products**; B1 has **335 fewer**. Changed grouping components comprise **319 merges,
+22 splits, nine mixed merge/splits and 856 identity-only rekeys**. Categories below overlap within
+components; no changed component is outside the reviewed rules.
+
+| Category             | Merges | Splits | Mixed | Rekeys |
+| -------------------- | -----: | -----: | ----: | -----: |
+| Brand rule A         |    268 |      5 |     3 |    683 |
+| Plus identity keys   |      3 |     22 |     9 |    129 |
+| Placeholder recovery |     31 |      0 |     0 |     14 |
+| CJK model annotation |      5 |      0 |     0 |      9 |
+| Reviewed aliases     |     42 |      0 |     5 |     38 |
+
+The supplemental aliases alone merge **38** initial-B1 product pairs, with **15 additional rekeys**,
+no measurement or curve changes, no partition moves and two default-flag changes. Against B0,
+**56 default flags change** and **160 yoshiultra measurements move from source isolation to iem-711**
+after renewed rig evidence; the curves themselves do not change. MYER-AUDIO/Myer Audio maker
+duplicates are resolved; distinct CKLVX and SLIIVO model/revision near-name groups remain separate.
+
+The identity audit flags **53 shared-rig comparisons across 28 products**, all above the iem-711
+same-product P90 of **2.625960 dB**. The five watched products are present: CVJ MEI has 12 flagged
+comparisons (largest **6.375170 dB**); Noble Audio Kaiser Encore **4.662281**; Hi-Fri Audio 1+3
+**4.627270**; Moondrop Block **4.617915**; Whizzer A15 **3.586715**. These are diagnostic flags,
+not automatic identity vetoes.
+
+Metadata flags cover **429 modified products** (249 IEM / 180 headphone) and **308 base links**
+(163 / 145). Overlapping marker/word/custom rule counts are **282 / 419 / 30**. Truthear Hexa is one
+product with **116 measurements**; I/O Cielo has **24**. sai's Shure SE425 is under Shure. NF Audio
+NM2 and NM2+ are two products with **nine / ten measurements**: compact `NFaudio` no longer creates
+duplicates. The CanJam NYC 2025 prototype is modified and links to CrinEar Reference
+`p-437de4e3e3402077cdc3`.
+
+Of **1,241 disappeared seed product IDs**, **1,235 redirect**. Truthears Hexa redirects to Truthear
+Hexa; I/O Audio Cielo redirects to the retained I/O Cielo ID. The old NF Audio NM2 ID
+`p-4403886ad1f935e4f84b` is not retained literally: it redirects to NM2 `p-6c8049b80dd9c29ce91f`,
+not NM2+ `p-49559a08f80ed81c94c7`. Full inherited maps contain **2,007 product / 4,708 measurement
+redirects**, with zero invalid product targets or lost inherited product routes. Universal disappeared-ID
+coverage is **not** achieved: four products (Nowa Acoustics Inferno, QoA x 7th Acoustics Ryusei,
+FAudio Mezzo and Aure Nirvana EP) have no surviving raw-file match; old NF ACOUS NM2+ has a tied
+one-default-per-target split; EarAcoustic Audio Silver Angel SPA Limited has duplicate current
+raw-file references to one product, which the existing unique-measurement resolver leaves unmapped.
+No arbitrary targets or redirect-policy changes were introduced for these exceptions.
+
+Upstream drift is separate: B0 versus `4199d08` adds **five products / 27 measurements**, removes
+**four products / eight measurements**, and changes **one matched Cozoy D2 rank curve**. No database
+or publisher is added or removed. Five sources' **257 measurements change partition**, partitions
+increase **53 → 58**, and one default flag changes before applying the identity rules.
+LOCO is unchanged between B0 and B1: **37 scored / 37 correct / one insufficient-support / zero
+wrong controls**. Current held-out harmonisation figures, including negative small-partition folds,
+are in [METHODOLOGY.md](METHODOLOGY.md); this is observational validation, not physical calibration.

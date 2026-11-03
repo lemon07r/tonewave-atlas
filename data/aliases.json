@@ -1,5 +1,5 @@
 {
-	"_note": "Case/punctuation normalisation is automatic. Only verified brand spelling aliases belong here; ambiguous product merges are reported, not guessed.",
+	"_note": "Case/punctuation normalisation is automatic. Only verified brand spelling aliases belong here; ambiguous product merges are reported, not guessed. Frozen-cache 8a730bf5584c9e0011d182ad review: unharmonised packed-rank (0.02 dB) shared-model/shared-rig finite LS RMS, per-source median then equal-source median, with distinct-source support; iem-711 same-product P90 2.625960 dB from identityAudit. Added Ear Acoustics/EarAcoustic SPA Hi-End Max 1.812640; Floaudio/Flo Audio Lily 1.068310; IOAudio/I/O SOGNO 1.267324; MAKINAaudio/Makina Audio T-100B 1.059586; MYER-AUDIO/Myer Audio SLIIVO SLA3 0.481392 (also CKLVX D62 0.676471); NFaudio/NF Audio NA2+ 0.711685, NM2+ 1.147201, NM2 1.316814; OpenAudio/Open Audio Mercury 1.102714; See Audio/SeeAudio Yume II 1.294924. Explicit maker spellings only, never a glued-suffix stripping rule. Epicaudio, Jadeaudio, Meeaudio, PMGAudio, RaynAudio, ShiroAudio, Thie Audio, XK-Audio and ZEMPIREAUDIO lack shared-model/shared-rig default support and remain unresolved. NFAudio (NFAcous) is a different annotation-bearing key and remains unaliased.",
 	"brands": {
 		"_note": "Reviewed in 4199d08, shared-rig level-aligned rank-median RMS dB (same-product iem-711 p90 2.630): Truthears Gate 0.716/Hexa 0.721; Cat Ears Mia 2.321; Craft Ear Omnium 2.377; Icelabs Spectrumica 0.892; Kiwi KE4 1.104; Tin T5S 0.724 and Tin Audio P1 Max 0.824 vs TinHiFi; LZ Hifi A2 Pro 1.717; Muse Hifi Power 2.222; Creative Labs Aurvana Ace 2 1.097; Faith Audio Labs E1000 0.681; EarAcoustics SPA Hi-End Max 0.863; NF ACOUS NA2+ 0.604 vs NF Audio and NF Acous/Audio NA2+ 0.962 vs NF. Audio/CJK suffix equivalents need no extra aliases. Nectar Sound, Fractal Designs and NFAudio (NFAcous) lack corroborating same-model/shared-rig evidence and are not aliased. Repeatable details: identityAudit in the build report.",
 		"Truthears": "Truthear",
@@ -15,6 +15,14 @@
 		"EarAcoustics": "EarAcoustic",
 		"NF ACOUS": "NF Audio",
 		"NF Acous/Audio": "NF Audio",
+		"Ear Acoustics": "EarAcoustic",
+		"Floaudio": "Flo Audio",
+		"IOAudio": "I/O",
+		"MAKINAaudio": "Makina Audio",
+		"MYER-AUDIO": "Myer Audio",
+		"NFaudio": "NF Audio",
+		"OpenAudio": "Open Audio",
+		"See Audio": "SeeAudio",
 		"CrinEars": "CrinEar",
 		"Soft Ears": "Softears",
 		"64Audio": "64 Audio",
