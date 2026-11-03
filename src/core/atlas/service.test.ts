@@ -824,6 +824,170 @@ describe('dataset update fallback', () => {
 			expect(fetcher).toHaveBeenCalledTimes(calls);
 		}
 	);
+	it.each(['changed', 'unchanged', 'refresh-failed'] as const)(
+		'handles HTTP 200 HTML versioned catalogs when the manifest is %s',
+		async (scenario) => {
+			const f = fixture();
+			let missing = true;
+			const fetcher = vi.fn<typeof fetch>((input, init) => {
+				if (init?.cache === 'no-store' && scenario === 'refresh-failed')
+					return Promise.reject(new Error('Manifest offline'));
+				const url = input instanceof Request ? input.url : input.toString();
+				if (missing && url.endsWith('/v1/catalog-headphone.json.gz'))
+					return Promise.resolve(
+						new Response('<!doctype html><title>Site fallback</title>', {
+							headers: { 'content-type': 'text/html; charset=utf-8' }
+						})
+					);
+				return f.fetcher(input, init);
+			});
+			const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+			await service.products('iem');
+			if (scenario === 'changed') nextManifest(f.files);
+			const request = service.products('headphone');
+			if (scenario === 'changed')
+				await expect(request).rejects.toMatchObject({
+					code: 'dataset-updated',
+					previousVersion: 'v1',
+					newVersion: 'v2'
+				});
+			else {
+				await expect(request).rejects.toThrow('Dataset file missing: v1/catalog-headphone.json.gz');
+				missing = false;
+				expect(await service.products('headphone')).toEqual([]);
+			}
+			expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+			expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
+		}
+	);
+	it('rejects HTML content types independently of the response body', async () => {
+		const f = fixture();
+		const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+			const response = await f.fetcher(input, init);
+			const url = input instanceof Request ? input.url : input.toString();
+			return url.endsWith('/v1/catalog-headphone.json.gz')
+				? new Response(await response.arrayBuffer(), { headers: { 'content-type': 'text/html' } })
+				: response;
+		});
+		const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+		await service.products('iem');
+		await expect(service.products('headphone')).rejects.toThrow(
+			'Dataset file missing: v1/catalog-headphone.json.gz'
+		);
+		expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+	});
+	it.each(['uncompressed', 'gzip'] as const)(
+		'detects %s HTML bodies without an HTML content type',
+		async (encoding) => {
+			const f = fixture();
+			const html = new TextEncoder().encode(' \t\r\n\f<!doctype html><title>Site fallback</title>');
+			const body =
+				encoding === 'gzip'
+					? new Uint8Array(
+							await new Response(
+								new Blob([html]).stream().pipeThrough(new CompressionStream('gzip'))
+							).arrayBuffer()
+						)
+					: html;
+			const fetcher = vi.fn<typeof fetch>((input, init) => {
+				const url = input instanceof Request ? input.url : input.toString();
+				return url.endsWith('/v1/catalog-headphone.json.gz')
+					? Promise.resolve(new Response(body, { headers: { 'content-type': 'application/octet-stream' } }))
+					: f.fetcher(input, init);
+			});
+			const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+			await service.products('iem');
+			nextManifest(f.files);
+			await expect(service.products('headphone')).rejects.toMatchObject({
+				code: 'dataset-updated',
+				newVersion: 'v2'
+			});
+			expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+		}
+	);
+	it.each(
+		(['catalog', 'targets', 'rank', 'detail'] as const).flatMap((kind) =>
+			(['changed', 'unchanged', 'refresh-failed'] as const).map((scenario) => [kind, scenario] as const)
+		)
+	)('checks HTTP 200 %s parse/decode failures when the manifest is %s', async (kind, scenario) => {
+		const f = fixture();
+		const fetcher = vi.fn<typeof fetch>((input, init) =>
+			init?.cache === 'no-store' && scenario === 'refresh-failed'
+				? Promise.reject(new Error('Manifest offline'))
+				: f.fetcher(input, init)
+		);
+		const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+		await service.products('iem');
+		if (scenario === 'changed') nextManifest(f.files);
+		const file = `v1/${{ catalog: 'catalog-headphone.json.gz', targets: 'targets.json.gz', rank: 'rank-iem-711.bin.gz', detail: 'detail-iem-711-b.bin.gz' }[kind]}`;
+		const original = f.files.get(file);
+		if (!original) throw new Error('fixture file');
+		const json = kind === 'catalog' || kind === 'targets';
+		f.files.set(file, json ? new TextEncoder().encode('{"broken":') : original.slice(0, 10));
+		const request = () =>
+			kind === 'catalog'
+				? service.products('headphone')
+				: kind === 'targets'
+					? service.targets('iem')
+					: kind === 'rank'
+						? service.similar({ productId: 'a', partition: 'iem-711' })
+						: service.productDetail('b');
+		if (scenario === 'changed')
+			await expect(request()).rejects.toMatchObject({
+				code: 'dataset-updated',
+				previousVersion: 'v1',
+				newVersion: 'v2'
+			});
+		else {
+			if (json) await expect(request()).rejects.toBeInstanceOf(SyntaxError);
+			else await expect(request()).rejects.toThrow('Truncated pack');
+			f.files.set(file, original);
+			await request();
+		}
+		expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+		expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
+	});
+	it.each(['JSON', 'HTML'] as const)(
+		'does not apply versioned-file HTML detection to %s manifest.json',
+		async (body) => {
+			const f = fixture();
+			const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+				const url = input instanceof Request ? input.url : input.toString();
+				if (url.endsWith('/manifest.json'))
+					return new Response(
+						body === 'HTML' ? '<html>Site fallback</html>' : await (await f.fetcher(input, init)).text(),
+						{
+							headers: { 'content-type': 'text/html' }
+						}
+					);
+				return f.fetcher(input, init);
+			});
+			const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+			if (body === 'HTML') await expect(service.products('iem')).rejects.toBeInstanceOf(SyntaxError);
+			else expect(await service.products('iem')).toHaveLength(5);
+			expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(0);
+			expect(
+				fetcher.mock.calls.filter(([input]) =>
+					(input instanceof Request ? input.url : input.toString()).endsWith('/manifest.json')
+				)
+			).toHaveLength(1);
+		}
+	);
+	it('preserves the pack decode error when the manifest refresh returns HTML without refreshing recursively', async () => {
+		const f = fixture();
+		const fetcher = vi.fn<typeof fetch>((input, init) =>
+			init?.cache === 'no-store'
+				? Promise.resolve(
+						new Response('<html>Manifest fallback</html>', { headers: { 'content-type': 'text/html' } })
+					)
+				: f.fetcher(input, init)
+		);
+		const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+		await service.products('iem');
+		f.files.set('v1/rank-iem-711.bin.gz', new Uint8Array(10));
+		await expect(service.similar({ productId: 'a', partition: 'iem-711' })).rejects.toThrow('Truncated pack');
+		expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+	});
 	it.each(['network', '503'] as const)('checks the manifest after a versioned %s failure', async (kind) => {
 		const f = fixture();
 		const fetcher = vi.fn<typeof fetch>(async (input, init) => {
@@ -844,45 +1008,50 @@ describe('dataset update fallback', () => {
 		});
 		expect(fetcher.mock.calls.some(([, init]) => init?.cache === 'no-store')).toBe(true);
 	});
-	it('shares one no-store manifest refresh across concurrent versioned file failures', async () => {
-		const f = fixture();
-		let release!: (response: Response) => void;
-		const refresh = new Promise<Response>((resolve) => {
-			release = resolve;
-		});
-		let bothFailed!: () => void;
-		const failuresReached = new Promise<void>((resolve) => {
-			bothFailed = resolve;
-		});
-		let failures = 0;
-		const fetcher = vi.fn<typeof fetch>((input, init) => {
-			if (init?.cache === 'no-store') return refresh;
-			const url = input instanceof Request ? input.url : input.toString();
-			if (url.endsWith('/v1/catalog-headphone.json.gz') || url.endsWith('/v1/targets.json.gz')) {
-				if (++failures === 2) bothFailed();
-				return Promise.resolve(new Response(null, { status: 404 }));
+	it.each(['404', '200 parse'] as const)(
+		'shares one no-store manifest refresh across concurrent versioned %s failures',
+		async (kind) => {
+			const f = fixture();
+			let release!: (response: Response) => void;
+			const refresh = new Promise<Response>((resolve) => {
+				release = resolve;
+			});
+			let bothFailed!: () => void;
+			const failuresReached = new Promise<void>((resolve) => {
+				bothFailed = resolve;
+			});
+			let failures = 0;
+			const fetcher = vi.fn<typeof fetch>((input, init) => {
+				if (init?.cache === 'no-store') return refresh;
+				const url = input instanceof Request ? input.url : input.toString();
+				if (url.endsWith('/v1/catalog-headphone.json.gz') || url.endsWith('/v1/targets.json.gz')) {
+					if (++failures === 2) bothFailed();
+					return Promise.resolve(
+						kind === '404' ? new Response(null, { status: 404 }) : new Response('{"broken":')
+					);
+				}
+				return f.fetcher(input, init);
+			});
+			const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+			await service.products('iem');
+			nextManifest(f.files);
+			const pending = Promise.allSettled([service.products('headphone'), service.targets('iem')]);
+			await failuresReached;
+			release(await f.fetcher('https://dataset.example/data/manifest.json'));
+			const results = await pending;
+			expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+			for (const result of results) {
+				expect(result.status).toBe('rejected');
+				if (result.status === 'rejected')
+					expect(result.reason).toMatchObject({
+						code: 'dataset-updated',
+						previousVersion: 'v1',
+						newVersion: 'v2'
+					});
 			}
-			return f.fetcher(input, init);
-		});
-		const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
-		await service.products('iem');
-		nextManifest(f.files);
-		const pending = Promise.allSettled([service.products('headphone'), service.targets('iem')]);
-		await failuresReached;
-		release(await f.fetcher('https://dataset.example/data/manifest.json'));
-		const results = await pending;
-		expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
-		for (const result of results) {
-			expect(result.status).toBe('rejected');
-			if (result.status === 'rejected')
-				expect(result.reason).toMatchObject({
-					code: 'dataset-updated',
-					previousVersion: 'v1',
-					newVersion: 'v2'
-				});
+			expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
 		}
-		expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
-	});
+	);
 	it.each(['unchanged', 'refresh-failed'] as const)(
 		'preserves the original failure and allows retry when update detection is %s',
 		async (scenario) => {
@@ -1948,6 +2117,7 @@ describe('atlas service', () => {
 			result.results[1]?.perSourceRange?.[0] ?? Infinity
 		);
 		expect(result.results[1]?.sourceCount).toBe(2);
+		expect(result.results.every((row) => !('rangeSourceCount' in row))).toBe(true);
 		const range = result.results[1]?.perSourceRange;
 		expect(range?.[1]).toBeCloseTo(2 * (range?.[0] ?? NaN), 6);
 		expect(result.results[1]?.distance).toBeCloseTo(1.5 * (range?.[0] ?? NaN), 6);
@@ -1972,7 +2142,7 @@ describe('atlas service', () => {
 		const source = await service.similar({ productId: 'a', filters: { sources: ['s2'] } });
 		expect(source.ok && source.results.map((r) => r.candidate.id)).toEqual(['c']);
 	});
-	it('qualifies source distance ranges by the actual overlap under query weights', async () => {
+	it('keeps consensus reviewer counts consistent with minReviewers under partial query overlap', async () => {
 		const { service, packs, files } = fixture();
 		const pack = packs[0];
 		const partial = pack?.curves.find((c) => c.measurementId === 'c2');
@@ -1981,15 +2151,43 @@ describe('atlas service', () => {
 		files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
 		const result = await service.similar({
 			productId: 'a',
+			filters: { minReviewers: 2 },
 			customBands: { 'sub-bass': 1, bass: 0, 'low-mid': 0, mid: 0, presence: 0, treble: 0, air: 0 }
 		});
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
+		expect(result.results.map((row) => row.candidate.id)).toEqual(['c']);
 		const match = result.results.find((r) => r.candidate.id === 'c');
 		expect(match?.candidate.sources).toHaveLength(2);
-		expect(match?.sourceCount).toBe(1);
+		expect(match?.sourceCount).toBe(2);
+		expect(match).toMatchObject({ rangeSourceCount: 1 });
 		expect(match?.perSourceRange).toBeNull();
 	});
+	it.each(['compare', 'taste'] as const)(
+		'reports consensus contributors matching minReviewers for %s',
+		async (method) => {
+			const { service } = fixture(8, [
+				{ id: 'b-repeat', productId: 'b', kind: 'default', partition: 'iem-711' }
+			]);
+			const run = (minReviewers: number) => {
+				// Coverage selection must not reduce the contributor count to one selected reviewer.
+				const filters = { minReviewers, sources: ['s1'] };
+				return method === 'compare'
+					? service.compare({ productIds: ['a', 'b'], filters })
+					: service.taste({
+							items: [{ productId: 'a', rating: 'like', strength: 1, soundRelated: true }],
+							filters
+						});
+			};
+			const result = await run(2);
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.results.map((row) => row.candidate.id)).toEqual(['c']);
+			expect(result.results[0]?.candidate.sources.map((source) => source.id).sort()).toEqual(['s1', 's2']);
+			// C's third catalog source is a fit variant, not a consensus contributor.
+			expect(await run(3)).toMatchObject({ ok: true, results: [] });
+		}
+	);
 	it('returns rig and identity errors rather than silently substituting a curve', async () => {
 		const { service } = fixture();
 		expect(await service.similar({ productId: 'a', partition: 'iem-5128' })).toMatchObject({

@@ -63,8 +63,11 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
   are never sent to a server. Upload-to-dataset comparisons require the caller to choose the rig.
 - **Caching.** Dataset files live under a content-hashed version path and are served immutable (`static/_headers`);
   `manifest.json` is revalidated by the browser HTTP cache. The service pins its first manifest for
-  its lifetime; dispose/recreate to pick up a new dataset. A failed versioned-file fetch/status/body/decompression
-  triggers a shared `manifest.json` refresh with `cache: 'no-store'`. If its version changed, the service
+  its lifetime; dispose/recreate to pick up a new dataset. Versioned-file fetch/status/body/decompression,
+  JSON parsing and pack decoding/validation share one failure boundary that triggers a shared
+  `manifest.json` refresh with `cache: 'no-store'`. An HTML content type or a decoded body whose first
+  non-whitespace byte is `<` is treated as a missing versioned file even with HTTP 200 (Pages' site
+  fallback); unversioned `manifest.json` is excluded from this detection. If its version changed, the service
   raises a sticky `DatasetUpdatedError`, never adopts the new manifest or mixes versions. An unchanged
   or unavailable refresh preserves the original file failure and permits retry. Retained old-version
   files remain usable without a refresh. Decoded reference targets, catalogs, rank packs and indexes

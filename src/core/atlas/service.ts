@@ -187,9 +187,8 @@ export class AtlasService {
 		const previousVersion = this.pinnedVersion;
 		if (!previousVersion || !path.startsWith(`${previousVersion}/`)) return;
 		this.assertDatasetCurrent();
-		this.manifestRefresh ??= this.bytes('manifest.json', { cache: 'no-store' })
-			.then((bytes) => {
-				const manifest = JSON.parse(new TextDecoder().decode(bytes)) as Manifest;
+		this.manifestRefresh ??= this.json<Manifest>('manifest.json', { cache: 'no-store' })
+			.then((manifest) => {
 				if (typeof manifest.version === 'string' && manifest.version && manifest.version !== previousVersion)
 					this.datasetUpdate = new DatasetUpdatedError(previousVersion, manifest.version);
 			})
@@ -204,12 +203,24 @@ export class AtlasService {
 	}
 	private async bytes(path: string, init?: RequestInit): Promise<Uint8Array> {
 		this.assertDatasetCurrent();
+		const response = await this.fetcher(`${this.baseUrl}${path}`, init);
+		if (!response.ok) throw new Error(`Dataset request failed (${response.status}): ${path}`);
+		const versioned = this.pinnedVersion !== undefined && path.startsWith(`${this.pinnedVersion}/`);
+		if (versioned && response.headers.get('content-type')?.toLowerCase().startsWith('text/html'))
+			throw new Error(`Dataset file missing: ${path}`);
+		const bytes = new Uint8Array(await response.arrayBuffer());
+		// A server may already have decoded Content-Encoding: gzip; inspect the bytes, not the suffix.
+		const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? await decompressGzip(bytes) : bytes;
+		// Pages can return the site's HTML with status 200, even without the expected content type.
+		if (versioned && decoded.find((byte) => byte !== 0x20 && (byte < 0x09 || byte > 0x0d)) === 0x3c)
+			throw new Error(`Dataset file missing: ${path}`);
+		this.assertDatasetCurrent();
+		return decoded;
+	}
+	/** Fetch, decompression and parsing/decoding share one update check and preserve the original error. */
+	private async load<T>(path: string, decode: (bytes: Uint8Array) => T, init?: RequestInit): Promise<T> {
 		try {
-			const response = await this.fetcher(`${this.baseUrl}${path}`, init);
-			if (!response.ok) throw new Error(`Dataset request failed (${response.status}): ${path}`);
-			const bytes = new Uint8Array(await response.arrayBuffer());
-			// A server may already have decoded Content-Encoding: gzip; inspect the bytes, not the suffix.
-			const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? await decompressGzip(bytes) : bytes;
+			const decoded = decode(await this.bytes(path, init));
 			this.assertDatasetCurrent();
 			return decoded;
 		} catch (error) {
@@ -217,11 +228,13 @@ export class AtlasService {
 			throw error;
 		}
 	}
+	private json<T>(path: string, init?: RequestInit): Promise<T> {
+		return this.load(path, (bytes) => JSON.parse(new TextDecoder().decode(bytes)) as T, init);
+	}
 	private manifest(): Promise<Manifest> {
 		this.assertDatasetCurrent();
-		this.manifestPromise ??= this.bytes('manifest.json')
-			.then((bytes) => {
-				const manifest = JSON.parse(new TextDecoder().decode(bytes)) as Manifest;
+		this.manifestPromise ??= this.json<Manifest>('manifest.json')
+			.then((manifest) => {
 				this.pinnedVersion = manifest.version;
 				return manifest;
 			})
@@ -236,10 +249,7 @@ export class AtlasService {
 		let pending = this.catalogs.get(form);
 		if (!pending) {
 			pending = this.manifest()
-				.then(async (manifest) => {
-					const bytes = await this.bytes(`${manifest.version}/catalog-${form}.json.gz`);
-					return JSON.parse(new TextDecoder().decode(bytes)) as Catalog;
-				})
+				.then((manifest) => this.json<Catalog>(`${manifest.version}/catalog-${form}.json.gz`))
 				.catch((error: unknown) => {
 					this.catalogs.delete(form);
 					throw error;
@@ -316,7 +326,7 @@ export class AtlasService {
 		let pending = this.ranks.get(partition.id);
 		if (!pending) {
 			pending = this.manifest()
-				.then(async (m) => decodePack(await this.bytes(`${m.version}/${partition.rankFile}`)))
+				.then((m) => this.load(`${m.version}/${partition.rankFile}`, decodePack))
 				.catch((error: unknown) => {
 					this.ranks.delete(partition.id);
 					throw error;
@@ -400,10 +410,15 @@ export class AtlasService {
 		let pending = this.pendingDetails.get(file);
 		if (!pending) {
 			pending = this.manifest()
-				.then(async (m) => {
-					const pack = decodePack(await this.bytes(`${m.version}/${file}`));
-					if (pack.kind !== 'detail' || pack.points !== GRID.length || pack.partition !== partition)
-						throw new Error('Detail pack does not match partition/grid');
+				.then((m) =>
+					this.load(`${m.version}/${file}`, (bytes) => {
+						const pack = decodePack(bytes);
+						if (pack.kind !== 'detail' || pack.points !== GRID.length || pack.partition !== partition)
+							throw new Error('Detail pack does not match partition/grid');
+						return pack;
+					})
+				)
+				.then((pack) => {
 					this.details.set(file, pack);
 					while (this.details.size > this.detailCacheSize) {
 						const oldest = this.details.keys().next().value;
@@ -581,12 +596,7 @@ export class AtlasService {
 	async targets(form: Form): Promise<ReferenceTarget[]> {
 		this.assertDatasetCurrent();
 		this.targetsPromise ??= this.manifest()
-			.then(
-				async (manifest) =>
-					JSON.parse(
-						new TextDecoder().decode(await this.bytes(`${manifest.version}/targets.json.gz`))
-					) as ReferenceTarget[]
-			)
+			.then((manifest) => this.json<ReferenceTarget[]>(`${manifest.version}/targets.json.gz`))
 			.catch((error: unknown) => {
 				this.targetsPromise = undefined;
 				throw error;
@@ -748,7 +758,10 @@ export class AtlasService {
 							distances.length > 1
 								? ([Math.min(...distances), Math.max(...distances)] as [number, number])
 								: null,
-						sourceCount: distances.length,
+						sourceCount: candidate.info.sources.length,
+						...(distances.length !== candidate.info.sources.length
+							? { rangeSourceCount: distances.length }
+							: {}),
 						sameProduct: candidate.info.product.id === reference.info.productId
 					}
 				];
