@@ -146,8 +146,10 @@ export interface SimilarMatch extends DistanceResult {
 	/** LS offset subtracted from the candidate (also available as DistanceResult.offset). */
 	offsetDb: number;
 	perSourceRange: [number, number] | null;
-	/** Sources with adequate overlap for this query's per-source distance, not all catalog sources. */
+	/** Distinct consensus-contributing reviewers on the active rig/source pool, as used by minReviewers. */
 	sourceCount: number;
+	/** Sources with a valid query-specific distance; present only when different from sourceCount, even if the range is null. */
+	rangeSourceCount?: number;
 	sameProduct: boolean;
 	stability?: RankStability;
 	relatedToReference?: true;

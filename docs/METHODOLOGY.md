@@ -101,8 +101,11 @@ counts the full consensus. This is an eligibility filter, not a reviewer-count s
 For the top-K similarity winners only, compute D from each contributing reviewer's default curve to
 the selected reference, using exactly the query's weights and directional penalty. If a reviewer has
 several defaults, first take its aligned median. Report the min/max of valid per-source distances
-when at least two are available, otherwise null; the result's source count counts those with adequate
-overlap for this query (the candidate separately retains all contributing source attribution).
+when at least two are available, otherwise null. Similar's `sourceCount` counts distinct consensus
+contributors on the active rig/source pool, matching `minReviewers` and compare/taste's
+`candidate.sources.length`. When fewer sources have adequate overlap for the query-specific distance,
+`rangeSourceCount` reports that number (including zero or one when `perSourceRange` is null); otherwise
+it is omitted and equals `sourceCount` implicitly. Range support does not change reviewer eligibility.
 For a tuning, use only that tuning's source, not the product's default-source pool. Thus a displayed
 “1.1–1.9 dB across 4 sources” is an observed reviewer range against the chosen reference, **not** a
 confidence interval and not all pairwise distances among reference and candidate measurements.

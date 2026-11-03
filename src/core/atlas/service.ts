@@ -748,7 +748,10 @@ export class AtlasService {
 							distances.length > 1
 								? ([Math.min(...distances), Math.max(...distances)] as [number, number])
 								: null,
-						sourceCount: distances.length,
+						sourceCount: candidate.info.sources.length,
+						...(distances.length !== candidate.info.sources.length
+							? { rangeSourceCount: distances.length }
+							: {}),
 						sameProduct: candidate.info.product.id === reference.info.productId
 					}
 				];

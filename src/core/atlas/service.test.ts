@@ -1948,6 +1948,7 @@ describe('atlas service', () => {
 			result.results[1]?.perSourceRange?.[0] ?? Infinity
 		);
 		expect(result.results[1]?.sourceCount).toBe(2);
+		expect(result.results.every((row) => !('rangeSourceCount' in row))).toBe(true);
 		const range = result.results[1]?.perSourceRange;
 		expect(range?.[1]).toBeCloseTo(2 * (range?.[0] ?? NaN), 6);
 		expect(result.results[1]?.distance).toBeCloseTo(1.5 * (range?.[0] ?? NaN), 6);
@@ -1972,7 +1973,7 @@ describe('atlas service', () => {
 		const source = await service.similar({ productId: 'a', filters: { sources: ['s2'] } });
 		expect(source.ok && source.results.map((r) => r.candidate.id)).toEqual(['c']);
 	});
-	it('qualifies source distance ranges by the actual overlap under query weights', async () => {
+	it('keeps consensus reviewer counts consistent with minReviewers under partial query overlap', async () => {
 		const { service, packs, files } = fixture();
 		const pack = packs[0];
 		const partial = pack?.curves.find((c) => c.measurementId === 'c2');
@@ -1981,15 +1982,43 @@ describe('atlas service', () => {
 		files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
 		const result = await service.similar({
 			productId: 'a',
+			filters: { minReviewers: 2 },
 			customBands: { 'sub-bass': 1, bass: 0, 'low-mid': 0, mid: 0, presence: 0, treble: 0, air: 0 }
 		});
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
+		expect(result.results.map((row) => row.candidate.id)).toEqual(['c']);
 		const match = result.results.find((r) => r.candidate.id === 'c');
 		expect(match?.candidate.sources).toHaveLength(2);
-		expect(match?.sourceCount).toBe(1);
+		expect(match?.sourceCount).toBe(2);
+		expect(match).toMatchObject({ rangeSourceCount: 1 });
 		expect(match?.perSourceRange).toBeNull();
 	});
+	it.each(['compare', 'taste'] as const)(
+		'reports consensus contributors matching minReviewers for %s',
+		async (method) => {
+			const { service } = fixture(8, [
+				{ id: 'b-repeat', productId: 'b', kind: 'default', partition: 'iem-711' }
+			]);
+			const run = (minReviewers: number) => {
+				// Coverage selection must not reduce the contributor count to one selected reviewer.
+				const filters = { minReviewers, sources: ['s1'] };
+				return method === 'compare'
+					? service.compare({ productIds: ['a', 'b'], filters })
+					: service.taste({
+							items: [{ productId: 'a', rating: 'like', strength: 1, soundRelated: true }],
+							filters
+						});
+			};
+			const result = await run(2);
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.results.map((row) => row.candidate.id)).toEqual(['c']);
+			expect(result.results[0]?.candidate.sources.map((source) => source.id).sort()).toEqual(['s1', 's2']);
+			// C's third catalog source is a fit variant, not a consensus contributor.
+			expect(await run(3)).toMatchObject({ ok: true, results: [] });
+		}
+	);
 	it('returns rig and identity errors rather than silently substituting a curve', async () => {
 		const { service } = fixture();
 		expect(await service.similar({ productId: 'a', partition: 'iem-5128' })).toMatchObject({
