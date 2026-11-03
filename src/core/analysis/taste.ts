@@ -727,6 +727,22 @@ function packedTasteScore(matrix: Float32Array, start: number, model: TasteModel
 	return best + penalty;
 }
 
+/** Full scalar ranking for a service cache, without constructing per-row explanations. */
+export function scoreTastePacked(
+	matrix: Float32Array,
+	model: TasteModel
+): { index: number; score: number }[] {
+	if (matrix.length % RANK_SIZE || model.frequencies.length !== RANK_SIZE)
+		throw new RangeError('Expected N × 120 ranking matrix and model');
+	const scores: { index: number; score: number }[] = [];
+	if (!model.tastes.length) return scores;
+	for (let index = 0; index < matrix.length / RANK_SIZE; index++) {
+		const score = packedTasteScore(matrix, index * RANK_SIZE, model);
+		if (Number.isFinite(score)) scores.push({ index, score });
+	}
+	return scores.sort((a, b) => a.score - b.score || a.index - b.index);
+}
+
 /** Allocation-free N-row scalar scan, O(N log K) heap, full explanations only for K winners. */
 export function rankTastePacked(
 	matrix: Float32Array,

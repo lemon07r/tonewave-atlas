@@ -1,5 +1,5 @@
 import type { Curve } from '../analysis/common.ts';
-import { rankPacked, responseDistance, distanceSummary } from '../analysis/distance.ts';
+import { scorePacked, responseDistance, distanceSummary } from '../analysis/distance.ts';
 import { compareReferences } from '../analysis/multi-reference.ts';
 import { fitPeq, exportEqualizerApo, exportWavelet, exportPeqJson } from '../analysis/peq.ts';
 import type { RatedItem } from '../analysis/taste.ts';
@@ -23,12 +23,14 @@ import {
 	consensus,
 	priceRange,
 	type IndexedCurve,
+	type AtlasCandidate,
 	type PartitionIndex
 } from './index.ts';
 import {
 	alignedCurve,
 	distanceOptions,
 	rankingCaveats,
+	relatedToReference,
 	scoredCurve,
 	selectedSources,
 	selection,
@@ -36,7 +38,10 @@ import {
 	topK,
 	treblePenalty
 } from './ranking.ts';
-import { tasteRanking } from './taste-ranking.ts';
+import { prepareTasteRanking } from './taste-ranking.ts';
+import { rankingStability, STABILITY_CAVEAT, STABILITY_MARGIN } from './stability.ts';
+import { ScoreCache, scoringKey } from './score-cache.ts';
+import { DatasetUpdatedError } from './errors.ts';
 import type {
 	AtlasOptions,
 	IdResolution,
@@ -67,6 +72,7 @@ interface ResolvedReference {
 	index: PartitionIndex;
 	values: Float64Array;
 	info: ReferenceInfo;
+	consensusCandidate?: AtlasCandidate;
 }
 interface LocatedProduct {
 	catalog: Catalog;
@@ -79,6 +85,22 @@ interface LocatedMeasurement {
 interface Upload {
 	values: Float64Array;
 	rankValues: Float64Array;
+}
+interface SimilarScoring {
+	reference: ResolvedReference;
+	selected: ReturnType<typeof selection>;
+	options: ReturnType<typeof distanceOptions>;
+	scores: ReturnType<typeof scorePacked>;
+}
+interface CompareScoring {
+	index: PartitionIndex;
+	partitionId: string;
+	references: ResolvedReference[];
+	referenceProducts: Product[];
+	selected: ReturnType<typeof selection>;
+	curves: Float32Array[];
+	options: ReturnType<typeof distanceOptions>;
+	comparisons: ReturnType<typeof compareReferences>;
 }
 
 function failure(error: AtlasError['error'], message: string): AtlasError {
@@ -133,6 +155,9 @@ export class AtlasService {
 	private readonly fetcher: typeof globalThis.fetch;
 	private readonly detailCacheSize: number;
 	private manifestPromise: Promise<Manifest> | undefined;
+	private pinnedVersion: string | undefined;
+	private manifestRefresh: Promise<void> | undefined;
+	private datasetUpdate: DatasetUpdatedError | undefined;
 	private targetsPromise: Promise<ReferenceTarget[]> | undefined;
 	private readonly catalogs = new Map<Form, Promise<Catalog>>();
 	private readonly ranks = new Map<string, Promise<CurvePack>>();
@@ -142,6 +167,9 @@ export class AtlasService {
 	private readonly details = new Map<string, CurvePack>();
 	private readonly pendingDetails = new Map<string, Promise<CurvePack>>();
 	private readonly uploads = new Map<string, Upload>();
+	private readonly similarScores = new ScoreCache<SimilarScoring | AtlasError>();
+	private readonly compareScores = new ScoreCache<CompareScoring | AtlasError>();
+	private readonly tasteScores = new ScoreCache<ReturnType<typeof prepareTasteRanking> | AtlasError>();
 	private nextUpload = 0;
 
 	constructor(options: AtlasOptions) {
@@ -152,16 +180,64 @@ export class AtlasService {
 			throw new RangeError('detailCacheSize must be positive');
 	}
 
-	private async bytes(path: string): Promise<Uint8Array> {
-		const response = await this.fetcher(`${this.baseUrl}${path}`);
+	private assertDatasetCurrent(): void {
+		if (this.datasetUpdate) throw this.datasetUpdate;
+	}
+	private async checkForDatasetUpdate(path: string): Promise<void> {
+		const previousVersion = this.pinnedVersion;
+		if (!previousVersion || !path.startsWith(`${previousVersion}/`)) return;
+		this.assertDatasetCurrent();
+		this.manifestRefresh ??= this.json<Manifest>('manifest.json', { cache: 'no-store' })
+			.then((manifest) => {
+				if (typeof manifest.version === 'string' && manifest.version && manifest.version !== previousVersion)
+					this.datasetUpdate = new DatasetUpdatedError(previousVersion, manifest.version);
+			})
+			.catch(() => {
+				/* Preserve the original file failure if update detection itself is unavailable. */
+			})
+			.finally(() => {
+				this.manifestRefresh = undefined;
+			});
+		await this.manifestRefresh;
+		this.assertDatasetCurrent();
+	}
+	private async bytes(path: string, init?: RequestInit): Promise<Uint8Array> {
+		this.assertDatasetCurrent();
+		const response = await this.fetcher(`${this.baseUrl}${path}`, init);
 		if (!response.ok) throw new Error(`Dataset request failed (${response.status}): ${path}`);
+		const versioned = this.pinnedVersion !== undefined && path.startsWith(`${this.pinnedVersion}/`);
+		if (versioned && response.headers.get('content-type')?.toLowerCase().startsWith('text/html'))
+			throw new Error(`Dataset file missing: ${path}`);
 		const bytes = new Uint8Array(await response.arrayBuffer());
 		// A server may already have decoded Content-Encoding: gzip; inspect the bytes, not the suffix.
-		return bytes[0] === 0x1f && bytes[1] === 0x8b ? decompressGzip(bytes) : bytes;
+		const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b ? await decompressGzip(bytes) : bytes;
+		// Pages can return the site's HTML with status 200, even without the expected content type.
+		if (versioned && decoded.find((byte) => byte !== 0x20 && (byte < 0x09 || byte > 0x0d)) === 0x3c)
+			throw new Error(`Dataset file missing: ${path}`);
+		this.assertDatasetCurrent();
+		return decoded;
+	}
+	/** Fetch, decompression and parsing/decoding share one update check and preserve the original error. */
+	private async load<T>(path: string, decode: (bytes: Uint8Array) => T, init?: RequestInit): Promise<T> {
+		try {
+			const decoded = decode(await this.bytes(path, init));
+			this.assertDatasetCurrent();
+			return decoded;
+		} catch (error) {
+			await this.checkForDatasetUpdate(path);
+			throw error;
+		}
+	}
+	private json<T>(path: string, init?: RequestInit): Promise<T> {
+		return this.load(path, (bytes) => JSON.parse(new TextDecoder().decode(bytes)) as T, init);
 	}
 	private manifest(): Promise<Manifest> {
-		this.manifestPromise ??= this.bytes('manifest.json')
-			.then((bytes) => JSON.parse(new TextDecoder().decode(bytes)) as Manifest)
+		this.assertDatasetCurrent();
+		this.manifestPromise ??= this.json<Manifest>('manifest.json')
+			.then((manifest) => {
+				this.pinnedVersion = manifest.version;
+				return manifest;
+			})
 			.catch((error: unknown) => {
 				this.manifestPromise = undefined;
 				throw error;
@@ -169,13 +245,11 @@ export class AtlasService {
 		return this.manifestPromise;
 	}
 	private catalog(form: Form): Promise<Catalog> {
+		this.assertDatasetCurrent();
 		let pending = this.catalogs.get(form);
 		if (!pending) {
 			pending = this.manifest()
-				.then(async (manifest) => {
-					const bytes = await this.bytes(`${manifest.version}/catalog-${form}.json.gz`);
-					return JSON.parse(new TextDecoder().decode(bytes)) as Catalog;
-				})
+				.then((manifest) => this.json<Catalog>(`${manifest.version}/catalog-${form}.json.gz`))
 				.catch((error: unknown) => {
 					this.catalogs.delete(form);
 					throw error;
@@ -248,10 +322,11 @@ export class AtlasService {
 		return null;
 	}
 	private rank(partition: Partition): Promise<CurvePack> {
+		this.assertDatasetCurrent();
 		let pending = this.ranks.get(partition.id);
 		if (!pending) {
 			pending = this.manifest()
-				.then(async (m) => decodePack(await this.bytes(`${m.version}/${partition.rankFile}`)))
+				.then((m) => this.load(`${m.version}/${partition.rankFile}`, decodePack))
 				.catch((error: unknown) => {
 					this.ranks.delete(partition.id);
 					throw error;
@@ -325,6 +400,7 @@ export class AtlasService {
 		return pending;
 	}
 	private async detailPack(file: string, partition: string): Promise<CurvePack> {
+		this.assertDatasetCurrent();
 		const cached = this.details.get(file);
 		if (cached) {
 			this.details.delete(file);
@@ -334,10 +410,15 @@ export class AtlasService {
 		let pending = this.pendingDetails.get(file);
 		if (!pending) {
 			pending = this.manifest()
-				.then(async (m) => {
-					const pack = decodePack(await this.bytes(`${m.version}/${file}`));
-					if (pack.kind !== 'detail' || pack.points !== GRID.length || pack.partition !== partition)
-						throw new Error('Detail pack does not match partition/grid');
+				.then((m) =>
+					this.load(`${m.version}/${file}`, (bytes) => {
+						const pack = decodePack(bytes);
+						if (pack.kind !== 'detail' || pack.points !== GRID.length || pack.partition !== partition)
+							throw new Error('Detail pack does not match partition/grid');
+						return pack;
+					})
+				)
+				.then((pack) => {
 					this.details.set(file, pack);
 					while (this.details.size > this.detailCacheSize) {
 						const oldest = this.details.keys().next().value;
@@ -473,6 +554,7 @@ export class AtlasService {
 			catalog: found.catalog,
 			index,
 			values: scoredCurve(values),
+			...(!selected && candidate ? { consensusCandidate: candidate } : {}),
 			info: { productId: found.product.id, uploadId: null, measurementIds, sources }
 		};
 	}
@@ -512,13 +594,9 @@ export class AtlasService {
 		};
 	}
 	async targets(form: Form): Promise<ReferenceTarget[]> {
+		this.assertDatasetCurrent();
 		this.targetsPromise ??= this.manifest()
-			.then(
-				async (manifest) =>
-					JSON.parse(
-						new TextDecoder().decode(await this.bytes(`${manifest.version}/targets.json.gz`))
-					) as ReferenceTarget[]
-			)
+			.then((manifest) => this.json<ReferenceTarget[]>(`${manifest.version}/targets.json.gz`))
 			.catch((error: unknown) => {
 				this.targetsPromise = undefined;
 				throw error;
@@ -591,11 +669,11 @@ export class AtlasService {
 		treblePenalty(request.treblePenalty);
 		const canonical = await this.canonicalIds(request);
 		const result = await this.similarCanonical(canonical.input);
-		return canonical.resolvedIds.length ? { ...result, resolvedIds: canonical.resolvedIds } : result;
+		return structuredClone(
+			canonical.resolvedIds.length ? { ...result, resolvedIds: canonical.resolvedIds } : result
+		);
 	}
-	private async similarCanonical(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
-		const k = topK(request.topK);
-		treblePenalty(request.treblePenalty);
+	private async prepareSimilar(request: SimilarRequest): Promise<SimilarScoring | AtlasError> {
 		const reference = await this.reference(request);
 		if (!reference.ok) return reference;
 		const { index } = reference;
@@ -607,7 +685,46 @@ export class AtlasService {
 			true,
 			request.measurementId
 		);
-		const ranked = rankPacked(selected.matrix, reference.values, k, options);
+		return { reference, selected, options, scores: scorePacked(selected.matrix, reference.values, options) };
+	}
+	private async similarCanonical(request: SimilarRequest): Promise<SimilarResult | AtlasError> {
+		const k = topK(request.topK);
+		const key = scoringKey((await this.manifest()).version, request);
+		const scored = await this.similarScores.get(key, () => this.prepareSimilar(request));
+		if ('ok' in scored) return scored;
+		const { reference, selected, options, scores } = scored;
+		const { index } = reference;
+		const matches = scores.slice(0, k ? k + STABILITY_MARGIN : 0).flatMap(({ index }) => {
+			const stats = responseDistance(
+				selected.matrix.subarray(index * RANK_SIZE, (index + 1) * RANK_SIZE),
+				reference.values,
+				options
+			);
+			return stats ? [{ index, stats }] : [];
+		});
+		const stability = rankingStability(
+			matches.flatMap((match) => {
+				const candidate = selected.candidates[match.index];
+				return candidate
+					? [
+							{
+								candidate,
+								values: selected.matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE),
+								score: match.stats.distance,
+								distances: [match.stats.distance]
+							}
+						]
+					: [];
+			}),
+			[
+				{
+					values: reference.values,
+					...(reference.consensusCandidate ? { candidate: reference.consensusCandidate } : {})
+				}
+			],
+			options
+		);
+		const referenceProducts = reference.catalog.products.filter((p) => p.id === reference.info.productId);
 		return {
 			ok: true,
 			partition: index.partition.id,
@@ -617,7 +734,7 @@ export class AtlasService {
 			rankWeights: options.weights.slice(),
 			treblePenalty: options.treblePenalty,
 			reference: { ...reference.info, rankCurve: reference.values.slice() },
-			results: ranked.matches.flatMap((match) => {
+			results: matches.slice(0, k).flatMap((match, i) => {
 				const candidate = selected.candidates[match.index];
 				if (!candidate) return [];
 				const distances = candidate.perSource.flatMap((c) => {
@@ -627,6 +744,10 @@ export class AtlasService {
 				return [
 					{
 						candidate: candidate.info,
+						...(stability[i] ? { stability: stability[i] } : {}),
+						...(relatedToReference(candidate.info.product, referenceProducts)
+							? { relatedToReference: true as const }
+							: {}),
 						...match.stats,
 						rankCurve: alignedCurve(
 							selected.matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE),
@@ -637,16 +758,22 @@ export class AtlasService {
 							distances.length > 1
 								? ([Math.min(...distances), Math.max(...distances)] as [number, number])
 								: null,
-						sourceCount: distances.length,
+						sourceCount: candidate.info.sources.length,
+						...(distances.length !== candidate.info.sources.length
+							? { rangeSourceCount: distances.length }
+							: {}),
 						sameProduct: candidate.info.product.id === reference.info.productId
 					}
 				];
 			}),
-			caveats: rankingCaveats(
-				index,
-				reference.info.productId ? [reference.info.productId] : [],
-				selected.candidates.map((c) => c.info.product.id)
-			)
+			caveats: [
+				...rankingCaveats(
+					index,
+					reference.info.productId ? [reference.info.productId] : [],
+					selected.candidates.map((c) => c.info.product.id)
+				),
+				STABILITY_CAVEAT
+			]
 		};
 	}
 
@@ -695,11 +822,16 @@ export class AtlasService {
 	async taste(request: TasteRequest): Promise<TasteResult | AtlasError> {
 		topK(request.topK);
 		const canonical = await Promise.all(request.items.map((item) => this.canonicalIds(item)));
-		const result = await this.tasteCanonical({ ...request, items: canonical.map((c) => c.input) });
+		const input = { ...request, items: canonical.map((c) => c.input) };
+		const key = scoringKey((await this.manifest()).version, input);
+		const scored = await this.tasteScores.get(key, () => this.prepareTaste(input));
+		const result = typeof scored === 'function' ? scored(topK(request.topK)) : scored;
 		const resolvedIds = canonical.flatMap((c) => c.resolvedIds);
-		return resolvedIds.length ? { ...result, resolvedIds } : result;
+		return structuredClone(resolvedIds.length ? { ...result, resolvedIds } : result);
 	}
-	private async tasteCanonical(request: TasteRequest): Promise<TasteResult | AtlasError> {
+	private async prepareTaste(
+		request: TasteRequest
+	): Promise<ReturnType<typeof prepareTasteRanking> | AtlasError> {
 		topK(request.topK);
 		const eligible = request.items.filter((i) => i.soundRelated && i.strength > 0 && i.rating !== 'neutral');
 		const partitionId = await this.bestPartition(
@@ -746,7 +878,14 @@ export class AtlasService {
 			const { productId, measurementId, ...rating } = item;
 			items.push({ ...rating, id: measurementId ?? productId, curve: reference.values });
 		}
-		return tasteRanking(index, items, unusedItems, request, found.catalog.form);
+		return prepareTasteRanking(
+			index,
+			items,
+			unusedItems,
+			request,
+			found.catalog.form,
+			found.catalog.products.filter((p) => request.items.some((item) => item.productId === p.id))
+		);
 	}
 	async compare(request: CompareRequest): Promise<CompareResult | AtlasError> {
 		topK(request.topK);
@@ -762,16 +901,11 @@ export class AtlasService {
 			references: canonical.map((c) => c.input)
 		});
 		const resolvedIds = canonical.flatMap((c) => c.resolvedIds);
-		return resolvedIds.length ? { ...result, resolvedIds } : result;
+		return structuredClone(resolvedIds.length ? { ...result, resolvedIds } : result);
 	}
-	private async compareCanonical(request: CompareRequest): Promise<CompareResult | AtlasError> {
+	private async prepareCompare(request: CompareRequest): Promise<CompareScoring | AtlasError> {
 		const inputs: { productId: string; measurementId?: string }[] =
 			request.references ?? request.productIds.map((productId) => ({ productId }));
-		if (inputs.length < 2 || inputs.length > 4) throw new RangeError('Use 2–4 references');
-		const k = topK(request.topK);
-		treblePenalty(request.treblePenalty);
-		if (request.sort !== undefined && !['mean', 'minimax'].includes(request.sort))
-			throw new RangeError('Sort must be mean or minimax');
 		// Establish identity and shared-rig support without ever replacing an explicit variant.
 		const locatedReferences: LocatedProduct[] = [];
 		for (const input of inputs) {
@@ -859,12 +993,52 @@ export class AtlasService {
 			references.map((r) => r.values),
 			options
 		);
+		return {
+			index,
+			partitionId,
+			references,
+			referenceProducts: locatedReferences.map((r) => r.product),
+			selected,
+			curves,
+			options,
+			comparisons
+		};
+	}
+	private async compareCanonical(request: CompareRequest): Promise<CompareResult | AtlasError> {
+		const inputs = request.references ?? request.productIds.map((productId) => ({ productId }));
+		if (inputs.length < 2 || inputs.length > 4) throw new RangeError('Use 2–4 references');
+		const k = topK(request.topK);
+		if (request.sort !== undefined && !['mean', 'minimax'].includes(request.sort))
+			throw new RangeError('Sort must be mean or minimax');
+		const key = scoringKey((await this.manifest()).version, request);
+		const scored = await this.compareScores.get(key, () => this.prepareCompare(request));
+		if ('ok' in scored) return scored;
+		const { index, partitionId, references, referenceProducts, selected, curves, options, comparisons } =
+			scored;
 		const sort = request.sort ?? 'mean';
 		const ordered = comparisons
 			.map((tradeoff, i) => ({ tradeoff, i }))
 			.filter(({ tradeoff }) => !request.paretoOnly || tradeoff.pareto)
 			.sort((a, b) => (a.tradeoff[sort] ?? Infinity) - (b.tradeoff[sort] ?? Infinity) || a.i - b.i)
-			.slice(0, k);
+			.slice(0, k ? k + STABILITY_MARGIN : 0);
+		const evaluated = ordered.flatMap(({ tradeoff, i }) => {
+			const candidate = selected.candidates[i],
+				values = curves[i],
+				score = tradeoff[sort];
+			return candidate && values && score !== null && tradeoff.distances.every((d): d is number => d !== null)
+				? [{ candidate, values, score, distances: tradeoff.distances }]
+				: [];
+		});
+		const stability = rankingStability(
+			evaluated,
+			references.map((r) => ({
+				values: r.values,
+				...(r.consensusCandidate ? { candidate: r.consensusCandidate } : {})
+			})),
+			options,
+			sort
+		);
+		const byCandidate = new Map(evaluated.map((row, i) => [row.candidate, stability[i]]));
 		return {
 			ok: true,
 			partition: partitionId,
@@ -874,16 +1048,21 @@ export class AtlasService {
 			rankWeights: options.weights.slice(),
 			treblePenalty: options.treblePenalty,
 			references: references.map((r) => ({ ...r.info, rankCurve: r.values.slice() })),
-			results: ordered.flatMap(({ tradeoff, i }) => {
+			results: ordered.slice(0, k).flatMap(({ tradeoff, i }) => {
 				const candidate = selected.candidates[i],
 					curve = curves[i];
 				if (!candidate || !curve) return [];
+				const rowStability = byCandidate.get(candidate);
 				const referenceIndex = tradeoff.offsets.findIndex((offset) => offset !== null);
 				const alignedTo = referenceIndex < 0 ? null : referenceIndex;
 				const offsetDb = tradeoff.offsets[referenceIndex] ?? 0;
 				return [
 					{
 						candidate: candidate.info,
+						...(rowStability ? { stability: rowStability } : {}),
+						...(relatedToReference(candidate.info.product, referenceProducts)
+							? { relatedToReference: true as const }
+							: {}),
 						tradeoff,
 						rankCurve: alignedCurve(curve, offsetDb),
 						offsetDb,
@@ -892,11 +1071,14 @@ export class AtlasService {
 				];
 			}),
 			counts: { candidates: comparisons.length, pareto: comparisons.filter((r) => r.pareto).length },
-			caveats: rankingCaveats(
-				index,
-				inputs.map((r) => r.productId),
-				selected.candidates.map((c) => c.info.product.id)
-			)
+			caveats: [
+				...rankingCaveats(
+					index,
+					inputs.map((r) => r.productId),
+					selected.candidates.map((c) => c.info.product.id)
+				),
+				STABILITY_CAVEAT
+			]
 		};
 	}
 	async productDetail(productId: string): Promise<ProductDetail | AtlasError> {
