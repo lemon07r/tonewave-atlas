@@ -51,6 +51,9 @@ test('rating an existing row retains preferences, and duplicate reference labels
 		.element(screen.getByText(/No trade-off ranking: at least one reference has insufficient overlap/))
 		.toBeVisible();
 	expect(screen.container.querySelectorAll('thead th[scope="col"]')).toHaveLength(12);
+	await screen.getByRole('button', { name: 'Dislike', exact: true }).click();
+	expect(onrate).toHaveBeenCalledExactlyOnceWith({ ...existing, rating: 'dislike', strength: 1 });
+	onrate.mockClear();
 	await screen.getByText('More', { exact: false }).click();
 	await screen.getByRole('button', { name: 'Save rating', exact: true }).click();
 	expect(onrate).toHaveBeenCalledExactlyOnceWith(existing);

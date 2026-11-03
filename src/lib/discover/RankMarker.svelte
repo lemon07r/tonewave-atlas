@@ -5,6 +5,7 @@
 
 {#if change === 'new' || (typeof change === 'number' && change !== 0)}<span
 		class="rank-change"
+		role="img"
 		aria-label={change === 'new'
 			? 'New match'
 			: `Moved ${change > 0 ? 'up' : 'down'} ${Math.abs(change)} places`}

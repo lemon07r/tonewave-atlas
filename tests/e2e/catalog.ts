@@ -9,6 +9,10 @@ const catalog = JSON.parse(
 ) as Catalog;
 const defaults = catalog.measurements.filter((measurement) => measurement.variant.kind === 'default');
 
+export function measurementsForProduct(productId: string) {
+	return catalog.measurements.filter((measurement) => measurement.productId === productId);
+}
+
 export function measurementReviewer(measurementId: string): string {
 	const measurement = catalog.measurements.find((entry) => entry.id === measurementId);
 	if (!measurement) throw new Error(`Missing measurement ${measurementId}`);

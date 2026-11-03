@@ -6,6 +6,7 @@ test('renders new, upward and downward movement with accessible descriptions, an
 	const screen = await render(RankMarker, {});
 	expect(screen.container.querySelector('.rank-change')).toBeNull();
 	await screen.rerender({ change: 'new' });
+	await expect.element(screen.getByRole('img', { name: 'New match', exact: true })).toBeVisible();
 	await expect.element(screen.getByText('New', { exact: true })).toHaveAttribute('aria-label', 'New match');
 	await screen.rerender({ change: 3 });
 	await expect.element(screen.getByText('↑3')).toHaveAttribute('aria-label', 'Moved up 3 places');

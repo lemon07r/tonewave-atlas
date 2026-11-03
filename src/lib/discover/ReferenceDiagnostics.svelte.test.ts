@@ -125,3 +125,48 @@ test('a failed default metadata lookup cannot erase explicit or other default di
 	await expect.element(screen.getByText(/Variant metadata could not be loaded/)).toBeVisible();
 	expect(metadata).toHaveBeenCalledWith('iem', 'fixture', 'good', expect.any(AbortSignal));
 });
+
+test('ranking explanation reuses measurement diagnostics and engine exclusions alongside inactive ratings', async () => {
+	service.measurements.mockResolvedValueOnce([measurement]);
+	const base = { rating: 'like' as const, strength: 0.6, soundRelated: true };
+	const screen = await render(ReferenceDiagnostics, {
+		items: [
+			{ ...base, productId: 'used' },
+			{ ...base, productId: 'unrated', rating: 'unrated', strength: 0 },
+			{ ...base, productId: 'neutral', rating: 'neutral', strength: 0 },
+			{ ...base, productId: 'comfort', soundRelated: false },
+			{ ...item, productId: 'p' },
+			{ ...base, productId: 'missing', measurementId: 'missing-measurement' },
+			{ ...base, productId: 'unused' }
+		],
+		form: 'iem',
+		version: 'fixture',
+		partition: 'iem-5128',
+		sources: [],
+		explain: true,
+		products: ['used', 'unrated', 'neutral', 'comfort', 'p', 'missing', 'unused'].map((id) => ({
+			...product,
+			id,
+			model: id,
+			defaultPartitions: ['iem-5128']
+		})),
+		unused: [{ productId: 'unused', measurementId: null, reason: 'insufficient-overlap' }]
+	});
+	await expect.element(screen.getByText('Fixture used: participates · like.', { exact: true })).toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture unrated: excluded · unrated.', { exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture neutral: excluded · neutral.', { exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByText(/Fixture comfort: excluded · comfort-only/)).toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture p: excluded · incompatible rig (B&K 5128).', { exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture missing: excluded · missing measurement.', { exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture unused: excluded · insufficient overlap.', { exact: true }))
+		.toBeVisible();
+});

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { expectTradeoffRows } from './tradeoffs.ts';
-import { measurementReviewer, reviewerForReference } from './catalog.ts';
+import { measurementReviewer, measurementsForProduct, reviewerForReference } from './catalog.ts';
 
 const reference = 'p-437de4e3e3402077cdc3';
 const volume = 'p-9104c8bb39d66e906811';
@@ -342,6 +342,196 @@ test('invalid import and unknown references remain errors without overwriting sa
 	).toBeVisible();
 	await expect(page.locator('.profile-row')).toHaveCount(1);
 	await accessible(page);
+});
+
+test('quick Like moves similar matches to compare, explains deterministic rank changes and supports Undo', async ({
+	page
+}) => {
+	await page.goto(shared([reference]));
+	const rows = page.locator('.result-row');
+	await expect(rows).toHaveCount(20);
+	await settled(page);
+	await expect(page.locator('.rank-change')).toHaveCount(0);
+	const before = await rows.evaluateAll((elements) =>
+		elements.map((element) => element.getAttribute('data-product-id'))
+	);
+	const picked = rows.nth(3);
+	const productId = await picked.getAttribute('data-product-id');
+	const name = (await picked.getByRole('heading').innerText()).replace(/\s+/g, ' ').trim();
+	await picked.getByRole('button', { name: 'Like', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
+	await settled(page);
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await expect(
+		page.getByRole('region', { name, exact: true }).getByRole('radio', { name: 'Like', exact: true })
+	).toBeChecked();
+	await expect(page.locator('.method-sentence')).toHaveText(
+		'Products that balance your 2 liked references (mean/worst-case)'
+	);
+	expect(
+		await rows.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-product-id')))
+	).not.toContain(productId);
+	let added = 0,
+		moved = 0;
+	for (const [index, row] of (await rows.all()).entries()) {
+		const id = await row.getAttribute('data-product-id');
+		const previous = before.indexOf(id);
+		if (previous === -1) {
+			added++;
+			await expect(row.locator('.rank-change')).toHaveText('New');
+		} else if (previous !== index) {
+			moved++;
+			const delta = previous - index;
+			await expect(row.locator('.rank-change')).toHaveText(`${delta > 0 ? '↑' : '↓'}${Math.abs(delta)}`);
+		} else await expect(row.locator('.rank-change')).toHaveCount(0);
+	}
+	expect(added + moved).toBeGreaterThan(0);
+	await expect(page.locator('.update-slot > [role="status"]')).toHaveText(
+		`${added} new matches, ${moved} moved`
+	);
+	await accessible(page);
+	await page.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(page.locator('.profile-row')).toHaveCount(1);
+	await expect(page.getByRole('heading', { name: 'Measured matches', exact: true })).toBeVisible();
+	await settled(page);
+	await expect(
+		page
+			.locator(`.result-row[data-product-id="${productId}"]`)
+			.getByRole('button', { name: 'Like', exact: true })
+	).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('Hexa measurement selection narrows by reviewer, restores exact measurements and retains another-rig selection', async ({
+	page
+}) => {
+	const hexaId = 'p-19d1654fcb150bf1aa2f';
+	await page.goto(shared([hexaId]));
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	const hexa = page.getByRole('region', { name: 'Truthear Hexa', exact: true });
+	await hexa.locator('details > summary').click();
+	const reviewer = hexa.getByRole('combobox', { name: 'Reviewer for Truthear Hexa', exact: true });
+	const measurement = hexa.getByRole('combobox', { name: 'Measurement for Truthear Hexa', exact: true });
+	await expect(reviewer).toHaveValue('');
+	await expect(reviewer.locator('option').first()).toHaveText('Consensus of all reviewers (recommended)');
+	await expect(measurement).toHaveCount(0);
+	const all = measurementsForProduct(hexaId);
+	expect(all.length).toBeGreaterThan(100);
+	const eligible = all.filter((entry) => entry.partition === 'iem-711');
+	const reviewerId = [...new Set(eligible.map((entry) => entry.sourceId))].sort(
+		(a, b) =>
+			eligible.filter((entry) => entry.sourceId === b).length -
+				eligible.filter((entry) => entry.sourceId === a).length || a.localeCompare(b)
+	)[0];
+	const choices = eligible.filter((entry) => entry.sourceId === reviewerId);
+	const selected = choices.find((entry) => entry.variant.kind !== 'default') ?? choices[0];
+	if (!reviewerId || !selected) throw new Error('Hexa needs eligible reviewer measurements.');
+	await expect(reviewer.locator(`option[value="${reviewerId}"]`)).toContainText(
+		`${choices.length} measurements · 711-family coupler`
+	);
+	const href = page.url();
+	await reviewer.selectOption(reviewerId);
+	await expect(page).toHaveURL(href);
+	await expect(measurement.locator('option')).toHaveCount(choices.length + 1);
+	expect(choices.length).toBeLessThan(all.length);
+	await measurement.selectOption(selected.id);
+	await expect(page).toHaveURL(new RegExp(selected.id));
+	await settled(page);
+	await page.reload();
+	await hexa.locator('details > summary').click();
+	await expect(reviewer).toHaveValue(reviewerId);
+	await expect(measurement).toHaveValue(selected.id);
+	await page.locator('.refine > summary').click();
+	await page.getByRole('combobox', { name: 'Measurement rig', exact: true }).selectOption('iem-5128');
+	await expect(page).toHaveURL(/rig=iem-5128/);
+	await settled(page);
+	await expect(measurement).toHaveValue(selected.id);
+	await expect(reviewer.locator(`option[value="${reviewerId}"]`)).toContainText('711-family coupler');
+	await reviewer.selectOption('');
+	await expect(page).not.toHaveURL(new RegExp(selected.id));
+	await expect(measurement).toHaveCount(0);
+	await accessible(page);
+});
+
+test('updating notice never pushes the previous first result, with readable type and accessible targets', async ({
+	page
+}) => {
+	await page.goto(shared([reference]));
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await settled(page);
+	if ((page.viewportSize()?.width ?? 0) === 1440) {
+		const firstTop = await page
+			.locator('.result-row')
+			.first()
+			.evaluate((element) => element.getBoundingClientRect().top);
+		expect(firstTop).toBeLessThan(700);
+	}
+	const minFont = (page.viewportSize()?.width ?? 0) <= 640 ? 14 : 13;
+	const fontSizes = await page
+		.locator(
+			'.reviewers, .distance-note, .chart-note, .result-brand, .rank, .legend-row button, .reference-label, .legend-value, .fr-chart figcaption, .profile-row summary, .workspace-options summary'
+		)
+		.evaluateAll((elements) =>
+			elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+		);
+	expect(Math.min(...fontSizes)).toBeGreaterThanOrEqual(minFont);
+	const targets = await page
+		.locator(
+			'.result-row button, .result-row a, .result-row summary, .profile-row input[type="radio"], .fr-chart button, .fr-chart a, .chart-panel summary, .chart-panel select, .chart-panel input[type="radio"]'
+		)
+		.evaluateAll((elements) =>
+			elements
+				.filter((element) => element.checkVisibility())
+				.map((element) => {
+					const box = element.getBoundingClientRect();
+					return {
+						label:
+							element.textContent?.trim() ||
+							element.getAttribute('aria-label') ||
+							element.getAttribute('value'),
+						width: box.width,
+						height: box.height
+					};
+				})
+		);
+	for (const target of targets) {
+		expect(target.width, `${target.label} width`).toBeGreaterThanOrEqual(24);
+		expect(target.height, `${target.label} height`).toBeGreaterThanOrEqual(24);
+	}
+	await page.locator('.refine > summary').click();
+	await page.evaluate(() => {
+		const first = document.querySelector('.result-row');
+		if (!first) throw new Error('Missing first result');
+		const box = () => {
+			const rect = first.getBoundingClientRect();
+			return { x: rect.x + scrollX, y: rect.y + scrollY, width: rect.width, height: rect.height };
+		};
+		const captured = { before: box(), during: [] as ReturnType<typeof box>[] };
+		Object.assign(window, { updatePositions: captured });
+		const observer = new MutationObserver(() => {
+			if (document.querySelector('.updating')) captured.during.push(box());
+			else if (captured.during.length) observer.disconnect();
+		});
+		observer.observe(document.querySelector('.results') ?? document.body, { childList: true, subtree: true });
+	});
+	await page.getByRole('radio', { name: 'Bass', exact: true }).check();
+	await expect(page).toHaveURL(/focus=bass/);
+	await settled(page);
+	const positions = await page.evaluate(
+		() =>
+			(
+				window as unknown as {
+					updatePositions: {
+						before: { x: number; y: number; width: number; height: number };
+						during: { x: number; y: number; width: number; height: number }[];
+					};
+				}
+			).updatePositions
+	);
+	expect(positions.during.length).toBeGreaterThan(0);
+	for (const box of positions.during)
+		for (const dimension of ['x', 'y', 'width', 'height'] as const)
+			expect(box[dimension]).toBeCloseTo(positions.before[dimension], 1);
+	await expect(page.locator('.rank-change')).toHaveCount(0);
 });
 
 test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {

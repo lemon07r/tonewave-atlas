@@ -10,6 +10,10 @@ test('quick Like adds immediately, Dislike updates, toggling clears, and Undo re
 	await like.click();
 	await expect.element(like).toHaveAttribute('aria-pressed', 'true');
 	await expect.element(screen.getByTestId('workspace-count')).toHaveTextContent('1');
+	await screen.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect.element(screen.getByTestId('workspace-count')).toHaveTextContent('0');
+	await expect.element(like).toHaveAttribute('aria-pressed', 'false');
+	await like.click();
 	await dislike.click();
 	await expect.element(dislike).toHaveAttribute('aria-pressed', 'true');
 	await expect.element(like).toHaveAttribute('aria-pressed', 'false');

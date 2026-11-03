@@ -106,7 +106,7 @@
 	}
 </script>
 
-<li class="result-row">
+<li class="result-row" data-product-id={candidate.product.id}>
 	<div class="row-heading">
 		<span class="rank mono">{rank.toString().padStart(2, '0')}<RankMarker change={rankChange} /></span>
 		<h3>
