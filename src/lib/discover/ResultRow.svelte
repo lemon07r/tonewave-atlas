@@ -5,6 +5,7 @@
 	import type { BandDistance } from '#core/analysis/distance.ts';
 	import type { TasteFit } from '#core/analysis/taste.ts';
 	import type { MultiReferenceResult } from '#core/analysis/multi-reference.ts';
+	import { relatedToReference as isRelatedToReference } from '#core/atlas/ranking.ts';
 	import { dbLabel } from '#lib/chart.ts';
 	import { bandLabels, describeBands, distanceExtremes, priceLines, reviewerSummary } from './describe.ts';
 	import { reasonLabels, strength } from '#lib/profile/profile.ts';
@@ -23,6 +24,7 @@
 		stability,
 		relatedToReference = false,
 		referenceReviewers,
+		referenceProducts = [],
 		distance,
 		bands,
 		match,
@@ -46,6 +48,7 @@
 		stability?: RankStability | undefined;
 		relatedToReference?: boolean | undefined;
 		referenceReviewers?: { name: string; count: number; explicit: boolean }[];
+		referenceProducts?: CandidateInfo['product'][];
 		distance: number;
 		bands: BandDistance[];
 		match?: SimilarMatch;
@@ -64,6 +67,11 @@
 	} = $props();
 	const id = $props.id();
 	let productName = $derived(`${candidate.product.brand} ${candidate.product.model}`);
+	let relatedReferenceName = $derived.by(() => {
+		if (candidate.product.baseProductId) return nameFor(candidate.product.baseProductId);
+		const reference = referenceProducts.find((product) => isRelatedToReference(candidate.product, [product]));
+		return reference ? `${reference.brand} ${reference.model}` : 'a reference';
+	});
 	let ratingOpen = $state(false);
 	let open = $state<boolean>(false);
 	// Worker responses replace candidate objects even for chart-only updates. Only a new
@@ -146,9 +154,7 @@
 					? 'Rank holds if one reviewer is left out'
 					: `Rank ${stability.rankRange[0]}–${stability.rankRange[1]} if one reviewer is left out`}
 			</span>{/if}
-		{#if relatedToReference}<span class="related-reference">
-				· Variant of {nameFor(candidate.product.baseProductId ?? referenceProductId ?? '')}</span
-			>{/if}
+		{#if relatedToReference}<span class="related-reference"> · Variant of {relatedReferenceName}</span>{/if}
 	</p>
 	{#if tradeoff}<!-- svelte-ignore a11y_no_noninteractive_tabindex (Overflowing tables need keyboard scrolling.) -->
 		<div class="tradeoff table-scroll" tabindex="0" role="region" aria-label="Reference distance table">

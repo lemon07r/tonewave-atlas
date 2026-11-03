@@ -186,6 +186,20 @@
 				resultItems.some((item) => item.productId === reference.productId && Boolean(item.measurementId))
 		}));
 	});
+	let referenceProducts = $derived.by(() => {
+		const ids =
+			result?.kind === 'similar'
+				? [result.data.reference.productId]
+				: result?.kind === 'compare'
+					? result.data.references.map((reference) => reference.productId)
+					: resultItems
+							.filter((item) => item.soundRelated && ['like', 'love'].includes(item.rating))
+							.map((item) => item.productId);
+		return ids.flatMap((id) => {
+			const product = id ? productFor(products, id, identity) : undefined;
+			return product ? [{ id: product.id, brand: product.brand, model: product.model, form }] : [];
+		});
+	});
 	let compareReferences = $derived(
 		resultItems
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
@@ -1061,6 +1075,7 @@
 									stability={match.stability}
 									relatedToReference={match.relatedToReference}
 									{referenceReviewers}
+									{referenceProducts}
 									{nameFor}
 									referenceProductId={similarReferenceId}
 									selected={overlays.includes(match.candidate.id)}
@@ -1080,6 +1095,7 @@
 									fit={row.fit}
 									relatedToReference={row.relatedToReference}
 									nearestLiked={nearestLikedEvidence(result.data, row)}
+									{referenceProducts}
 									{nameFor}
 									referenceProductId={resultItems.find(
 										(i) => (i.measurementId ?? i.productId) === row.nearestLiked?.id
@@ -1107,6 +1123,7 @@
 									{referenceReviewers}
 									{nameFor}
 									{referenceNames}
+									{referenceProducts}
 									referenceProductId={resultItems.find(
 										(i) => i.soundRelated && ['like', 'love'].includes(i.rating)
 									)?.productId ?? ''}

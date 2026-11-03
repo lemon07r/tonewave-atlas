@@ -58,6 +58,41 @@ test('reviewer line shows assessed rank sensitivity and a related-reference labe
 		.toBeVisible();
 });
 
+test.each([false, true])(
+	'legacy variant labels match their base reference with reversed order = %s',
+	async (reversed) => {
+		const references: CandidateInfo['product'][] = [
+			{ id: 'a', brand: 'Fixture', model: 'A', form: 'iem' },
+			{ id: 'b', brand: 'Fixture', model: 'B', form: 'iem' }
+		];
+		if (reversed) references.reverse();
+		const screen = await render(ResultRow, {
+			candidate: {
+				id: 'modified-b',
+				product: { id: 'modified-b', brand: 'Fixture', model: 'B [modified: prototype]', form: 'iem' },
+				kind: 'default',
+				variantLabel: null,
+				measurementIds: [],
+				sources: [],
+				prices: [],
+				priceUsd: null
+			},
+			rank: 1,
+			distance: 1,
+			bands: [],
+			onshow: vi.fn(),
+			relatedToReference: true,
+			referenceProductId: references[0]?.id ?? '',
+			referenceProducts: references,
+			nameFor: (id: string) => `Fixture ${id.toUpperCase()}`
+		});
+		await expect.element(screen.getByText('· Variant of Fixture B', { exact: true })).toBeVisible();
+		await expect.element(screen.getByText('· Variant of Fixture A', { exact: true })).not.toBeInTheDocument();
+		await screen.rerender({ referenceProducts: [{ id: 'a', brand: 'Fixture', model: 'A', form: 'iem' }] });
+		await expect.element(screen.getByText('· Variant of a reference', { exact: true })).toBeVisible();
+	}
+);
+
 test('rating an existing row retains preferences, and duplicate reference labels render independently', async () => {
 	const candidate: CandidateInfo = {
 		id: 'c',

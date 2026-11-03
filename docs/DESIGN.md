@@ -106,6 +106,8 @@ up to ten more, not a probability or a claim about audibility. Sides with fewer 
 reviewers are unassessed; expanded evidence explains missing assessment, and the method disclosure
 explains the evaluated pool and excludes unit variation and perceptual claims. Included related
 mods/prototypes have a quiet “Variant of [reference]” text label.
+Legacy products without a base-product ID use the engine's brand/model relationship rule to name
+the matching reference, independent of reference order; unresolved names say “Variant of a reference”.
 The reviewer count describes contributors to the candidate consensus. If the per-reviewer distance
 range covers fewer of those reviewers, the line explicitly says “across N of them”; it does not imply
 that every contributing reviewer has sufficient overlap with the reference.
