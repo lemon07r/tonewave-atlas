@@ -983,7 +983,7 @@
 							</p>{/if}</Notice
 					>{/if}
 				{#if networkError}<Notice kind="caution"
-						>{networkError}
+						><span>{networkError}</span>
 						<button
 							type="button"
 							class="button quiet"

@@ -179,7 +179,7 @@ test('Discover clears source filters on rig changes and keeps taste corrections 
 	await expect(page).toHaveURL(/sources=/);
 	await page.getByRole('combobox', { name: 'Measurement rig', exact: true }).selectOption('iem-5128');
 	await expect(page).not.toHaveURL(/sources=/);
-	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
+	await expect(page.locator('.method-sentence')).toContainText('B&K 5128');
 	// Legacy taste URLs still restore the same explicit reference as a saved Like.
 	await page.goto(
 		`/?mode=profile&ratings=${encodeURIComponent(JSON.stringify([{ productId: vulkan, rating: 'like', strength: 0.6, soundRelated: true }]))}&rig=iem-711`

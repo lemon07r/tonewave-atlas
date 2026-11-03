@@ -32,7 +32,10 @@ for (const scenario of [
 				/Catalog unavailable:|Dataset request failed|Analysis unavailable|Could not load measurement sources/
 			)
 		).toHaveCount(0);
-		await page.getByRole('link', { name: 'Method', exact: true }).first().click();
+		const navigation = page.getByRole('button', { name: 'Open navigation', exact: true });
+		if (await navigation.isVisible()) await navigation.click();
+		await page.getByRole('link', { name: 'Method', exact: true }).click();
+		await expect(page).toHaveURL(/\/method$/);
 		await expect(notice).toBeVisible();
 		expect(manifests).toBeGreaterThanOrEqual(2);
 	});
