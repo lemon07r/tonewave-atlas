@@ -599,6 +599,56 @@ test('failed analysis worker initialization leaves a retryable catalog error, no
 	await expect(page.getByRole('button', { name: 'Retry catalog', exact: true })).toHaveCount(0);
 });
 
+test('Back and Forward keep URL taste corrections authoritative; only explicit model switches restore drafts', async ({
+	page
+}) => {
+	const params = new URLSearchParams({
+		ratings: JSON.stringify([like(reference), like(volume)]),
+		rig: 'iem-711',
+		view: 'taste',
+		edits: JSON.stringify([{ tasteId: 0, bands: { bass: 1 } }])
+	});
+	await page.goto(`/?${params}`);
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await page.locator('.refine > summary').click();
+	await page.getByText('Adjust derived taste centres', { exact: true }).click();
+	const bass = page.getByRole('spinbutton', { name: 'Taste 1 bass, numeric value', exact: true });
+	await expect(bass).toHaveValue('1');
+	await bass.fill('1.5');
+	await bass.press('Tab');
+	await expect
+		.poll(() => new URL(page.url()).searchParams.get('edits'))
+		.toBe(JSON.stringify([{ tasteId: 0, bands: { bass: 1.5 } }]));
+	const earlier = page.url();
+	params.set('edits', JSON.stringify([{ tasteId: 0, bands: { bass: 0.5 } }]));
+	// A normal same-route link adds a SvelteKit history entry without replacing the component.
+	await page.evaluate((href) => {
+		const link = document.createElement('a');
+		link.href = href;
+		link.textContent = 'Earlier correction';
+		document.body.append(link);
+		link.click();
+		link.remove();
+	}, `/?${params}`);
+	await expect(bass).toHaveValue('0.5');
+	const later = page.url();
+	await page.goBack();
+	await expect(page).toHaveURL(earlier);
+	await expect(bass).toHaveValue('1.5');
+	await page.goForward();
+	await expect(page).toHaveURL(later);
+	await expect(bass).toHaveValue('0.5');
+	const rig = page.getByRole('combobox', { name: 'Measurement rig', exact: true });
+	await rig.selectOption('iem-5128');
+	await expect(page).not.toHaveURL(/edits=/);
+	await settled(page);
+	await rig.selectOption('iem-711');
+	await expect(bass).toHaveValue('0.5');
+	await expect
+		.poll(() => new URL(page.url()).searchParams.get('edits'))
+		.toBe(JSON.stringify([{ tasteId: 0, bands: { bass: 0.5 } }]));
+});
+
 test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {
 	await page.goto(shared([reference]));
 	await expect(page.locator('.result-row')).toHaveCount(20);

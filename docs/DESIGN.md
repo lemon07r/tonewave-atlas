@@ -84,7 +84,9 @@ with an updating notice in a reserved-height slot, so existing results do not mo
 reject older successes and errors. Charting a match or other view-only URL changes redraw without
 re-ranking. Show more increases the engine topK beyond 20.
 Source-only mode requires at least one reviewer; emptying the selection resets coverage atomically.
-Changing rig or reviewers clears serialised corrections for the previous model. Pending results keep
+URL corrections remain authoritative, including Back/Forward. Explicit rig, reviewer or reference
+switches save outgoing corrections and restore a draft only when returning to that same model;
+models without a draft start without corrections. Pending results keep
 the references and sort of their response until the replacement arrives.
 
 Each results heading has a route-specific method sentence and one concise rig/distance/reviewer

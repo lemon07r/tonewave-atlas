@@ -79,7 +79,7 @@
 	let identityReady = $state(false);
 	let migratedHref = $state('');
 	let catalogError = $state('');
-	let retryCatalog = () => {};
+	let retryCatalog = $state(() => {});
 	let queryAttempt = $state(0);
 	let ready = $state(false);
 	let query = $state('');
@@ -182,17 +182,22 @@
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
 			.map(({ productId, measurementId }) => ({ productId, ...(measurementId ? { measurementId } : {}) }))
 	);
-	let modelKey = $derived(
-		JSON.stringify({
+	function keyFor(state: QuerySpec['state'], modelItems: WorkspaceItem[]) {
+		return JSON.stringify({
 			form,
-			rig: settings.rig,
-			sources: settings.sources,
-			sourceMode: settings.sourceMode,
-			items
-		})
-	);
-	let scopedEdits = $state<Record<string, NonNullable<QuerySpec['state']['corrections']>>>({});
-	let corrections = $derived(scopedEdits[modelKey] ?? settings.corrections);
+			rig: state.rig,
+			sources: state.sources,
+			sourceMode: state.sourceMode,
+			items: modelItems
+		});
+	}
+	let modelKey = $derived(keyFor(settings, items));
+	const scopedEdits: Record<string, QuerySpec['state']['corrections']> = {};
+	// Shared links and browser history are authoritative, never overwritten by a cached draft.
+	let corrections = $derived(settings.corrections);
+	function currentModel() {
+		return { key: modelKey, edits: corrections };
+	}
 	let queryKey = $derived(
 		JSON.stringify({
 			state: { ...settings, overlays: [], corrections },
@@ -253,7 +258,16 @@
 		migrationNote = [];
 		undoMessage = 'Pre-migration profile restored for this session.';
 	}
-	function navigate(params: URLSearchParams, replace = true) {
+	function navigate(params: URLSearchParams, replace = true, from = currentModel()) {
+		const nextState = parseDiscovery(params);
+		const nextKey = keyFor(nextState, nextState.items ?? profile.profiles[form]);
+		// Only an explicit workspace action can restore a model-scoped draft. Back/Forward never calls here.
+		if (nextKey !== from.key) {
+			scopedEdits[from.key] = from.edits;
+			const restored = scopedEdits[nextKey];
+			if (restored?.length) params.set('edits', JSON.stringify(restored));
+			else params.delete('edits');
+		}
 		locationVersion++;
 		void goto(resolve(`/?${params}` as PathnameWithSearchOrHash), { reset: false, replace });
 	}
@@ -265,12 +279,13 @@
 	}
 	function updateItems(next: WorkspaceItem[], message = 'Workspace updated.') {
 		if (!store) return;
+		const from = currentModel();
 		const before = { ...profile, profiles: { ...profile.profiles, [form]: items } };
 		store.change({ ...profile, profiles: { ...profile.profiles, [form]: next } }, before);
 		profile = store.value;
 		storageError = store.error;
 		undoMessage = message;
-		navigate(withItems(page.url.searchParams, next));
+		navigate(withItems(page.url.searchParams, next), true, from);
 	}
 	function choose(product: ProductListItem) {
 		if (items.length >= PROFILE_LIMIT) {
@@ -305,7 +320,6 @@
 			tasteId,
 			bands: { ...corrections.find((edit) => edit.tasteId === tasteId)?.bands, [band]: value }
 		});
-		scopedEdits = { ...scopedEdits, [modelKey]: next };
 		change({ edits: JSON.stringify(next) });
 	}
 	function exportProfile() {
@@ -341,11 +355,12 @@
 					url: `/?${withItems(page.url.searchParams, parsed.profiles[form])}`
 				});
 			// Ordinary Undo restores the visible workspace, which may come from a shared URL.
+			const from = currentModel();
 			store.change(next, { ...profile, profiles: { ...profile.profiles, [form]: items } });
 			profile = store.value;
 			storageError = store.error;
 			undoMessage = 'Profile imported.';
-			navigate(withItems(page.url.searchParams, next.profiles[form]));
+			navigate(withItems(page.url.searchParams, next.profiles[form]), true, from);
 			profileError = '';
 		} catch (cause) {
 			const message = errorText(cause);
@@ -474,13 +489,6 @@
 		return () => {
 			abort.abort();
 		};
-	});
-	$effect(() => {
-		const cached = scopedEdits[modelKey];
-		if (cached && JSON.stringify(cached) !== JSON.stringify(settings.corrections))
-			untrack(() => {
-				change({ edits: JSON.stringify(cached) });
-			});
 	});
 	// View-only URL changes such as charted products keep the approved query; only a changed,
 	// migrated query re-ranks.
@@ -1098,10 +1106,11 @@
 	message={undoMessage}
 	onundo={() => {
 		if (!store) return;
+		const from = currentModel();
 		store.undo();
 		profile = store.value;
 		storageError = store.error;
-		navigate(withItems(page.url.searchParams, profile.profiles[form]));
+		navigate(withItems(page.url.searchParams, profile.profiles[form]), true, from);
 		undoMessage = '';
 	}}
 	ondismiss={() => {
