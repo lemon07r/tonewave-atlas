@@ -364,14 +364,26 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `bd5618f51ff28af2d3f6d189`: **9,610 products / 40,802 measurements / 138 databases / 118 publishers**.
+Build `60e816fc2db9ba2291ea4ece`: **9,507 products / 40,802 measurements / 138 databases / 118 publishers**
+(7,801 IEM products / 33,488 measurements; 1,706 headphone products / 7,314 measurements).
 Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
 24 target/calibration/delta/sandbox and two population averages; these are candidates, not counts of
 previously published removals. **86 unresolved state
-groups** now have one source-order default each; **zero duplicate source defaults** remain. Against
-published `47e17d0fbadf1919b2caade0`, catalogs resolve **four retired product / three retired measurement IDs**;
-the three quarantined products' **19 measurements** have no redirect. Complete inherited maps contain
-**626 product / 890 measurement redirects**. LOCO reports
+groups** have one source-order default each; **zero duplicate source defaults** remain. The **65 existing
+selected-switch-state source exceptions** remain; every folded sample source/partition has exactly one
+default, and all 10,967 measured product/partitions have a default and an engine candidate in both raw
+and harmonised indexes across 53 partitions.
+
+Against published `bd5618f51ff28af2d3f6d189`, **93 IEM / 24 headphone sample identities retire**,
+creating eight IEM / six headphone bases where only samples existed: net reductions **85 / 18**.
+All **117 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
+redirects are needed. Complete inherited maps contain **743 product / 890 measurement redirects**, with
+zero invalid targets or lost historical redirects. No accepted raw file, channel or rank curve was
+added, removed or changed: **40,802 rank / 80,342 channel curves** remain byte-equivalent after decoding,
+and no measurement changed rig partition. Eleven mixed/unnamed sample descriptors remain outside the
+exact sample identity rules. The manifest publishes all 138 source counts and 53 partition counts,
+verified against both catalogs; its gzip size is **25,552 bytes**, versus **23,900** before the change.
+LOCO reports
 **37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.
