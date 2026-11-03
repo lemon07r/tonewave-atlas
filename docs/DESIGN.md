@@ -104,7 +104,9 @@ Similar and trade-off rows add leave-one-reviewer-out rank ranges to the reviewe
 or “Rank holds” for an assessed unchanged rank. This is sensitivity among the returned matches plus
 up to ten more, not a probability or a claim about audibility. Sides with fewer than three contributing
 reviewers are unassessed; expanded evidence explains missing assessment, and the method disclosure
-explains the evaluated pool and excludes unit variation and perceptual claims. Included related
+explains the evaluated pool and excludes unit variation and perceptual claims.
+Reference-side assessment is tracked independently for each reference: three or more reviewers do
+not imply assessment if every omitted-reviewer comparison lacks sufficient overlap. Included related
 mods/prototypes have a quiet “Variant of [reference]” text label.
 Legacy products without a base-product ID use the engine's brand/model relationship rule to name
 the matching reference, independent of reference order; unresolved names say “Variant of a reference”.

@@ -276,7 +276,9 @@
 						: "This product's own reviewer variation isn't assessed for this measurement selection."}
 				</p>{/if}
 			{#each referenceReviewers as reference, index (index)}
-				{#if reference.count < 3 || reference.explicit || !stability?.referenceSide}<p class="stability-note">
+				{#if reference.count < 3 || reference.explicit || !(stability?.referenceSides?.[index] ?? stability?.referenceSide)}<p
+						class="stability-note"
+					>
 						{reference.explicit
 							? `${reference.name} uses an exact measurement, so its reference-side reviewer variation isn't assessed.`
 							: reference.count < 3

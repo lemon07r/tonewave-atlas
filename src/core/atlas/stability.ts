@@ -59,6 +59,7 @@ export function rankingStability(
 			hi = row.score;
 		let referenceSide = false,
 			candidateSide = false;
+		const referenceSides = references.map(() => false);
 		const include = (score: number) => {
 			lo = Math.min(lo, score);
 			hi = Math.max(hi, score);
@@ -68,6 +69,7 @@ export function rankingStability(
 				const d = distanceSummary(row.values, curve, options);
 				if (d && Number.isFinite(d.distance)) {
 					referenceSide = true;
+					referenceSides[i] = true;
 					include(combine(row.distances.map((value, j) => (i === j ? d.distance : value))));
 				}
 			}
@@ -79,9 +81,9 @@ export function rankingStability(
 				include(combine(distances));
 			}
 		}
-		return { lo, hi, referenceSide, candidateSide };
+		return { lo, hi, referenceSide, referenceSides, candidateSide };
 	});
-	return intervals.map(({ lo, hi, referenceSide, candidateSide }) =>
+	return intervals.map(({ lo, hi, referenceSide, referenceSides, candidateSide }) =>
 		referenceSide || candidateSide
 			? {
 					scoreRange: [lo, hi],
@@ -90,6 +92,7 @@ export function rankingStability(
 						intervals.filter((other) => other.lo <= hi).length
 					],
 					referenceSide,
+					referenceSides,
 					candidateSide
 				}
 			: undefined

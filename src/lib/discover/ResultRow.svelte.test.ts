@@ -58,6 +58,49 @@ test('reviewer line shows assessed rank sensitivity and a related-reference labe
 		.toBeVisible();
 });
 
+test('expanded evidence identifies each unassessed reference even when another reference is assessed', async () => {
+	const references = [
+		{ name: 'Fixture A', count: 3, explicit: false },
+		{ name: 'Fixture B', count: 3, explicit: false }
+	];
+	const stability = {
+		scoreRange: [1, 1] as [number, number],
+		rankRange: [1, 1] as [number, number],
+		referenceSide: true,
+		referenceSides: [true, false],
+		candidateSide: false
+	};
+	const screen = await render(ResultRow, {
+		candidate: {
+			id: 'c',
+			product: { id: 'p', brand: 'Fixture', model: 'Candidate', form: 'iem' },
+			kind: 'default',
+			variantLabel: null,
+			measurementIds: [],
+			sources: [],
+			prices: [],
+			priceUsd: null
+		},
+		rank: 1,
+		distance: 1,
+		bands: [],
+		onshow: vi.fn(),
+		referenceReviewers: references,
+		stability
+	});
+	await screen.getByText('Measured differences & sources', { exact: true }).click();
+	const missing = "Fixture B: reference-side reviewer variation isn't assessed for this comparison.";
+	const assessed = "Fixture A: reference-side reviewer variation isn't assessed for this comparison.";
+	await expect.element(screen.getByText(missing, { exact: true })).toBeVisible();
+	await expect.element(screen.getByText(assessed, { exact: true })).not.toBeInTheDocument();
+	await screen.rerender({
+		referenceReviewers: [...references].reverse(),
+		stability: { ...stability, referenceSides: [false, true] }
+	});
+	await expect.element(screen.getByText(missing, { exact: true })).toBeVisible();
+	await expect.element(screen.getByText(assessed, { exact: true })).not.toBeInTheDocument();
+});
+
 test.each([false, true])(
 	'legacy variant labels match their base reference with reversed order = %s',
 	async (reversed) => {
