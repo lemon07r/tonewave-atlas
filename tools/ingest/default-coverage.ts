@@ -2,6 +2,7 @@ import type { Measurement, Product } from '#core/dataset/types.ts';
 import type { Phone } from './common.ts';
 import { defaultVariantIndex, withoutAttribution } from './transform.ts';
 import { labelledState } from './switches.ts';
+import { isFoldedSample } from './samples.ts';
 
 interface Row {
 	measurement: Measurement;
@@ -183,8 +184,11 @@ export function finaliseDefaults(
 		// Prefer the selected labelled state; otherwise preserve this source's original file order.
 		for (const [source, ms] of g.sources) {
 			const defaults = ms.filter((m) => m.variant.kind === 'default');
-			const matches = g.preferred ? ms.filter((m) => g.state(m) === g.preferred) : [];
 			if (defaults.length < 2) continue;
+			const hasBaseDefault = defaults.some((m) => !isFoldedSample(m));
+			const matches = g.preferred
+				? ms.filter((m) => g.state(m) === g.preferred && (!hasBaseDefault || !isFoldedSample(m)))
+				: [];
 			const selected = matches.length
 				? (matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches))
 				: [...defaults].sort(

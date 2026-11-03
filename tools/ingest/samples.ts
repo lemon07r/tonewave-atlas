@@ -1,6 +1,13 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import { identity, normalise, withoutAttribution } from './transform.ts';
 
+const sampleIdentityPrefix = 'recognized sample/unit identity: ';
+
+/** Retained provenance distinguishes folded units from the source's existing base defaults. */
+export function isFoldedSample(measurement: Measurement): boolean {
+	return measurement.provenance.processing.some((step) => step.startsWith(sampleIdentityPrefix));
+}
+
 /** Only explicit unit markers: bare S8/S12 and generation/model tokens are not evidence. */
 export function sampleIdentity(model: string): { parent: string; label: string } | null {
 	const labels: string[] = [];
@@ -47,7 +54,7 @@ export function mergeSampleIdentities(
 			parent = {
 				id: target.id,
 				brand: target.brand,
-				model: sample.parent,
+				model: target.model,
 				form: p.form,
 				measurementIds: []
 			};
@@ -65,7 +72,7 @@ export function mergeSampleIdentities(
 			m.variant.kind = 'unit';
 			m.variant.isDefault = false;
 			m.provenance.processing.push(
-				`recognized sample/unit identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${sample.label}; previous kind ${previous}; original file and label retained`
+				`${sampleIdentityPrefix}${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${sample.label}; previous kind ${previous}; original file and label retained`
 			);
 			parent.measurementIds.push(m.id);
 		}

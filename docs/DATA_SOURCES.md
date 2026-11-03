@@ -215,7 +215,8 @@ unlabelled default is demoted; an empty non-default label stops publication.
 In both catalogs, a trailing `Sample N`/`Unit N` (including zero-padded numbers and `Sample1`),
 or an exact parenthesized `(sample N)`/`(unit N)`/`(SN)`, identifies a review unit, not a product.
 The marker is removed from the maker/model identity. Sample-only products create the same base identity
-even when no unsuffixed entry exists; an empty remaining model is not invented. Bare model tokens such
+even when no unsuffixed entry exists; reviewed aliases supply a new base's canonical model name,
+while unaliased source spelling is retained. An empty remaining model is not invented. Bare model tokens such
 as Moondrop S8, Letshuoer S12, Simgot EA500 S and B&W Px8 S2 do not match this identity rule.
 Mixed, uninterpreted descriptors such as `Sample 3L + 4R` or `(sample 02 golden)` remain separate.
 An explicit sample/unit number immediately before a modification marker is also removed, but the mod,
@@ -224,7 +225,9 @@ DIY, prototype or reshell descriptor stays in the identity: a modded sample neve
 Folding happens after curve acceptance, without shape deduplication: original measurement IDs, files,
 URLs and curve values survive. Folded measurements start as `unit`, with sample and tip/fit labels
 preserved from the original file, suffix and model marker, plus the identity move and previous kind
-in processing provenance. An existing base default from the same source/partition wins. A sample-only
+in processing provenance. An existing base default from the same source/partition wins, including when
+only a folded sample matches the preferred switch state: reconciliation preserves that base default,
+and final coverage cannot select the sample over existing base defaults. A sample-only
 source/partition receives one default under final coverage, preferring the lowest sample number
 (explicit sample/unit numbers before parenthesized shorthand, never an S8 model token). Its label and
 previous `unit` kind remain recorded; default does not mean verified stock. Retired product IDs redirect

@@ -5,11 +5,13 @@ import { modification } from './quality.ts';
 import { buildRedirects } from './redirects.ts';
 import { mergeSampleIdentities, sampleIdentity } from './samples.ts';
 import { identity } from './transform.ts';
+import { readInputs } from './common.ts';
+import { reconcileSwitchDefaults } from './switches.ts';
 
-function fixture(models: string[], form: Form = 'iem') {
+function fixture(models: string[], form: Form = 'iem', brand = 'Maker') {
 	const products = new Map<string, Product>();
 	const rows = models.map((model, i) => {
-		const product = identity('Maker', model, form, {});
+		const product = identity(brand, model, form, {});
 		const id = `m-${i}`;
 		products.set(product.id, { ...product, form, measurementIds: [id] });
 		const measurement: Measurement = {
@@ -19,7 +21,7 @@ function fixture(models: string[], form: Form = 'iem') {
 			partition: `${form}-5128`,
 			variant: {
 				id: `v-${i}`,
-				file: `Maker ${model} (standard bore tips)`,
+				file: `${brand} ${model} (standard bore tips)`,
 				label: '',
 				kind: 'default',
 				isDefault: true
@@ -144,6 +146,49 @@ describe('sample/unit product identities', () => {
 			'default coverage: deterministic coverage fallback; previous kind unit; original label retained'
 		);
 	});
+	it('uses the reviewed canonical model name for an aliased sample-only base', async () => {
+		const { productAliases } = await readInputs();
+		const { products, rows } = fixture(['Aria II Sample 2'], 'iem', 'MOONDROP');
+		mergeSampleIdentities(products, rows, {}, productAliases);
+		expect([...products.values()].map((p) => ({ id: p.id, model: p.model }))).toEqual([
+			{ id: identity('MOONDROP', 'Aria 2', 'iem', {}).id, model: 'Aria 2' }
+		]);
+		expect(rows[0]?.measurement.variant.label).toContain('Aria II Sample 2');
+	});
+	it.each([1, 2])(
+		'never replaces %i existing base default(s) with a folded sample in the preferred switch state',
+		(baseDefaults) => {
+			const { products, rows } = fixture(['Model', 'Model Sample 2']);
+			const base = rows[0];
+			const sample = rows[1];
+			if (!base || !sample) throw new Error('Missing switch fixtures');
+			base.measurement.variant.file = 'Maker Model DD';
+			sample.measurement.variant.file = 'Maker Model Sample 2 DU';
+			if (baseDefaults === 2) {
+				const second = structuredClone(base);
+				second.measurement.id = 'second-base';
+				second.measurement.variant.file = 'Maker Model UU';
+				second.sourceOrder = 2;
+				rows.push(second);
+			}
+			for (const source of ['other-a', 'other-b']) {
+				const vote = structuredClone(base);
+				vote.measurement.id = source;
+				vote.measurement.sourceId = source;
+				vote.measurement.variant.file = 'Maker Model DU';
+				rows.push(vote);
+			}
+			mergeSampleIdentities(products, rows);
+			const { decisions } = reconcileSwitchDefaults(products, rows);
+			expect(decisions[0]?.preferred).toBe('switch:du:du');
+			finaliseDefaults(products, rows, decisions);
+			expect(sample.measurement.variant).toMatchObject({ kind: 'unit', isDefault: false });
+			expect(base.measurement.variant).toMatchObject({ kind: 'default', isDefault: true });
+			expect(
+				rows.filter((r) => r.measurement.sourceId === 'source' && r.measurement.variant.isDefault)
+			).toEqual([base]);
+		}
+	);
 	it('gives a sample-only source coverage even when another source supplies a selected switch state', () => {
 		const { products, rows } = fixture(['Model', 'Model Sample 3', 'Model Sample 2']);
 		const base = rows[0]?.measurement;
