@@ -13,6 +13,8 @@ import { HttpCache } from './cache.ts';
 import { datasetVersion, DIRECTORY_URL, phoneBook, ROOT, sha256 } from './common.ts';
 import { identity, variant } from './transform.ts';
 import { modification } from './quality.ts';
+import type { identityAudit } from './identity-audit.ts';
+import type { ProductFlagReport } from './product-flags.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -84,6 +86,8 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		identityAudit: ReturnType<typeof identityAudit>;
+		productFlags: ProductFlagReport;
 		fitIdentity: { moves: { before: string; parent: string; label: string }[] };
 		switchIdentity: { moves: { kind: string; before: string; parent: string }[] };
 		switchDefaults: {
@@ -115,6 +119,209 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it.each(['config', 'calibration', 'curves', 'maker'])(
+		'does not recover a maker from rejected %s evidence',
+		async (missing) => {
+			const other = 'https://other.squig.link/';
+			const bodies: [string, string][] = [
+				[
+					DIRECTORY_URL,
+					JSON.stringify(
+						['reviewer', 'other'].map((username) => ({
+							username,
+							name: username,
+							urlType: 'subdomain',
+							dbs: [{ type: 'IEMs', folder: '/' }]
+						}))
+					)
+				],
+				[
+					bookUrl,
+					JSON.stringify([
+						{ name: 'Unbranded (reviewer)', phones: [{ name: 'Maker Reference', file: 'unbranded' }] }
+					])
+				],
+				[`${base}data/unbranded%20L.txt`, curve(80)],
+				[
+					`${other}data/phone_book.json`,
+					JSON.stringify([
+						{
+							name: 'Maker',
+							phones: [{ name: missing === 'maker' ? 'Harman Target' : 'Reference', file: 'maker' }]
+						},
+						{ name: 'Witness', phones: [{ name: 'Reference', file: 'witness' }] }
+					])
+				]
+			];
+			if (missing !== 'config')
+				bodies.push([
+					`${other}config.js`,
+					missing === 'calibration' ? config : 'const DIR = "data/", rig_description = "B&K 5128";'
+				]);
+			if (missing !== 'curves')
+				bodies.push([`${other}data/maker%20L.txt`, curve(80)], [`${other}data/witness%20L.txt`, curve(80)]);
+			const { paths } = await fixture('const DIR = "data/", rig_description = "B&K 5128";', bodies);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+			await build(paths);
+			const { catalog } = await result(paths);
+			expect(catalog.products).toContainEqual(
+				expect.objectContaining({ brand: 'Unbranded (reviewer)', model: 'Maker Reference' })
+			);
+		}
+	);
+	it('marks modified products and links the CanJam prototype to stock without changing identities', async () => {
+		const entries = [
+			{
+				name: 'CrinEar',
+				phones: [
+					{ name: 'Reference', file: 'reference' },
+					{ name: 'Reference [modified: (version: CanJam NYC 2025 prototype)]', file: 'canjam' }
+				]
+			},
+			{
+				name: 'BLON',
+				phones: [
+					{ name: 'BL03', file: 'bl03' },
+					{ name: 'BL03 Foam Mod', file: 'foam' }
+				]
+			},
+			{ name: 'Custom (reviewer)', phones: [{ name: 'Handbuilt', file: 'custom' }] },
+			{ name: 'Custom Art', phones: [{ name: 'FIBAE 7', file: 'fibae' }] },
+			{
+				name: 'Maker',
+				phones: [
+					{ name: 'Modena', file: 'modena' },
+					{ name: 'Model X', file: 'model-x' }
+				]
+			}
+		];
+		const { paths } = await fixture('const DIR = "data/", rig_description = "B&K 5128";', [
+			[bookUrl, JSON.stringify(entries)],
+			...entries.flatMap((g) =>
+				g.phones.map((p): [string, string] => [`${base}data/${p.file}%20L.txt`, curve(80)])
+			)
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		const stock = catalog.products.find((p) => p.brand === 'CrinEar' && p.model === 'Reference');
+		const prototype = catalog.products.find((p) => p.model.includes('CanJam'));
+		expect(prototype).toMatchObject({ modified: true, baseProductId: stock?.id });
+		expect(prototype?.id).toBe(
+			identity('CrinEar', 'Reference [modified: (version: CanJam NYC 2025 prototype)]', 'iem', {}).id
+		);
+		expect(catalog.products.find((p) => p.model === 'BL03 Foam Mod')).toMatchObject({
+			modified: true,
+			baseProductId: catalog.products.find((p) => p.model === 'BL03')?.id
+		});
+		expect(catalog.products.find((p) => p.brand === 'Custom (reviewer)')).toMatchObject({ modified: true });
+		for (const model of ['Reference', 'BL03', 'FIBAE 7', 'Modena', 'Model X'])
+			expect(catalog.products.find((p) => p.model === model)).not.toHaveProperty('modified');
+		expect(catalog.products).toHaveLength(8);
+		expect(catalog.measurements).toHaveLength(8);
+		expect(report.productFlags).toMatchObject({ modified: 3, baseLinks: 2, rules: { a: 1, b: 2, c: 1 } });
+	});
+	it('integrates brand/CJK/placeholder keys and plus separation, recording diagnostic parts without touching raw curves', async () => {
+		const other = 'https://other.squig.link/';
+		const entries = [
+			{ name: 'Campfire Audio', phones: [{ name: 'Reference', file: 'reference-a' }] },
+			{ name: 'Campfire', phones: [{ name: 'Reference', file: 'reference-b' }] },
+			{ name: 'Unbranded (sai)', phones: [{ name: 'Truthear Pure', file: 'unbranded-pure' }] },
+			{
+				name: 'KBEAR',
+				phones: [
+					{ name: 'ORMOSIA (红豆）', file: 'ormosia-a' },
+					{ name: 'Ormosia', file: 'ormosia-b' }
+				]
+			},
+			{
+				name: 'NF Audio',
+				phones: [
+					{ name: 'NM2', file: 'nm2' },
+					{ name: 'NM2+', file: 'nm2plus' }
+				]
+			}
+		];
+		const { paths } = await fixture('const DIR = "data/", rig_description = "B&K 5128";', [
+			[
+				DIRECTORY_URL,
+				JSON.stringify(
+					['reviewer', 'other'].map((username) => ({
+						username,
+						name: username,
+						urlType: 'subdomain',
+						dbs: [{ type: 'IEMs', folder: '/' }]
+					}))
+				)
+			],
+			[bookUrl, JSON.stringify(entries)],
+			[`${other}config.js`, 'const DIR = "data/", rig_description = "B&K 5128";'],
+			[
+				`${other}data/phone_book.json`,
+				JSON.stringify([{ name: 'Truthear', phones: [{ name: 'Pure', file: 'pure' }] }])
+			],
+			[`${other}data/pure%20L.txt`, curve(80)],
+			...entries.flatMap((g) =>
+				g.phones.map((p, i): [string, string] => [
+					`${base}data/${p.file}%20L.txt`,
+					curve(80, i + (p.file.endsWith('b') ? 1 : 0))
+				])
+			)
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products).toHaveLength(5);
+		expect(catalog.measurements).toHaveLength(8);
+		const manifest = JSON.parse(await readFile(resolve(paths.output, 'manifest.json'), 'utf8')) as Manifest;
+		const shapes = new Map(
+			entries.flatMap((g) => g.phones.map((p, i) => [p.file, i + (p.file.endsWith('b') ? 1 : 0)] as const))
+		);
+		shapes.set('pure', 0);
+		const ranks = decodePack(
+			gunzipSync(await readFile(resolve(paths.output, manifest.version, 'rank-iem-5128.bin.gz')))
+		);
+		for (const m of catalog.measurements) {
+			const shape = shapes.get(m.variant.file);
+			if (shape === undefined) throw new Error('Missing input signal fixture');
+			const detail = decodePack(
+				gunzipSync(await readFile(resolve(paths.output, manifest.version, m.detailFile)))
+			);
+			const channels = detail.curves.filter((c) => c.measurementId === m.id);
+			expect(channels).toHaveLength(m.channels.length);
+			for (const channel of channels)
+				for (let i = 0; i < GRID.length; i++)
+					expect(
+						Math.abs((channel.values[i] ?? NaN) - (80 + Math.sin(i / 20) + shape * Math.cos(i / 15)))
+					).toBeLessThanOrEqual(0.010000001);
+			const rank = ranks.curves.find((c) => c.measurementId === m.id);
+			if (!rank) throw new Error('Missing published rank fixture');
+			// Independently evaluated cosine responses of the normalized 7-tap Gaussian
+			// (sigma = sqrt(2/pi)): sum(w_j*cos(j/period))/sum(w_j), periods 20 and 15.
+			for (const i of [10, 30, 60, 100]) {
+				const expected =
+					80 +
+					0.9992047485071099 * Math.sin((2 * i) / 20) +
+					shape * 0.998586657224486 * Math.cos((2 * i) / 15);
+				expect(Math.abs((rank.values[i] ?? NaN) - expected)).toBeLessThanOrEqual(0.010000001);
+			}
+		}
+		expect(catalog.products.find((p) => p.model === 'Pure')?.brand).toBe('Truthear');
+		expect(catalog.products.filter((p) => /^NM2/.test(p.model)).map((p) => p.id)).toHaveLength(2);
+		expect(report.identityAudit.merges).toHaveLength(2);
+		expect(report.identityAudit.merges.some((g) => g.reasons.includes('placeholder'))).toBe(true);
+		expect(
+			report.identityAudit.merges.find((g) => g.reasons.includes('placeholder'))?.comparisons
+		).toMatchObject([{ partition: 'iem-5128' }]);
+		// Same-source Campfire synonyms have only one final default, not two audit defaults.
+		expect(report.identityAudit.merges.find((g) => !g.reasons.includes('placeholder'))).toMatchObject({
+			comparisons: [],
+			evidence: 'no shared-rig default evidence'
+		});
+		expect(report.identityAudit.modelAnnotations).toContainEqual({
+			original: 'ORMOSIA (红豆）',
+			keyModel: 'ORMOSIA'
+		});
+	});
 	it('preserves existing exact-parent accessory folds before synthesizing fit-only bases', async () => {
 		const groups = [
 			{
@@ -390,7 +597,7 @@ describe('cached dataset build safety', () => {
 		expect(catalog.measurements.filter((m) => m.variant.isDefault)).toHaveLength(1);
 		expect(catalog.measurements.map((m) => m.variant.label).sort()).toEqual(['foam tips', 'stock tips']);
 	});
-	it('uses strict plurality of former defaults for split products, leaving ties unmapped across forms', async () => {
+	it('prioritizes former defaults then total measurements for split products across forms', async () => {
 		const { paths } = await fixture();
 		await build(paths);
 		const { catalog } = await result(paths);
@@ -435,9 +642,9 @@ describe('cached dataset build safety', () => {
 		for (const defaults of [[0, 2], []]) {
 			const tied = current();
 			expect(buildRedirects([old(defaults)], tied).splits).toMatchObject([
-				{ target: null, reason: 'unmapped: tied or absent former defaults' }
+				{ target: 'b', reason: 'strict plurality of former measurements' }
 			]);
-			expect(tied.every((c) => !c.redirects?.products.old)).toBe(true);
+			expect(tied[1]?.redirects?.products.old).toBe('b');
 		}
 	});
 	it('redirects previous published identities by source and unordered original URL set, carrying chains', async () => {

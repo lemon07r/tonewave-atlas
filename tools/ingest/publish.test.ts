@@ -48,6 +48,89 @@ async function fixture() {
 }
 
 describe('recoverable dataset publication', () => {
+	it('snapshots a legacy root manifest and carries previousVersion through same-version publication', async () => {
+		const f = await fixture();
+		const previous = 'b'.repeat(24);
+		await mkdir(resolve(f.output, previous));
+		const old = {
+			...manifest,
+			version: previous,
+			files: manifest.files.map((file) => ({ ...file, path: file.path.replace(version, previous) }))
+		};
+		const oldText = JSON.stringify(old);
+		await writeFile(resolve(f.output, 'manifest.json'), oldText);
+		await publishDataset(f.output, f.staging, manifest, text);
+		expect(await readFile(resolve(f.output, previous, 'manifest.json'), 'utf8')).toBe(oldText);
+		const current = JSON.parse(await readFile(resolve(f.output, 'manifest.json'), 'utf8')) as Manifest;
+		expect(current.previousVersion).toBe(previous);
+		expect(JSON.parse(await readFile(resolve(f.target, 'manifest.json'), 'utf8'))).toEqual(current);
+		await mkdir(f.staging);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), payload);
+		await publishDataset(f.output, f.staging, manifest, text);
+		expect(JSON.parse(await readFile(resolve(f.output, 'manifest.json'), 'utf8'))).toEqual(current);
+	});
+	it('keeps the version from the previous manifest, then rotates it out on the next version', async () => {
+		const f = await fixture();
+		const previous = 'b'.repeat(24),
+			older = 'd'.repeat(24),
+			next = 'c'.repeat(24);
+		for (const name of [previous, older]) {
+			await mkdir(resolve(f.output, name));
+			await writeFile(resolve(f.output, name, 'catalog-iem.json.gz'), `retained ${name}`);
+		}
+		await writeFile(resolve(f.output, 'manifest.json'), JSON.stringify({ ...manifest, version: previous }));
+		await publishDataset(f.output, f.staging, manifest, text);
+		expect(await readdir(f.output)).toEqual(['manifest.json', version, previous].sort());
+		expect(await readFile(resolve(f.output, previous, 'catalog-iem.json.gz'), 'utf8')).toBe(
+			`retained ${previous}`
+		);
+		await mkdir(f.staging);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), payload);
+		const nextManifest = {
+			...manifest,
+			version: next,
+			files: manifest.files.map((file) => ({ ...file, path: file.path.replace(version, next) }))
+		};
+		await publishDataset(f.output, f.staging, nextManifest, JSON.stringify(nextManifest));
+		expect(await readdir(f.output)).toEqual(['manifest.json', version, next].sort());
+		expect(await readFile(resolve(f.output, version, 'catalog-iem.json.gz'), 'utf8')).toBe(payload);
+	});
+	it('keeps every existing version when publication fails', async () => {
+		const f = await fixture();
+		for (const name of ['b'.repeat(24), 'c'.repeat(24)]) await mkdir(resolve(f.output, name));
+		await writeFile(
+			resolve(f.output, 'manifest.json'),
+			JSON.stringify({ ...manifest, version: 'b'.repeat(24) })
+		);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), 'corrupt');
+		await expect(publishDataset(f.output, f.staging, manifest, text)).rejects.toThrow('does not match');
+		expect(await readdir(f.output)).toEqual(
+			['manifest.json', version, 'b'.repeat(24), 'c'.repeat(24)].sort()
+		);
+	});
+	it('preserves retained history when publishing the same version again', async () => {
+		const f = await fixture();
+		const previous = 'b'.repeat(24);
+		await mkdir(resolve(f.output, previous));
+		await writeFile(resolve(f.output, 'manifest.json'), JSON.stringify({ ...manifest, version: previous }));
+		await publishDataset(f.output, f.staging, manifest, text);
+		await mkdir(f.staging);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), payload);
+		await publishDataset(f.output, f.staging, manifest, text);
+		expect(await readdir(f.output)).toEqual(['manifest.json', version, previous].sort());
+	});
+	it.each([null, { version: '../not-a-version' }])(
+		'publishes safely without a valid previous version: %s',
+		async (previous) => {
+			const f = await fixture();
+			const older = 'b'.repeat(24);
+			await mkdir(resolve(f.output, older));
+			if (previous) await writeFile(resolve(f.output, 'manifest.json'), JSON.stringify(previous));
+			else await rm(resolve(f.output, 'manifest.json'));
+			await publishDataset(f.output, f.staging, manifest, text);
+			expect(await readdir(f.output)).toEqual(['manifest.json', version].sort());
+		}
+	);
 	it.each([true, false])('preserves matching regular files during sweep (success=%s)', async (success) => {
 		const f = await fixture();
 		const names = [

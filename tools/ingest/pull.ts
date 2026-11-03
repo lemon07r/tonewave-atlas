@@ -22,6 +22,14 @@ export function validateManifest(value: unknown): Manifest {
 		throw new Error('Invalid dataset manifest');
 	if (value.files.length >= 19000 || !value.files.length) throw new Error('Invalid manifest file count');
 	const version = value.version;
+	const previousVersion = value.previousVersion;
+	if (
+		previousVersion !== undefined &&
+		(typeof previousVersion !== 'string' ||
+			!/^[a-f0-9]{24}$/.test(previousVersion) ||
+			previousVersion === version)
+	)
+		throw new Error('Invalid previous version');
 	const files: DatasetFile[] = value.files.map((f: unknown) => {
 		if (
 			!record(f) ||
@@ -168,6 +176,7 @@ export function validateManifest(value: unknown): Manifest {
 	return {
 		formatVersion: 1,
 		version,
+		...(previousVersion === undefined ? {} : { previousVersion }),
 		builtAt: value.builtAt,
 		files,
 		sources,
@@ -219,7 +228,7 @@ export async function pull(
 	await mkdir(output, { recursive: true });
 	const staging = resolve(output, `.pull-${randomUUID()}`);
 	await mkdir(staging, { recursive: true });
-	try {
+	const download = async (manifest: Manifest, staging: string) => {
 		await parallelEach(manifest.files, async (file) => {
 			const response = await get(file.path);
 			if (!response.ok) throw new Error(`${file.path}: HTTP ${response.status}`);
@@ -228,6 +237,28 @@ export async function pull(
 				throw new Error(`${file.path}: size/sha256 mismatch`);
 			await atomicWrite(resolve(staging, file.path.slice(manifest.version.length + 1)), bytes);
 		});
+	};
+	try {
+		await download(manifest, staging);
+		if (manifest.previousVersion) {
+			const previousStaging = resolve(output, `.pull-${randomUUID()}`);
+			try {
+				const response = await get(`${manifest.previousVersion}/manifest.json`);
+				if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
+				const text = new TextDecoder().decode(await boundedBody(response, 25 * 1024 * 1024));
+				const previous = validateManifest(JSON.parse(text) as unknown);
+				if (previous.version !== manifest.previousVersion)
+					throw new Error('Previous manifest version mismatch');
+				await mkdir(previousStaging, { recursive: true });
+				await download(previous, previousStaging);
+				// Install verified history without activating it, sweeping versions or following older links.
+				await publishDataset(output, previousStaging, previous, text, { activate: false });
+			} catch (error) {
+				console.warn(`Previous dataset ${manifest.previousVersion} unavailable: ${errorMessage(error)}`);
+			} finally {
+				await removeStaging(previousStaging);
+			}
+		}
 		await publishDataset(output, staging, manifest, manifestText);
 	} finally {
 		await removeStaging(staging);

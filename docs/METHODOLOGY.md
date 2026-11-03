@@ -259,12 +259,16 @@ pooled mean improvement is finite and positive both overall and in every reporte
 complete, nonempty fold list). Otherwise correction defaults off. Explicit `false` disables it;
 explicit `true` without sufficient support returns `AtlasError` (`insufficient-data`). Results report
 `harmonised` only when finite published offsets were applied. Detail charts and PEQ remain uncorrected.
-In dataset `4199d08ffc44cf0977b5bae0` (cached source snapshot 2026-11-02), five-fold iem-711 validation reduced held-out
-same-product pair distance **1.765 → 1.578 dB (−10.6%)**, with fold improvements **0.178–0.194 dB**
-over **86,029 pairs** from 2,460 multi-source products. iem-5128 reached sufficient support (21
-products, 27 pairs) and every fold improved, so its correction is on, but the gain is small
-(**1.666 → 1.641 dB**, folds **0.0001–0.118 dB**) and rests on little evidence. This validates correction for this
-dataset, not physical calibration or listener preference.
+In local dataset `f9ba2374a78706b8379bfed8` (frozen source snapshot 2026-11-03), five-fold iem-711
+validation reduces held-out same-product pair distance **1.763 → 1.575 dB (−10.7%)**, with fold
+improvements **0.178–0.195 dB** over **89,586 pairs** from **2,430 multi-source products**.
+Every fold improves, so its correction defaults on. iem-5128 has sufficient support (21 products,
+27 pairs) and pooled means **1.666 → 1.638 dB**, but fold 3 worsens by **0.001716 dB**; correction
+therefore defaults **off**. Headphone-5128 also has sufficient support (20 products, 20 pairs),
+with means **1.549 → 1.532 dB**, but fold 0 worsens by **0.022837 dB**, so correction defaults off.
+These small-partition results rest on little evidence. Product-ID rekeys can change hash-fold
+assignment without changing any measured curve. This is observational dataset validation,
+not physical calibration or listener preference.
 
 ### Estimation and held-out validation
 
