@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import uPlot from 'uplot';
-	import { GRID, GRID_SIZE } from '#core/grid.ts';
+	import { GRID } from '#core/grid.ts';
 	import {
 		chartValues,
 		chartRange,
@@ -10,6 +10,7 @@
 		dbLabel,
 		FREQUENCY_TICKS,
 		curveDash as dash,
+		nearestFrequencyIndex,
 		REGIONS,
 		type FrSeries
 	} from '#lib/chart.ts';
@@ -21,6 +22,7 @@
 	import Notice from './Notice.svelte';
 	let {
 		series = [],
+		frequencies = GRID,
 		title = 'Frequency response',
 		emptyText = 'No curve yet — pick an IEM to see its measured response.',
 		summary = 'Frequency-response curves show relative level across frequency, not how a product will sound in your ear.',
@@ -31,6 +33,7 @@
 		controls = true
 	}: {
 		series?: readonly FrSeries[];
+		frequencies?: Float64Array;
 		title?: string;
 		emptyText?: string;
 		summary?: string;
@@ -45,19 +48,28 @@
 	let plot: uPlot | undefined;
 	let themeStyle = $state<CSSStyleDeclaration | null>(null);
 	let hidden = $state<string[]>([]);
-	let readIndex = $state(120);
+	let inspectedHz = $state(1000);
 	let activeRegion = $state<number | null>(null);
 	let exportError = $state('');
+	let size = $derived(frequencies.length);
+	let inspected = $derived(nearestFrequencyIndex(frequencies, inspectedHz));
 	let levelLabel = $derived(mode === 'difference' ? 'Difference (dB)' : 'Level (dB)');
 	let baseline = $derived(series.find((item) => item.id === baselineId) ?? series[0]);
 	let partialEnvelope = $derived(series.some((item) => Boolean(item.lo) !== Boolean(item.hi)));
+	let validFrequencies = $derived(
+		size > 1 &&
+			Array.from(frequencies).every(
+				(hz, i) => Number.isFinite(hz) && hz > 0 && (i === 0 || hz > (frequencies[i - 1] ?? 0))
+			)
+	);
 	let valid = $derived(
-		!partialEnvelope &&
+		validFrequencies &&
+			!partialEnvelope &&
 			series.every(
 				(item) =>
-					item.values.length === GRID_SIZE &&
-					(!item.lo || item.lo.length === GRID_SIZE) &&
-					(!item.hi || item.hi.length === GRID_SIZE)
+					item.values.length === size &&
+					(!item.lo || item.lo.length === size) &&
+					(!item.hi || item.hi.length === size)
 			)
 	);
 	let curves = $derived(
@@ -65,24 +77,32 @@
 			? series.map((item, index) => ({
 					...item,
 					index,
-					data: chartValues(item.values, mode === 'difference' ? baseline?.values : undefined),
-					low: item.lo ? chartValues(item.lo, mode === 'difference' ? baseline?.values : undefined) : null,
-					high: item.hi ? chartValues(item.hi, mode === 'difference' ? baseline?.values : undefined) : null
+					styleIndex: item.styleIndex ?? index,
+					data: chartValues(item.values, mode === 'difference' ? baseline?.values : undefined, size),
+					low: item.lo
+						? chartValues(item.lo, mode === 'difference' ? baseline?.values : undefined, size)
+						: null,
+					high: item.hi
+						? chartValues(item.hi, mode === 'difference' ? baseline?.values : undefined, size)
+						: null
 				}))
 			: []
 	);
-	const octaveIndices = Array.from({ length: 10 }, (_, i) => i * 24);
+	let octaveIndices = $derived(
+		Array.from({ length: Math.min(10, size) }, (_, i) => Math.floor((i * size) / Math.min(10, size)))
+	);
 	const compactRegionLabels = ['Sub', 'Bass', 'Low', 'Vocal', 'Upper', 'Treb.', 'Air'];
-	function colour(index: number, reference: boolean | undefined) {
-		return reference ? 'var(--muted)' : `var(--curve-${(index % 7) + 1})`;
+	function colour(index: number) {
+		return `var(--curve-${(index % 7) + 1})`;
 	}
 	function focusSeries(index: number | null) {
 		plot?.setSeries(index === null ? null : index + 1, { focus: true });
 	}
 	function setIndex(index: number) {
-		readIndex = Math.min(GRID_SIZE - 1, Math.max(0, index));
+		const readIndex = Math.min(size - 1, Math.max(0, index));
+		inspectedHz = frequencies[readIndex] ?? 1000;
 		if (plot) {
-			const hz = GRID[readIndex];
+			const hz = frequencies[readIndex];
 			if (hz !== undefined)
 				plot.setCursor({ left: plot.valToPos(hz, 'x'), top: plot.bbox.height / uPlot.pxRatio / 2 });
 		}
@@ -109,7 +129,7 @@
 		const ink = style.getPropertyValue('--muted').trim();
 		const line = style.getPropertyValue('--line').trim();
 		const colours = current.map((curve) =>
-			style.getPropertyValue(curve.reference ? '--muted' : `--curve-${(curve.index % 7) + 1}`).trim()
+			style.getPropertyValue(`--curve-${(curve.styleIndex % 7) + 1}`).trim()
 		);
 		const range = chartRange(
 			current
@@ -140,14 +160,14 @@
 				ctx.fillStyle = colours[index] ?? ink;
 				ctx.globalAlpha = 0.13;
 				let start = 0;
-				while (start < GRID_SIZE) {
-					while (start < GRID_SIZE && (low[start] == null || high[start] == null)) start++;
+				while (start < size) {
+					while (start < size && (low[start] == null || high[start] == null)) start++;
 					let end = start;
-					while (end < GRID_SIZE && low[end] != null && high[end] != null) end++;
+					while (end < size && low[end] != null && high[end] != null) end++;
 					if (end - start > 1) {
 						ctx.beginPath();
 						for (let i = start; i < end; i++) {
-							const hz = GRID[i],
+							const hz = frequencies[i],
 								value = high[i];
 							if (hz !== undefined && value != null) {
 								const x = chart.valToPos(hz, 'x', true),
@@ -157,7 +177,7 @@
 							}
 						}
 						for (let i = end - 1; i >= start; i--) {
-							const hz = GRID[i],
+							const hz = frequencies[i],
 								value = low[i];
 							if (hz !== undefined && value != null)
 								ctx.lineTo(chart.valToPos(hz, 'x', true), chart.valToPos(value, 'y', true));
@@ -188,7 +208,7 @@
 				axes: [
 					{
 						stroke: ink,
-						grid: { show: current.length === 0, stroke: line, width: 1 },
+						grid: { show: true, stroke: line, width: 0.5 },
 						ticks: { stroke: line, width: 1, size: 5 },
 						splits: () => FREQUENCY_TICKS,
 						// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
@@ -201,7 +221,7 @@
 					},
 					{
 						stroke: ink,
-						grid: { stroke: line, width: 1 },
+						grid: { stroke: line, width: 1, dash: [2, 4] },
 						ticks: { show: false },
 						values: (_, splits) => splits.map((value) => `${value}`),
 						font: '11px "IBM Plex Mono"',
@@ -215,8 +235,8 @@
 					...current.map((curve, index) => ({
 						label: curve.label,
 						stroke: colours[index] ?? ink,
-						width: curve.reference ? 1.5 : 2,
-						dash: dash(curve.index, curve.reference),
+						width: curve.reference ? 2 : 2.4,
+						dash: dash(curve.styleIndex),
 						show: !invisible.includes(curve.id),
 						spanGaps: false,
 						points: { show: false }
@@ -226,12 +246,13 @@
 					drawAxes: [decorations],
 					setCursor: [
 						(chart) => {
-							if (chart.cursor.idx != null && (chart.cursor.left ?? -1) >= 0) readIndex = chart.cursor.idx;
+							if (chart.cursor.idx != null && (chart.cursor.left ?? -1) >= 0)
+								inspectedHz = frequencies[chart.cursor.idx] ?? inspectedHz;
 						}
 					]
 				}
 			},
-			[Array.from(GRID), ...current.map((curve) => curve.data)],
+			[Array.from(frequencies), ...current.map((curve) => curve.data)],
 			host
 		);
 		plot = chart;
@@ -313,8 +334,8 @@
 			let y = chartTop + chartHeight + 24;
 			series.forEach((item, index) => {
 				ctx.lineWidth = item.reference ? 1.5 : 2;
-				ctx.strokeStyle = style.getPropertyValue(item.reference ? '--muted' : `--curve-${(index % 7) + 1}`);
-				ctx.setLineDash(dash(index, item.reference));
+				ctx.strokeStyle = style.getPropertyValue(`--curve-${((item.styleIndex ?? index) % 7) + 1}`);
+				ctx.setLineDash(dash(item.styleIndex ?? index));
 				ctx.beginPath();
 				ctx.moveTo(24, y - 4);
 				ctx.lineTo(72, y - 4);
@@ -426,7 +447,7 @@
 		</p>{/if}
 	{#if series.length > 0 && valid}<div class="readout-heading">
 			<label for={`${id}-frequency`}>Inspect frequency</label><span class="mono"
-				>{Math.round(GRID[readIndex] ?? 20)} Hz</span
+				>{Math.round(frequencies[inspected] ?? 20)} Hz</span
 			>
 		</div>
 		<input
@@ -434,9 +455,9 @@
 			id={`${id}-frequency`}
 			type="range"
 			min="0"
-			max={GRID_SIZE - 1}
-			value={readIndex}
-			aria-valuetext={`${Math.round(GRID[readIndex] ?? 20)} hertz`}
+			max={size - 1}
+			value={inspected}
+			aria-valuetext={`${Math.round(frequencies[inspected] ?? 20)} hertz`}
 			oninput={(event) => {
 				setIndex(event.currentTarget.valueAsNumber);
 			}}
@@ -449,6 +470,7 @@
 					<button
 						type="button"
 						aria-pressed={!hidden.includes(curve.id)}
+						title={curve.reference ? 'Reference curve' : undefined}
 						onpointerenter={() => {
 							focusSeries(curve.index);
 						}}
@@ -471,13 +493,15 @@
 								x2="48"
 								y1="5"
 								y2="5"
-								stroke={colour(curve.index, curve.reference)}
+								stroke={colour(curve.styleIndex)}
 								stroke-width="2"
-								stroke-dasharray={dash(curve.index, curve.reference).join(' ')}
+								stroke-dasharray={dash(curve.styleIndex).join(' ')}
 							/></svg
-						><span class="legend-number">{curve.index + 1}</span><span>{curve.label}</span></button
+						><span class="legend-number">{curve.index + 1}</span><span
+							>{curve.label}{#if curve.reference}<span class="reference-label">Reference</span>{/if}</span
+						></button
 					><span class="legend-value"
-						>{mode === 'difference' ? 'Δ ' : ''}{dbLabel(curve.data[readIndex], mode === 'difference')}
+						>{mode === 'difference' ? 'Δ ' : ''}{dbLabel(curve.data[inspected], mode === 'difference')}
 						<span class="muted">dB</span></span
 					>
 				</div>{/each}
@@ -487,8 +511,8 @@
 			<div class="table-scroll" tabindex="0" role="region" aria-label="Frequency response data table">
 				<table class="data-table">
 					<caption
-						>Octave-spaced samples on the canonical grid: {levelLabel} against Frequency (Hz). A dash means no measurement.
-						The full chart uses 240 points; no values are extrapolated.</caption
+						>Log-spaced samples on the supplied grid: {levelLabel} against Frequency (Hz). A dash means no measurement.
+						The full chart uses {size} points; no values are extrapolated.</caption
 					><thead
 						><tr
 							><th scope="col">Frequency (Hz)</th>{#each curves as curve (curve.id)}<th scope="col"
@@ -497,7 +521,7 @@
 						></thead
 					><tbody
 						>{#each octaveIndices as index (index)}<tr
-								><th scope="row">{frequencyLabel(GRID[index] ?? 20)} Hz</th
+								><th scope="row">{frequencyLabel(frequencies[index] ?? 20)} Hz</th
 								>{#each curves as curve (curve.id)}<td>{dbLabel(curve.data[index], mode === 'difference')}</td
 									>{/each}</tr
 							>{/each}</tbody
@@ -506,9 +530,11 @@
 			</div></Disclosure
 		>{/if}
 	{#if !valid}<Notice kind="caution"
-			>Chart unavailable: {partialEnvelope
-				? 'lower and upper uncertainty bounds must be supplied together.'
-				: `every curve and uncertainty bound must use the ${GRID_SIZE}-point frequency grid.`}</Notice
+			>Chart unavailable: {!validFrequencies
+				? 'the frequency grid must be finite, positive and strictly increasing with at least two points.'
+				: partialEnvelope
+					? 'lower and upper uncertainty bounds must be supplied together.'
+					: `every curve and uncertainty bound must use the ${size}-point frequency grid.`}</Notice
 		>{/if}
 	{#if exportError}<p class="small" role="alert">{exportError}</p>{/if}
 	<figcaption><a href={resolve('/method')}>Sources and limitations</a></figcaption>

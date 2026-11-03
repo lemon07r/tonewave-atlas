@@ -1,5 +1,28 @@
 import { expect, test } from 'vitest';
-import { emptyProfile, parseProfile, strength, PROFILE_LIMIT } from './profile.ts';
+import { emptyProfile, parseProfile, strength, PROFILE_LIMIT, reasonLabels } from './profile.ts';
+
+test('measured-correlate labels preserve old reason ids and remain independently selectable', () => {
+	expect(reasonLabels['bass-lacks-punch']).toBe('Lower 20–60 Hz level relative to 80–250 Hz');
+	expect(new Set(Object.values(reasonLabels)).size).toBe(Object.keys(reasonLabels).length);
+	expect(reasonLabels['tonal-balance-wrong']).toBe('Tonal balance just wrong');
+	expect(reasonLabels.other).toBe('Other');
+	const data = {
+		version: 1,
+		profiles: {
+			iem: [
+				{
+					productId: 'a',
+					rating: 'dislike',
+					strength: 1,
+					soundRelated: true,
+					dislikeReasons: ['bass-lacks-punch']
+				}
+			],
+			headphone: []
+		}
+	};
+	expect(parseProfile(JSON.stringify(data)).profiles.iem[0]?.dislikeReasons).toEqual(['bass-lacks-punch']);
+});
 
 test('roundtrips separated form factors and excludes neutral strength', () => {
 	const data = emptyProfile();

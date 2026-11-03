@@ -2,9 +2,16 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
 	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
-	import { priceListings } from '#lib/product/data.ts';
+	import { migrationCatalogs, priceListings } from '#lib/product/data.ts';
+	import { migrateUrl } from '#lib/catalog/migrate.ts';
+	import { migrationMessages } from '#lib/catalog/notice.ts';
+	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { productSearch } from '#lib/product-search.ts';
 	import ProductView from '#lib/product/ProductView.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import Skeleton from '#lib/components/Skeleton.svelte';
@@ -18,25 +25,25 @@
 	let detail = $state.raw<ProductDetail | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let migrationNote = $state<string[]>([]);
 	let query = $state('');
 	let brand = $state('');
 	let sort = $state('name');
 	let currentPage = $state(0);
 	const pageSize = 40;
 	let brands = $derived([...new Set(products.map((p) => p.brand))].sort((a, b) => a.localeCompare(b)));
+	let search = $derived(productSearch(products));
 	let filtered = $derived(
-		products
-			.filter(
-				(p) =>
-					(!brand || p.brand === brand) &&
-					`${p.brand} ${p.model}`.toLowerCase().includes(query.trim().toLowerCase())
-			)
+		search(query, products.length)
+			.filter((p) => !brand || p.brand === brand)
 			.sort((a, b) =>
 				sort === 'reviewers'
 					? b.sourceCount - a.sourceCount || a.model.localeCompare(b.model)
 					: sort === 'price'
 						? (a.priceUsd?.[0] ?? Infinity) - (b.priceUsd?.[0] ?? Infinity) || a.model.localeCompare(b.model)
-						: `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`)
+						: query.trim()
+							? 0
+							: `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`)
 			)
 	);
 	let visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
@@ -49,7 +56,8 @@
 	});
 	$effect(() => {
 		const selectedForm = form,
-			id = productId;
+			id = productId,
+			href = untrack(() => page.url.href);
 		const abort = new AbortController();
 		loading = true;
 		error = '';
@@ -64,12 +72,32 @@
 			products = list;
 			summary = data;
 			if (id) {
-				if (!list.some((p) => p.id === id))
+				const catalogs = await migrationCatalogs(selectedForm, data.version, new URL(href));
+				const identity = catalogs[selectedForm];
+				abort.signal.throwIfAborted();
+				const migrated = identity
+					? migrateUrl(new URL(href), identity, catalogs[selectedForm === 'iem' ? 'headphone' : 'iem'])
+					: undefined;
+				const fresh = migrationMessages(migrated?.messages ?? []);
+				if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+				if (migrated?.changed) {
+					await goto(
+						resolve(
+							`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+						),
+						{ state: page.state, replace: true, reset: false }
+					);
+					if (formFromUrl(migrated.url) !== selectedForm || migrated.url.searchParams.get('product') !== id)
+						return;
+					abort.signal.throwIfAborted();
+				}
+				const canonical = migrated?.url.searchParams.get('product') ?? id;
+				const result = await service.productDetail(canonical);
+				if (!result.ok) throw new Error(result.message);
+				if (result.product.form !== selectedForm)
 					throw new Error(
 						'This product is not in the selected form-factor catalog. Switch modes or return to the catalog.'
 					);
-				const result = await service.productDetail(id);
-				if (!result.ok) throw new Error(result.message);
 				if (!abort.signal.aborted) detail = result;
 			}
 		})()
@@ -93,6 +121,12 @@
 	/></svelte:head
 >
 <div class="page">
+	<MigrationNote
+		messages={migrationNote}
+		ondismiss={() => {
+			migrationNote = [];
+		}}
+	/>
 	{#if error}<Notice kind="caution" title="Catalog unavailable"
 			>{error}
 			<a href={resolve(`/explore${headphones ? '?form=headphones' : ''}`)}>Back to catalog</a></Notice
@@ -101,8 +135,7 @@
 	{:else if detail}<ProductView {detail} {products} {headphones} sources={summary?.sources ?? []} />
 	{:else if !error}
 		<div class="page-heading">
-			<p class="eyebrow">Follow the evidence</p>
-			<h1>A catalog of measured sound.</h1>
+			<h1>Explore the measurements.</h1>
 			<p>
 				Find a product. See every available measurement, variant and source — including where they disagree.
 			</p>
@@ -149,7 +182,9 @@
 				/>
 				<div class="catalog-heading row spread">
 					<h2>{headphones ? 'Headphones' : 'In-ear monitors'}</h2>
-					<span class="small muted" role="status">{filtered.length.toLocaleString()} products</span>
+					<span class="small muted" role="status"
+						>{filtered.length.toLocaleString()} {filtered.length === 1 ? 'product' : 'products'}</span
+					>
 				</div>
 				{#each visible as product (product.id)}<div class="catalog-row">
 						<div>

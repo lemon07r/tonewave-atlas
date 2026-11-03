@@ -2,6 +2,7 @@
 	import { browser, dev } from '$app/env';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { SvelteMap, SvelteURL } from 'svelte/reactivity';
@@ -14,8 +15,13 @@
 	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import { analysis, productList, formFromUrl } from '#lib/atlas.ts';
-	import { channelSpread, mainPartition } from '#lib/product/data.ts';
+	import { catalogIdentity, migrationCatalogs, channelSpread, mainPartition } from '#lib/product/data.ts';
+	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
+	import { migrateUrl } from '#lib/catalog/migrate.ts';
+	import { migrationMessages } from '#lib/catalog/notice.ts';
+	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { productSearch } from '#lib/product-search.ts';
 	import {
 		parseCompare,
 		serialiseCompare,
@@ -24,7 +30,7 @@
 		type Smoothing
 	} from '#lib/compare/url.ts';
 	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
-	import type { Measurement, Source } from '#core/dataset/types.ts';
+	import type { Form, Measurement, Source } from '#core/dataset/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import { GRID } from '#core/grid.ts';
 	import { responseDistance } from '#core/analysis/distance.ts';
@@ -42,6 +48,8 @@
 		warning: string | undefined;
 	}
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
+	let identity = $state.raw<{ form: Form; catalog: CatalogIdentity }>();
+	let migrationNote = $state<string[]>([]);
 	let selectionState = $derived(parseCompare(new URLSearchParams(browser ? page.url.search : '')));
 	let products = $state.raw<ProductListItem[]>([]);
 	let summary = $state.raw<AtlasSummary | null>(null);
@@ -56,13 +64,10 @@
 	let baseline = $state('');
 	const details = new SvelteMap<string, Promise<ProductDetail>>();
 	const weights = makeWeights(GRID);
+	let search = $derived(productSearch(products));
 	let items = $derived(
-		products
-			.filter(
-				(p) =>
-					!selectionState.products.includes(p.id) &&
-					`${p.brand} ${p.model}`.toLowerCase().includes(query.toLowerCase())
-			)
+		search(query, 60)
+			.filter((p) => !selectionState.products.includes(p.id))
 			.slice(0, 40)
 			.map((p) => ({
 				id: p.id,
@@ -102,17 +107,50 @@
 		});
 	}
 	$effect(() => {
+		const href = page.url.href,
+			current = identity,
+			version = summary?.version,
+			selectedForm = form;
+		if (!current || current.form !== selectedForm || !version) return;
+		const abort = new AbortController();
+		untrack(() => {
+			void migrationCatalogs(selectedForm, version, new URL(href)).then((catalogs) => {
+				if (abort.signal.aborted) return;
+				const migrated = migrateUrl(
+					new URL(href),
+					current.catalog,
+					catalogs[selectedForm === 'iem' ? 'headphone' : 'iem']
+				);
+				const fresh = migrationMessages(migrated.messages);
+				if (fresh.length) migrationNote = [...migrationNote, ...fresh];
+				if (migrated.changed)
+					return goto(
+						resolve(
+							`${migrated.url.pathname}${migrated.url.search}${migrated.url.hash}` as PathnameWithSearchOrHash
+						),
+						{ state: page.state, replace: true, reset: false }
+					);
+			});
+		});
+		return () => {
+			abort.abort();
+		};
+	});
+	$effect(() => {
 		const selectedForm = form;
 		const abort = new AbortController();
 		products = [];
 		summary = null;
+		identity = undefined;
 		error = '';
 		void Promise.all([productList(selectedForm), analysis().then((service) => service.summary())])
-			.then(([list, data]) => {
+			.then(async ([list, data]) => {
 				if (!abort.signal.aborted) {
 					products = list;
 					summary = data;
 				}
+				const current = await catalogIdentity(selectedForm, data.version).catch(() => undefined);
+				if (!abort.signal.aborted) identity = current ? { form: selectedForm, catalog: current } : undefined;
 			})
 			.catch((e: unknown) => {
 				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);
@@ -137,7 +175,7 @@
 	$effect(() => {
 		const settings = selectionState,
 			data = summary,
-			list = products;
+			selectedForm = form;
 		const abort = new AbortController();
 		selections = [];
 		loading = false;
@@ -146,21 +184,26 @@
 		error = '';
 		void (async () => {
 			const service = await analysis();
+			const measurementRows = await service.measurements([...settings.measurements]);
 			const measurements = new Map(
-				(await service.measurements([...settings.measurements])).map((measurement) => [
-					measurement.id,
-					measurement
-				])
+				measurementRows.flatMap((measurement) =>
+					[
+						measurement.id,
+						...(measurement.resolvedIds ?? []).flatMap((entry) =>
+							entry.measurementId ? [entry.measurementId] : []
+						)
+					].map((id) => [id, measurement] as const)
+				)
 			);
 			const rows: Selection[] = [];
 			for (const id of [...settings.products, ...settings.measurements]) {
 				const measurement = measurements.get(id);
 				if (settings.measurements.includes(id) && !measurement)
 					throw new Error(`Unknown product or measurement: ${id}`);
-				const productId = measurement?.productId ?? id;
-				const product = list.find((p) => p.id === productId);
-				if (!product) throw new Error(`Unknown product or measurement: ${id}`);
-				const result = await detail(productId);
+				const result = await detail(measurement?.productId ?? id);
+				const product = result.product,
+					productId = product.id;
+				if (product.form !== selectedForm) throw new Error(`Unknown product or measurement: ${id}`);
 				const partition = measurement?.partition ?? mainPartition(result);
 				const spread = measurement ? null : await channelSpread(result, partition, settings.channel);
 				const curve = measurement ? (await service.curves([id], { channel: settings.channel }))[0] : null;
@@ -290,10 +333,17 @@
 {:else}
 	<div class="page">
 		<div class="page-heading">
-			<p class="eyebrow">Look closer. Listen for yourself.</p>
 			<h1>Compare responses.</h1>
-			<p>Measured shapes, side by side. Add up to six curves; a curve is not a verdict.</p>
+			<p>
+				Add up to six products or measurements. Inspect differences, select variants and share the overlay.
+			</p>
 		</div>
+		<MigrationNote
+			messages={migrationNote}
+			ondismiss={() => {
+				migrationNote = [];
+			}}
+		/>
 		<div class="compare-grid">
 			<section class="stack" aria-label="Comparison selection">
 				{#if count < 6}<SearchCombobox
@@ -472,6 +522,9 @@
 		margin-bottom: 8px;
 	}
 	.legend-row .field-label {
+		margin-top: 12px;
+	}
+	.legend-row :global(.button) {
 		margin-top: 12px;
 	}
 	select,

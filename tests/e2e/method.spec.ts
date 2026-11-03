@@ -1,10 +1,19 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import type { Catalog, Manifest } from '../../src/core/dataset/types.ts';
+import { screenshot } from './screenshots.ts';
 
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/phase2');
-mkdirSync(shots, { recursive: true });
+const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest;
+const catalog = JSON.parse(
+	gunzipSync(readFileSync(`static/data/${manifest.version}/catalog-iem.json.gz`)).toString()
+) as Catalog;
+const current = catalog.partitions.find((partition) => partition.id === 'iem-711')?.statistics?.harmonisation;
+if (!current || current.meanBefore === null || current.meanAfter === null)
+	throw new Error('Real dataset validation metadata is required.');
+const pairCount = current.pairs.toLocaleString('en-US');
+const meanDistance = `${current.meanBefore.toFixed(3)} dB → ${current.meanAfter.toFixed(3)} dB`;
 
 for (const theme of ['light', 'dark'] as const) {
 	test.describe(theme, () => {
@@ -20,7 +29,10 @@ for (const theme of ['light', 'dark'] as const) {
 			expect(counts.some((count) => Number(count) > 0)).toBe(true);
 			await expect(table.getByRole('link').first()).toHaveAttribute('href', /^https?:\/\//);
 			await expect(table).toContainText('public, not explicitly licensed');
-			await expect(page.getByText(/^Dataset /)).toContainText(/Built \d{4}-\d{2}-\d{2}/);
+			await expect(page.locator('#sources > .small.mono')).toContainText(/Built \d{4}-\d{2}-\d{2}/);
+			const validation = page.getByRole('region', { name: 'iem-711 validation', exact: true });
+			await expect(validation).toContainText(pairCount);
+			await expect(validation).toContainText(meanDistance);
 			await expect(page.getByRole('link', { name: 'open a GitHub issue' })).toHaveAttribute(
 				'href',
 				'https://github.com/lemon07r/tonewave-atlas/issues'
@@ -33,11 +45,11 @@ for (const theme of ['light', 'dark'] as const) {
 				window.scrollTo(0, 0);
 			});
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-			await page.screenshot({ path: join(shots, `pages-method-${info.project.name}-${theme}.png`) });
+			await screenshot(page, info, `pages-method-${info.project.name}-${theme}`);
 			await page.locator('#sources').evaluate((element) => {
 				element.scrollIntoView({ block: 'start' });
 			});
-			await page.screenshot({ path: join(shots, `pages-sources-${info.project.name}-${theme}.png`) });
+			await screenshot(page, info, `pages-sources-${info.project.name}-${theme}`);
 		});
 	});
 }
@@ -48,5 +60,16 @@ test('headphone mode attributes only headphone sources', async ({ page }) => {
 	await expect(table).toBeVisible();
 	await expect(table).toContainText('headphone-');
 	await expect(table).not.toContainText('iem-711');
+	const sources = manifest.sources.filter((source) => (source.forms ?? [source.form]).includes('headphone'));
+	expect((await table.locator('tbody th a').allTextContents()).map((name) => name.trim()).sort()).toEqual(
+		sources.map((source) => source.name).sort()
+	);
+	expect((await table.locator('tbody td:nth-child(2) .mono').allTextContents()).sort()).toEqual(
+		sources
+			.flatMap((source) =>
+				(source.partitions ?? [source.partition]).filter((partition) => partition.startsWith('headphone-'))
+			)
+			.sort()
+	);
 	await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

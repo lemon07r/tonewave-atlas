@@ -12,6 +12,7 @@
 	import { GRID } from '#core/grid.ts';
 	import { responseDistance } from '#core/analysis/distance.ts';
 	import { signedDb } from './format.ts';
+	import { productSearch } from '#lib/product-search.ts';
 	let {
 		detail,
 		products,
@@ -33,16 +34,13 @@
 	let series = $state.raw<FrSeries[]>([]);
 	let before = $state<number | null>(null);
 	let request = {};
+	let search = $derived(
+		productSearch(
+			products.filter((p) => p.id !== detail.product.id && p.defaultPartitions.includes(partition))
+		)
+	);
 	let items = $derived(
-		products
-			.filter(
-				(p) =>
-					p.id !== detail.product.id &&
-					p.defaultPartitions.includes(partition) &&
-					`${p.brand} ${p.model}`.toLowerCase().includes(query.toLowerCase())
-			)
-			.slice(0, 35)
-			.map((p) => ({ id: p.id, label: `${p.brand} ${p.model}`, sources: p.sourceCount }))
+		search(query, 35).map((p) => ({ id: p.id, label: `${p.brand} ${p.model}`, sources: p.sourceCount }))
 	);
 	$effect(() => {
 		const product = detail.product,
@@ -173,7 +171,6 @@
 
 <section class="eq stack" aria-labelledby="eq-heading">
 	<div>
-		<p class="eyebrow">A measured approximation</p>
 		<h2 id="eq-heading">EQ this toward…</h2>
 	</div>
 	<Notice kind="caution"

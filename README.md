@@ -5,6 +5,8 @@ data reviewers publish.
 
 **[tonewave.lr7.dev](https://tonewave.lr7.dev)** · free · no account · no tracking
 
+![Discover with CrinEar Reference as the reference: ranked matches on the left, the as-ranked frequency-response chart on the right](docs/images/listening-room.webp)
+
 Pick an IEM you know and get its closest measured matches, each with a plain description of where it
 differs: more bass, a recessed upper midrange, extra treble energy. Rate a few more and the ranking
 follows your taste instead of a single reference.

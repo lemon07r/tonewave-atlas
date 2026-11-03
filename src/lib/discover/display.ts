@@ -53,7 +53,7 @@ export async function displayCurve(
 	const spread = product.spread.find((s) => s.partition === partition);
 	let ids = spread?.measurementIds ?? [];
 	let values = spread?.centre;
-	if (options.tuning || options.measurementIds?.length === 1) {
+	if (options.measurementIds?.length) {
 		ids = options.measurementIds ?? [];
 		const service = await analysis();
 		const curves = await service.curves(ids, { channel: 'avg' });
@@ -92,6 +92,6 @@ export function candidateCurve(candidate: CandidateInfo, partition: string): Pro
 	return displayCurve(candidate.product.id, partition, {
 		id: candidate.id,
 		label: `${candidate.product.brand} ${candidate.product.model}${candidate.variantLabel ? ` · ${candidate.variantLabel}` : ''}`,
-		...(candidate.kind === 'tuning' ? { tuning: true, measurementIds: candidate.measurementIds } : {})
+		measurementIds: candidate.measurementIds
 	});
 }

@@ -5,16 +5,18 @@
 	import { analysis, formFromUrl } from '#lib/atlas.ts';
 	import { dateLabel } from '#lib/product/data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
+	import { sourceInForm, sourceOnPartition } from '#lib/sources.ts';
 	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import Notice from '#lib/components/Notice.svelte';
+	import ValidationFigures from '#lib/method/ValidationFigures.svelte';
 	let summary = $state.raw<AtlasSummary | null>(null);
 	let error = $state('');
 	let targets = $state.raw<ReferenceTarget[]>([]);
 	let targetError = $state('');
 	let targetsLoading = $state(true);
 	let form = $derived(browser ? formFromUrl(new URL(page.url.href)) : 'iem');
-	let sources = $derived(summary?.sources.filter((s) => s.form === form) ?? []);
+	let sources = $derived(summary?.sources.filter((s) => sourceInForm(s, form)) ?? []);
 	$effect(() => {
 		let active = true;
 		error = '';
@@ -63,8 +65,7 @@
 >
 <div class="page method">
 	<div class="page-heading">
-		<p class="eyebrow">Method / A note on evidence</p>
-		<h1>A map is not the music.</h1>
+		<h1>How matching works.</h1>
 		<p>
 			Frequency response is useful evidence about tonal balance. It is not a complete description of sound,
 			and it is never a substitute for your own ears.
@@ -81,7 +82,6 @@
 		</nav>
 		<article>
 			<section id="reading">
-				<span class="eyebrow">01 / Reading a response</span>
 				<h2>What does a curve tell you?</h2>
 				<p>
 					A frequency-response curve shows the measured level at different frequencies. The left is bass; the
@@ -98,7 +98,6 @@
 				>
 			</section>
 			<section id="comparison">
-				<span class="eyebrow">02 / Fair comparisons</span>
 				<h2>Compare like with like.</h2>
 				<p>
 					Matching measures response distance: the weighted RMS difference in measured shape, in dB. Lower
@@ -131,14 +130,15 @@
 					correction stays off; explicit correction requests without sufficient support are rejected. Detail
 					charts and EQ use uncorrected curves.
 				</p>
+				{#if summary}<ValidationFigures {summary} {form} />{:else if !error}<p role="status">
+						Loading dataset validation…
+					</p>{/if}
 				<p>
-					In the 2026-11 dataset build, five-fold validation on iem-711 reduced held-out same-product pair
-					distance from 1.781 to 1.588 dB (−10.9%) across 50,823 pairs; fold improvements were 0.184–0.202 dB.
-					This is not physical calibration, rig conversion or evidence of listener preference.
+					This is not physical calibration, rig conversion or evidence of listener preference. Missing
+					validation metadata is reported as unavailable.
 				</p>
 			</section>
 			<section id="uncertainty">
-				<span class="eyebrow">03 / Honest uncertainty</span>
 				<h2>Precision is not certainty.</h2>
 				<p>
 					Seal, tips, insertion depth, unit variation and measurement setup can all change a curve.
@@ -156,7 +156,6 @@
 				</p>
 			</section>
 			<section id="sources">
-				<span class="eyebrow">04 / Sources & attribution</span>
 				<h2>The measurements belong in the story.</h2>
 				<p>
 					The catalog draws from public squig.link reviewer databases. Each measurement retains its source,
@@ -191,11 +190,20 @@
 									><th scope="col">Crawled</th><th scope="col">Permission</th></tr
 								></thead
 							><tbody
-								>{#each sources as source (source.id)}<tr
+								>{#each sources as source (source.id)}
+									{@const partitions = summary.partitions.filter(
+										(partition) => partition.form === form && sourceOnPartition(source, partition.id)
+									)}
+									<tr
 										><th scope="row"><a href={source.url} rel="external">{source.name}</a></th><td
-											>{source.rig || rigLabel(source.partition, summary.sources)}{source.rigInferred
-												? ' (inferred)'
-												: ''}<br /><span class="mono">{source.partition}</span></td
+											>{#each partitions as partition (partition.id)}<div>
+													{partition.id === source.partition && source.rig
+														? source.rig
+														: rigLabel(partition.id, summary.sources)}{partition.id === source.partition &&
+													source.rigInferred
+														? ' (inferred)'
+														: ''}<br /><span class="mono">{partition.id}</span>
+												</div>{/each}</td
 										><td>{source.measurementCount}</td><td>{dateLabel(source.crawledAt)}</td><td
 											>{source.permission}</td
 										></tr
@@ -225,7 +233,6 @@
 				</p>
 			</section>
 			<section id="privacy">
-				<span class="eyebrow">05 / Local by design</span>
 				<h2>Your taste stays yours.</h2>
 				<p>
 					There is no account and no tracking. Curve analysis and EQ fitting run in your browser’s worker.

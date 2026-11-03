@@ -1,10 +1,6 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-
-const shots = join(process.env.HOME ?? '', '.local/tmp/tw-shots/phase2');
-mkdirSync(shots, { recursive: true });
+import { screenshot } from './screenshots.ts';
 
 for (const theme of ['light', 'dark'] as const) {
 	test.describe(theme, () => {
@@ -55,12 +51,12 @@ for (const theme of ['light', 'dark'] as const) {
 			await expect(page).toHaveURL(/[?&]p=p-/);
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 			await expect.poll(async () => (await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-			await page.screenshot({ path: join(shots, `pages-compare-${info.project.name}-${theme}.png`) });
+			await screenshot(page, info, `pages-compare-${info.project.name}-${theme}`);
 			if (info.project.name === 'mobile') {
 				await page.locator('.chart').evaluate((element) => {
 					element.scrollIntoView({ block: 'start' });
 				});
-				await page.screenshot({ path: join(shots, `pages-compare-chart-${info.project.name}-${theme}.png`) });
+				await screenshot(page, info, `pages-compare-chart-${info.project.name}-${theme}`);
 			}
 			await page.getByRole('radio', { name: 'Difference', exact: true }).check();
 			await expect(page.getByRole('combobox', { name: 'Difference baseline' })).toBeVisible();

@@ -1,4 +1,4 @@
-import { GRID, GRID_SIZE } from '#core/grid.ts';
+import { GRID_SIZE } from '#core/grid.ts';
 
 export interface FrSeries {
 	id: string;
@@ -7,6 +7,8 @@ export interface FrSeries {
 	lo?: Float64Array | Float32Array;
 	hi?: Float64Array | Float32Array;
 	reference?: boolean;
+	/** Preserve visual identity when an aligned overlay is split into independent panels. */
+	styleIndex?: number;
 	/** Human-readable source, rig and processing details, also included in PNG exports. */
 	attribution?: string;
 }
@@ -19,13 +21,21 @@ export const CURVE_DASHES: number[][] = [
 	[1, 4],
 	[12, 4, 2, 4],
 	[12, 3, 2, 3, 2, 3],
-	[14, 4, 6, 4]
+	[14, 4, 6, 4],
+	[6, 3, 1, 3]
 ];
-export const REFERENCE_DASH = [3, 3, 3, 8];
-
 /** Shared by uPlot, the SVG legend and PNG legend, in CSS pixels. */
-export function curveDash(index: number, reference?: boolean): number[] {
-	return reference ? REFERENCE_DASH : (CURVE_DASHES[index % CURVE_DASHES.length] ?? []);
+export function curveDash(index: number): number[] {
+	return CURVE_DASHES[index % CURVE_DASHES.length] ?? [];
+}
+
+/** Preserve an inspected frequency across grid/series changes, defaulting to the nearest 1 kHz bin. */
+export function nearestFrequencyIndex(frequencies: ArrayLike<number>, hz = 1000): number {
+	let nearest = 0;
+	for (let i = 1; i < frequencies.length; i++)
+		if (Math.abs((frequencies[i] ?? Infinity) - hz) < Math.abs((frequencies[nearest] ?? Infinity) - hz))
+			nearest = i;
+	return nearest;
 }
 
 export const REGIONS = [
@@ -96,10 +106,14 @@ export function dbLabel(value: number | null | undefined, signed = false): strin
 }
 
 /** Nulls, rather than NaNs, tell uPlot to preserve an explicit gap. No interpolation or alignment. */
-export function chartValues(values: ArrayLike<number>, baseline?: ArrayLike<number>): (number | null)[] {
-	if (values.length !== GRID_SIZE || (baseline && baseline.length !== GRID_SIZE))
-		throw new RangeError(`Curves must have ${GRID_SIZE} points on GRID.`);
-	return Array.from(GRID, (_, i) => {
+export function chartValues(
+	values: ArrayLike<number>,
+	baseline?: ArrayLike<number>,
+	size = GRID_SIZE
+): (number | null)[] {
+	if (values.length !== size || (baseline && baseline.length !== size))
+		throw new RangeError(`Curves must have ${size} points on the supplied grid.`);
+	return Array.from({ length: size }, (_, i) => {
 		const value = values[i];
 		const base = baseline ? baseline[i] : 0;
 		if (value === undefined || base === undefined || !Number.isFinite(value) || !Number.isFinite(base))

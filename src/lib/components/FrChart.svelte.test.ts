@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import { GRID_SIZE } from '#core/grid.ts';
+import { GRID, GRID_SIZE } from '#core/grid.ts';
 import type { FrSeries } from '#lib/chart.ts';
 import FrChart from './FrChart.svelte';
 import '#lib/styles/app.css';
@@ -33,12 +33,12 @@ test('renders all series and an accessible octave-resolution table', async () =>
 	await expect.element(screen.getByRole('figure', { name: 'Frequency response' })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: /^1\s*Curve A$/ })).toBeVisible();
 	await expect.element(screen.getByRole('button', { name: /^2\s*Curve B$/ })).toBeVisible();
-	await expect.element(screen.getByRole('button', { name: /^3\s*Reference$/ })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: /^3\s*Reference\s*Reference$/ })).toBeVisible();
 	expect(
 		[...screen.container.querySelectorAll('.legend-row line')].map((line) =>
 			line.getAttribute('stroke-dasharray')
 		)
-	).toEqual(['', '14 5', '3 3 3 8']);
+	).toEqual(['', '14 5', '4 4']);
 	expect(screen.container.querySelectorAll('canvas')).toHaveLength(1);
 	await expect
 		.element(screen.getByRole('link', { name: 'Sources and limitations' }))
@@ -82,6 +82,24 @@ test('supports keyboard frequency inspection and focusable region descriptions',
 		.toBeVisible();
 	await userEvent.keyboard('{Escape}');
 	await expect.element(screen.getByText(/Hover or focus a region/)).toBeVisible();
+});
+
+test('starts near 1 kHz and retains the chosen frequency when series and grids change', async () => {
+	const screen = await render(FrChart, { series });
+	const scrubber = screen.container.querySelector<HTMLInputElement>('.frequency-scrubber');
+	if (!scrubber) throw new Error('Frequency scrubber missing');
+	expect(Math.abs((GRID[Number(scrubber.value)] ?? 0) - 1000)).toBeLessThan(20);
+	scrubber.value = '144';
+	scrubber.dispatchEvent(new Event('input', { bubbles: true }));
+	await screen.rerender({ series: [...series.slice(0, 1)] });
+	await expect.element(screen.getByText('1280 Hz', { exact: true })).toBeVisible();
+	await screen.rerender({
+		frequencies: new Float64Array([20, 1000, 1280, 20000]),
+		series: [{ id: 'new', label: 'New grid', values: new Float64Array(4) }]
+	});
+	await expect
+		.element(screen.getByRole('slider', { name: 'Inspect frequency' }))
+		.toHaveAttribute('aria-valuetext', '1280 hertz');
 });
 
 test('keeps missing samples missing and rejects the wrong grid', async () => {
@@ -130,3 +148,45 @@ test('readout distinguishes neighbouring grid samples that share an axis label',
 	scrubber.dispatchEvent(new Event('input', { bubbles: true }));
 	await expect.element(screen.getByText('1318 Hz', { exact: true })).toBeVisible();
 });
+
+test('multiple references use distinct dash and colour slots in the legend', async () => {
+	const screen = await render(FrChart, { series: series.map((item) => ({ ...item, reference: true })) });
+	const lines = [...screen.container.querySelectorAll('.legend-row line')];
+	expect(lines.map((line) => line.getAttribute('stroke-dasharray'))).toEqual(['', '14 5', '4 4']);
+	expect(lines.map((line) => line.getAttribute('stroke'))).toEqual([
+		'var(--curve-1)',
+		'var(--curve-2)',
+		'var(--curve-3)'
+	]);
+});
+
+test('styles remain distinct when seven colours wrap and the reference marker is announced', async () => {
+	const curves = Array.from({ length: 9 }, (_, i) => ({
+		id: String(i),
+		label: `Curve ${i}`,
+		values: new Float64Array(GRID_SIZE),
+		reference: i === 0
+	}));
+	const screen = await render(FrChart, { series: curves });
+	await expect.element(screen.getByRole('button', { name: /^1\s*Curve 0\s*Reference$/ })).toBeVisible();
+	const lines = [...screen.container.querySelectorAll('.legend-row line')];
+	const styles = lines.map(
+		(line) => `${line.getAttribute('stroke')}:${line.getAttribute('stroke-dasharray')}`
+	);
+	expect(new Set(styles).size).toBe(9);
+});
+
+test.each([[], [20], [20, NaN], [20, 20], [40, 20], [0, 20]])(
+	'identifies an invalid frequency grid %j separately from invalid curves',
+	async (...points) => {
+		const frequencies = new Float64Array(points);
+		const screen = await render(FrChart, { frequencies, series: [] });
+		await expect
+			.element(
+				screen.getByText(
+					/frequency grid must be finite, positive and strictly increasing with at least two points/
+				)
+			)
+			.toBeVisible();
+	}
+);

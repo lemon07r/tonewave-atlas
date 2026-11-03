@@ -1,0 +1,184 @@
+/* Listening Room. Warm editorial pages around a cobalt instrument. */
+:root {
+	--display: 'Newsreader Variable', Georgia, serif;
+	--radius: 2px;
+	--text-title: clamp(2.7rem, 4.4vw, 4.5rem);
+}
+body .page h1 {
+	font-family: var(--display);
+	font-weight: 450;
+	letter-spacing: -0.045em;
+	line-height: 1.03;
+}
+body .site-header {
+	border-top: 4px solid var(--ink);
+}
+body .page.discover {
+	padding-top: 36px;
+}
+body .page.discover.starting .page-heading {
+	display: grid;
+	grid-template-columns: 1.25fr 0.75fr;
+	gap: 72px;
+	align-items: end;
+	padding-bottom: 34px;
+	border-bottom: 1px solid var(--strong-line);
+	margin-bottom: 36px;
+}
+body .page.discover.starting .page-heading h1 {
+	font-size: clamp(48px, 5.3vw, 76px);
+	max-width: 16ch;
+}
+body .page.discover.starting .page-heading p {
+	margin: 0 0 4px;
+	font-size: 17px;
+	line-height: 1.65;
+	max-width: 34ch;
+}
+body .page.discover.starting .discover-grid {
+	gap: 80px;
+	grid-template-columns: 1.05fr 0.95fr;
+}
+body .page.discover .starting-examples {
+	border-left: 1px solid var(--line);
+	padding-left: 40px;
+}
+body .page.discover .start-guide h2,
+body .page.discover .examples-heading h2,
+body .page.discover .example-name strong,
+body .result-row .result-model {
+	font-family: var(--display);
+	font-weight: 500;
+}
+body .page.discover .example-name strong {
+	font-size: 31px;
+}
+body .page.discover .example {
+	padding-block: 16px;
+}
+body .page .fr-chart {
+	border-top: 3px solid var(--detail);
+	padding: 22px;
+}
+body .fr-chart .plot {
+	height: 292px;
+}
+body .segmented {
+	border: 0;
+	padding: 0;
+	gap: 16px;
+	border-radius: 0;
+	border-bottom: 1px solid var(--line);
+}
+body .segmented span {
+	padding: 8px 0;
+	border-radius: 0;
+	border-bottom: 2px solid transparent;
+}
+body .segmented input:checked + span {
+	background: none;
+	color: var(--accent);
+	border-color: var(--accent);
+}
+body .result-row {
+	padding-block: 20px;
+}
+body .result-row .rank {
+	color: var(--detail);
+}
+body .result-row .result-model {
+	font-size: 27px;
+}
+body .product-name,
+body .catalog-row h3,
+body [data-testid='comparison-row'] h3,
+body .method article h2 {
+	font-family: var(--display);
+	font-weight: 500;
+	letter-spacing: -0.025em;
+}
+/* Product names are proper nouns, not tightly tracked editorial headlines. */
+body .product-name,
+body .result-row .result-model,
+body .catalog-row h3,
+body [data-testid='comparison-row'] h3,
+body .page.discover .example-name strong {
+	letter-spacing: normal;
+	font-kerning: normal;
+	font-optical-sizing: auto;
+}
+body .catalog-row h3 {
+	font-size: 28px;
+}
+body [data-testid='comparison-row'] h3 {
+	font-size: 24px;
+}
+body .catalog-row h3 a {
+	color: var(--ink);
+	text-decoration-thickness: 1px;
+}
+body .method article h2 {
+	font-size: 32px;
+}
+body .page:not(.discover) > .page-heading {
+	border-bottom: 1px solid var(--strong-line);
+	padding-bottom: 28px;
+	max-width: none;
+}
+body .page:not(.discover) > .page-heading h1 {
+	max-width: 22ch;
+}
+body .button.quiet,
+body .button.icon {
+	border-color: var(--strong-line);
+}
+body .product-heading {
+	border-bottom: 1px solid var(--strong-line);
+	padding-bottom: 28px;
+}
+body .method .eyebrow {
+	text-transform: none;
+	letter-spacing: 0;
+}
+@media (max-width: 900px) {
+	body .page.discover.starting .page-heading {
+		grid-template-columns: 1fr;
+		gap: 20px;
+	}
+	body .page.discover.starting .discover-grid {
+		grid-template-columns: 1fr;
+		gap: 32px;
+	}
+	body .page.discover .starting-examples {
+		border-left: 0;
+		padding-left: 0;
+	}
+}
+@media (max-width: 640px) {
+	body .page.discover {
+		padding-top: 28px;
+	}
+	body .page.discover.starting .page-heading {
+		padding-bottom: 26px;
+		margin-bottom: 24px;
+	}
+	body .page.discover.starting .page-heading h1 {
+		font-size: 48px;
+	}
+	body .page.discover.starting .page-heading p {
+		font-size: 15px;
+	}
+	body .page.discover .start-guide {
+		padding-top: 0;
+		margin-top: 0;
+	}
+	body .page .fr-chart {
+		padding: 16px 10px;
+	}
+	body .fr-chart .plot {
+		height: 244px;
+	}
+	body .result-row .result-model {
+		font-size: 25px;
+	}
+}

@@ -3,10 +3,10 @@ import { confidenceReason, describeTaste, emptyTasteSummary } from './taste-word
 
 test('describes absent preference statements without inventing a cause', () => {
 	expect(emptyTasteSummary('iem')).toBe(
-		'No supported preference description is available against typical IEMs in this dataset.'
+		"There isn't enough consistent measurement evidence to describe how your liked products differ from typical IEMs in this dataset."
 	);
 	expect(emptyTasteSummary('headphone')).toBe(
-		'No supported preference description is available against typical headphones in this dataset.'
+		"There isn't enough consistent measurement evidence to describe how your liked products differ from typical headphones in this dataset."
 	);
 });
 

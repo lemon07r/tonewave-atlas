@@ -130,16 +130,14 @@ test('a product without defaults retains its measurement selector and remove act
 	await expect(row).toHaveCount(0);
 });
 
-test('Discover rejects a known IEM reference in headphone mode', async ({ page }) => {
+test('Discover returns a known IEM reference to its catalog from headphone mode', async ({ page }) => {
 	await page.goto(`/?ref=${hexa}&form=headphones`);
-	await expect(
-		page.getByText(
-			'This reference is not in the selected form-factor catalog. Switch modes or choose another product.',
-			{ exact: true }
-		)
-	).toBeVisible();
-	await expect(page.locator('.result-row')).toHaveCount(0);
-	await expect(page.getByRole('combobox', { name: 'Reference measurement', exact: true })).toHaveCount(0);
+	await expect.poll(() => new URL(page.url()).searchParams.has('form')).toBe(false);
+	await expect(page.locator('.profile-row')).toContainText('Truthear Hexa');
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
+		'Truthear Hexa: opened in IEMs'
+	);
 	await accessible(page);
 });
 
@@ -176,19 +174,20 @@ test('Discover clears source filters on rig changes and keeps taste corrections 
 	const vulkan = 'p-03b003b753f77550fdc9';
 	await page.goto(`/?ref=${vulkan}&rig=iem-711`);
 	await expect(page.locator('.result-row').first()).toBeVisible();
-	await page.getByText('Advanced matching', { exact: true }).click();
+	await page.locator('.refine > summary').click();
 	await page.locator('.source-filter').getByRole('checkbox').first().check();
 	await expect(page).toHaveURL(/sources=/);
 	await page.getByRole('combobox', { name: 'Measurement rig', exact: true }).selectOption('iem-5128');
 	await expect(page).not.toHaveURL(/sources=/);
-	await expect(page.locator('.results .section-heading .eyebrow')).toHaveText('B&K 5128');
-	await page.getByRole('radio', { name: 'Match my taste profile', exact: true }).check();
-	await page.getByRole('combobox', { name: 'Add an IEM to your profile', exact: true }).fill('DUNU Vulkan 2');
-	await page
-		.getByRole('option')
-		.filter({ has: page.locator('.option-title').filter({ hasText: /^DUNU Vulkan 2$/i }) })
-		.click();
-	const rig = page.getByRole('combobox', { name: 'Taste measurement rig', exact: true });
+	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
+	// Legacy taste URLs still restore the same explicit reference as a saved Like.
+	await page.goto(
+		`/?mode=profile&ratings=${encodeURIComponent(JSON.stringify([{ productId: vulkan, rating: 'like', strength: 0.6, soundRelated: true }]))}&rig=iem-711`
+	);
+	await expect(page.locator('.model > summary')).toHaveText('Taste model · 1 centre · limited support');
+	await page.locator('.refine > summary').click();
+	await page.locator('.controls > details > summary').click();
+	const rig = page.getByRole('combobox', { name: 'Measurement rig', exact: true });
 	await rig.selectOption('iem-711');
 	const correction = page.getByRole('slider', { name: 'Taste 1 bass', exact: true });
 	await expect(correction).toHaveValue('0');
@@ -200,6 +199,11 @@ test('Discover clears source filters on rig changes and keeps taste corrections 
 	await expect(page).not.toHaveURL(/sources=/);
 	await expect(correction).toHaveValue('0');
 	await rig.selectOption('iem-711');
+	await expect(correction).toHaveValue('0.5');
+	await expect(page).toHaveURL(/edits=/);
+	await page.reload();
+	await page.locator('.refine > summary').click();
+	await page.locator('.controls > details > summary').click();
 	await expect(correction).toHaveValue('0.5');
 	await accessible(page);
 });
@@ -223,7 +227,7 @@ test('the profile editor cannot exceed its import limit', async ({ page }) => {
 		);
 	});
 	await page.goto('/?mode=profile');
-	await page.getByRole('combobox', { name: 'Add an IEM to your profile', exact: true }).fill('Truthear Hexa');
+	await page.getByRole('combobox', { name: 'Add an IEM', exact: true }).fill('Truthear Hexa');
 	await page
 		.getByRole('option')
 		.filter({ has: page.locator('.option-title').filter({ hasText: /^Truthear Hexa$/ }) })

@@ -3,7 +3,7 @@ import type { Form } from '#core/dataset/types.ts';
 import { bandLabels } from './describe.ts';
 
 export function emptyTasteSummary(form: Form): string {
-	return `No supported preference description is available against typical ${form === 'iem' ? 'IEMs' : 'headphones'} in this dataset.`;
+	return `There isn't enough consistent measurement evidence to describe how your liked products differ from typical ${form === 'iem' ? 'IEMs' : 'headphones'} in this dataset.`;
 }
 
 /** Preserve the service's support, direction and measured range while using reader-facing band names. */

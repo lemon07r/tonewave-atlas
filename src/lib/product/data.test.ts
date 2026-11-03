@@ -1,6 +1,130 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import type { ProductListItem } from '#core/atlas/types.ts';
-import { priceListings } from './data.ts';
+import {
+	catalogIdentity,
+	migrationCatalogs,
+	priceListings,
+	productFor,
+	productMeasurements
+} from './data.ts';
+import { gzipSync } from 'node:zlib';
+
+vi.mock('#lib/catalog/client.ts', async () => ({
+	catalogMetadata: (await import('#lib/catalog/metadata.ts')).readCatalogMetadata
+}));
+
+test('loads redirects from both gzip and decoded catalogs and retries failed requests', async () => {
+	const fixture = {
+		partitions: [],
+		products: [{ id: 'now', brand: 'Fixture', model: 'One' }],
+		measurements: [
+			{
+				id: 'm-now',
+				productId: 'now',
+				sourceId: 's',
+				partition: 'rig',
+				variant: { label: 'Default', kind: 'default' }
+			}
+		],
+		sources: [{ id: 's', name: 'Fixture Reviewer' }],
+		redirects: { products: { old: 'now' }, measurements: { 'm-old': 'm-now' } }
+	};
+	const fetch = vi.spyOn(globalThis, 'fetch');
+	try {
+		for (const [version, body] of [
+			['fixture-json', JSON.stringify(fixture)],
+			['fixture-gzip', gzipSync(JSON.stringify(fixture))]
+		] as const) {
+			fetch.mockResolvedValueOnce(new Response(body));
+			const identity = await catalogIdentity('iem', version);
+			expect(identity.measurementId('m-old')).toBe('m-now');
+			expect(productFor(fixture.products, 'old', identity)).toEqual(fixture.products[0]);
+		}
+		fetch.mockResolvedValueOnce(new Response('', { status: 503 }));
+		await expect(catalogIdentity('headphone', 'fixture-retry')).rejects.toThrow('503');
+		fetch.mockResolvedValueOnce(new Response(JSON.stringify(fixture)));
+		expect((await catalogIdentity('headphone', 'fixture-retry')).productId('old')).toBe('now');
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
+test('migration lookup fetches the other form only for unresolved identities and keeps failures optional', async () => {
+	const fixture = {
+		partitions: [],
+		products: [{ id: 'iem', brand: 'Fixture', model: 'IEM' }],
+		sources: [],
+		measurements: []
+	};
+	const fetch = vi.spyOn(globalThis, 'fetch');
+	try {
+		fetch.mockResolvedValueOnce(new Response(JSON.stringify(fixture)));
+		const current = await migrationCatalogs('iem', 'cross-form', new URL('https://example.org/?ref=iem'));
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(current.iem?.productId('iem')).toBe('iem');
+		fetch.mockResolvedValueOnce(new Response('', { status: 503 }));
+		const failed = await migrationCatalogs(
+			'iem',
+			'cross-form',
+			new URL('https://example.org/?ref=headphone')
+		);
+		expect(failed.iem).toBe(current.iem);
+		expect(failed.headphone).toBeUndefined();
+		fetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({ ...fixture, products: [{ id: 'headphone', brand: 'Fixture', model: 'Headphone' }] })
+			)
+		);
+		const retry = await migrationCatalogs('iem', 'cross-form', new URL('https://example.org/?ref=headphone'));
+		expect(retry.headphone?.productId('headphone')).toBe('headphone');
+		expect(fetch).toHaveBeenCalledTimes(3);
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
+test('real product metadata lookup returns only the canonical product rows, never another product or an unknown ID', async () => {
+	const fixture = {
+		partitions: [],
+		sources: [{ id: 's', name: 'Reviewer' }],
+		products: [
+			{ id: 'p', brand: 'Fixture', model: 'One' },
+			{ id: 'other', brand: 'Fixture', model: 'Other' }
+		],
+		measurements: ['p', 'other'].map((productId) => ({
+			id: `m-${productId}`,
+			productId,
+			sourceId: 's',
+			partition: 'iem-711',
+			variant: { label: 'Default', kind: 'default' }
+		})),
+		redirects: { products: { old: 'p' }, measurements: {} }
+	};
+	const fetch = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(() => Promise.resolve(new Response(JSON.stringify(fixture))));
+	try {
+		const signal = new AbortController().signal;
+		const rows = await productMeasurements('iem', 'metadata-lookup', 'old', signal);
+		expect(rows).toEqual([
+			{
+				id: 'm-p',
+				productId: 'p',
+				brand: 'Fixture',
+				model: 'One',
+				sourceId: 's',
+				sourceName: 'Reviewer',
+				partition: 'iem-711',
+				variantLabel: 'Default',
+				variantKind: 'default'
+			}
+		]);
+		await expect(productMeasurements('iem', 'metadata-lookup', 'unknown', signal)).resolves.toEqual([]);
+		expect(fetch).toHaveBeenCalledWith('/data/metadata-lookup/catalog-iem.json.gz', { signal });
+	} finally {
+		fetch.mockRestore();
+	}
+});
 
 test('lists each service price with its summary source name and crawl month', () => {
 	const prices: ProductListItem['prices'] = [
@@ -14,13 +138,13 @@ test('lists each service price with its summary source name and crawl month', ()
 			{ id: 'b', name: 'Reviewer B' }
 		])
 	).toEqual([
-		'$79 listed by Reviewer A, Mar 2026',
-		'$79 listed by Reviewer B, Apr 2026',
-		'$1,099 listed by Reviewer A, May 2026'
+		'$79 reviewer-listed price (Reviewer A, seen Mar 2026; listing date unknown)',
+		'$79 reviewer-listed price (Reviewer B, seen Apr 2026; listing date unknown)',
+		'$1,099 reviewer-listed price (Reviewer A, seen May 2026; listing date unknown)'
 	]);
 });
 
-test('omits non-USD prices and retains source IDs when a summary source is absent', () => {
+test('omits non-USD prices and unattributed listings when a summary source is absent', () => {
 	expect(
 		priceListings(
 			[
@@ -29,7 +153,7 @@ test('omits non-USD prices and retains source IDs when a summary source is absen
 			],
 			[]
 		)
-	).toEqual(['$20 listed by missing, Mar 2026']);
+	).toEqual([]);
 });
 
 test('has no price listing when the product has no service prices', () => {
@@ -47,5 +171,14 @@ test('rejects non-finite USD but preserves raw crawl-date evidence', () => {
 			})),
 			[{ id: 's', name: 'Source' }]
 		)
-	).toEqual(['$30 listed by Source, unknown date']);
+	).toEqual(['$30 reviewer-listed price (Source, seen date unknown; listing date unknown)']);
+});
+
+test('warns when the price was seen more than twelve months ago, never calling that the listing date', () => {
+	const sources = [{ id: 's', name: 'Reviewer' }];
+	const prices = [{ raw: '$20', usd: 20, sourceId: 's', crawledAt: '2025-10-01' }];
+	expect(priceListings(prices, sources, Date.parse('2026-11-02'))).toEqual([
+		'$20 reviewer-listed price (Reviewer, seen Oct 2025; listing date unknown) · may be out of date'
+	]);
+	expect(priceListings(prices, sources, Date.parse('2026-09-30'))[0]).not.toContain('out of date');
 });
