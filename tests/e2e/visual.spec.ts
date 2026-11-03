@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import type { WorkspaceItem } from '../../src/lib/profile/profile.ts';
 import { expectTradeoffRows } from './tradeoffs.ts';
 import { reviewerForReference } from './catalog.ts';
@@ -26,14 +26,11 @@ for (const theme of ['light', 'dark'] as const) {
 			test.setTimeout(90000);
 			const errors: string[] = [];
 			page.on('pageerror', (error) => errors.push(error.message));
-			async function capture(name: string, anchor?: string) {
+			async function capture(name: string, anchor?: string | Locator) {
 				if (anchor)
-					await page
-						.locator(anchor)
-						.first()
-						.evaluate((element) => {
-							element.scrollIntoView({ block: 'start' });
-						});
+					await (typeof anchor === 'string' ? page.locator(anchor) : anchor).first().evaluate((element) => {
+						element.scrollIntoView({ block: 'start' });
+					});
 				else
 					await page.evaluate(() => {
 						window.scrollTo(0, 0);
@@ -72,8 +69,21 @@ for (const theme of ['light', 'dark'] as const) {
 			await capture('discover-single');
 			await capture('discover-single-results', '.results');
 			await capture('discover-single-chart', '.chart-panel');
+			const sensitivity = page
+				.locator('.result-row')
+				.filter({
+					has: page.locator('.rank-range').filter({ hasText: /Rank \d+–\d+ if one reviewer is left out/ })
+				})
+				.first();
+			await expect(sensitivity).toBeVisible();
+			await capture('discover-rank-range', sensitivity);
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
 			await capture('discover-evidence', '.result-row');
+			await page.goto(`/?${new URLSearchParams({ ref: reference, rig: 'iem-711', modified: '1' })}`);
+			await ready();
+			const prototype = page.locator('.result-row[data-product-id="p-5a52facdf723156777d5"]');
+			await expect(prototype.locator('.related-reference')).toHaveText('· Variant of CrinEar Reference');
+			await capture('discover-mods', prototype);
 			await page.goto(ratingsUrl([positive(reference), positive(volume)]));
 			await ready();
 			await page
