@@ -540,6 +540,38 @@ test('updating notice never pushes the previous first result, with readable type
 	await expect(page.locator('.rank-change')).toHaveCount(0);
 });
 
+test('mods and minimum reviewers re-rank, persist in the URL and expose reviewer sensitivity honestly', async ({
+	page
+}) => {
+	await page.goto(shared([reference]));
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await expect(page.locator('.rank-range').first()).toBeVisible();
+	const prototype = page.locator('.result-row[data-product-id="p-5a52facdf723156777d5"]');
+	await expect(prototype).toHaveCount(0);
+	await page.locator('.refine > summary').click();
+	const modified = page.getByRole('checkbox', { name: 'Include mods & prototypes', exact: true });
+	const minimum = page.getByRole('combobox', { name: 'At least N reviewers', exact: true });
+	await expect(modified).not.toBeChecked();
+	await expect(minimum).toHaveValue('1');
+	await modified.check();
+	await expect(page).toHaveURL(/modified=1/);
+	await expect(prototype).toBeVisible();
+	await expect(prototype.locator('.related-reference')).toHaveText('· Variant of CrinEar Reference');
+	await minimum.selectOption('3');
+	await expect(page).toHaveURL(/minReviewers=3/);
+	await settled(page);
+	await expect(prototype).toHaveCount(0);
+	await page.reload();
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await page.locator('.refine > summary').click();
+	await expect(modified).toBeChecked();
+	await expect(minimum).toHaveValue('3');
+	await minimum.selectOption('1');
+	await modified.uncheck();
+	await expect(page).not.toHaveURL(/modified=|minReviewers=/);
+	await accessible(page);
+});
+
 test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {
 	await page.goto(shared([reference]));
 	await expect(page.locator('.result-row')).toHaveCount(20);

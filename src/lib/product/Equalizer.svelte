@@ -6,6 +6,7 @@
 	import Button from '#lib/components/Button.svelte';
 	import type { SearchItem } from '#lib/search.ts';
 	import { analysis } from '#lib/atlas.ts';
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import type { PeqResponse, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
 	import type { ReferenceTarget } from '#core/dataset/types.ts';
 	import type { FrSeries } from '#lib/chart.ts';
@@ -63,7 +64,7 @@
 				if (active) references = targets.filter((target) => target.partitions.includes(rig));
 			})
 			.catch((e: unknown) => {
-				if (active) referenceError = `Reference targets unavailable: ${String(e)}`;
+				if (active) referenceError = analysisError(e);
 			});
 		return () => {
 			active = false;
@@ -152,7 +153,7 @@
 			result = response;
 			fittedReference = reference ?? null;
 		} catch (e) {
-			if (token === request) error = String(e);
+			if (token === request) error = analysisError(e);
 		} finally {
 			if (token === request) busy = false;
 		}

@@ -2,6 +2,7 @@ import type { Source, Form } from '#core/dataset/types.ts';
 import type { MeasurementInfo, ProductDetail, ProductListItem, ProductSpread } from '#core/atlas/types.ts';
 import { spreadFor } from '#core/atlas/spread.ts';
 import { analysis } from '#lib/atlas.ts';
+import { analysisError } from '#lib/analysis/errors.svelte.ts';
 import type { Channel } from '#lib/compare/url.ts';
 import { resolve } from '$app/paths';
 import { AsyncLru } from '#lib/analysis/cache.ts';
@@ -38,12 +39,16 @@ export async function migrationCatalogs(
 	url: URL,
 	profile?: Profile
 ): Promise<Partial<Record<Form, CatalogIdentity>>> {
-	const current = await catalogIdentity(form, version).catch(() => undefined);
+	const optionalIdentity = (caught: unknown) => {
+		analysisError(caught);
+		return undefined;
+	};
+	const current = await catalogIdentity(form, version).catch(optionalIdentity);
 	if (!current) return {};
 	const catalogs: Partial<Record<Form, CatalogIdentity>> = { [form]: current };
 	if (needsOtherCatalog(url, current) || (profile && profileNeedsOtherCatalog(profile, form, current))) {
 		const other = form === 'iem' ? 'headphone' : 'iem';
-		const identity = await catalogIdentity(other, version).catch(() => undefined);
+		const identity = await catalogIdentity(other, version).catch(optionalIdentity);
 		if (identity) catalogs[other] = identity;
 	}
 	return catalogs;

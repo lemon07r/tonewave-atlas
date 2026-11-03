@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import { browser, dev } from '$app/env';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -149,11 +150,14 @@
 					products = list;
 					summary = data;
 				}
-				const current = await catalogIdentity(selectedForm, data.version).catch(() => undefined);
+				const current = await catalogIdentity(selectedForm, data.version).catch((caught: unknown) => {
+					analysisError(caught);
+					return undefined;
+				});
 				if (!abort.signal.aborted) identity = current ? { form: selectedForm, catalog: current } : undefined;
 			})
 			.catch((e: unknown) => {
-				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);
+				if (!abort.signal.aborted) error = analysisError(e);
 			});
 		return () => {
 			abort.abort();
@@ -248,7 +252,7 @@
 			if (!abort.signal.aborted) selections = rows;
 		})()
 			.catch((e: unknown) => {
-				if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);
+				if (!abort.signal.aborted) error = analysisError(e);
 			})
 			.finally(() => {
 				if (!abort.signal.aborted) loading = false;
@@ -317,7 +321,7 @@
 				}
 			];
 		} catch (e) {
-			uploadError = e instanceof Error ? e.message : String(e);
+			uploadError = analysisError(e);
 		}
 	}
 </script>

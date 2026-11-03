@@ -10,6 +10,54 @@ vi.mock('#lib/atlas.ts', () => {
 	return { analysis: () => worker };
 });
 
+test('reviewer line shows assessed rank sensitivity and a related-reference label, with honest expanded limits', async () => {
+	const screen = await render(ResultRow, {
+		candidate: {
+			id: 'c',
+			product: { id: 'p', brand: 'Fixture', model: 'Prototype', form: 'iem', baseProductId: 'base' },
+			kind: 'default',
+			variantLabel: null,
+			measurementIds: [],
+			sources: [],
+			prices: [],
+			priceUsd: null
+		},
+		rank: 4,
+		distance: 1,
+		bands: [],
+		onshow: vi.fn(),
+		stability: { scoreRange: [0.8, 1.2], rankRange: [4, 20], referenceSide: true, candidateSide: false },
+		relatedToReference: true,
+		nameFor: () => 'Fixture Reference',
+		referenceReviewers: [{ name: 'Fixture Reference', count: 3, explicit: false }]
+	});
+	await expect.element(screen.getByText(/Rank 4–20 if one reviewer is left out/)).toBeVisible();
+	await expect.element(screen.getByText(/Variant of Fixture Reference/)).toBeVisible();
+	await expect
+		.element(screen.getByText(/This product has 0 reviewers, so its own variation isn't assessed/))
+		.not.toBeVisible();
+	await screen.getByText('Measured differences & sources', { exact: true }).click();
+	await expect
+		.element(screen.getByText(/This product has 0 reviewers, so its own variation isn't assessed/))
+		.toBeVisible();
+	await screen.rerender({
+		stability: { scoreRange: [1, 1], rankRange: [4, 4], referenceSide: true, candidateSide: false }
+	});
+	await expect.element(screen.getByText(/Rank holds if one reviewer is left out/)).toBeVisible();
+	await screen.rerender({
+		stability: undefined,
+		relatedToReference: false,
+		referenceReviewers: [{ name: 'Fixture Reference', count: 1, explicit: false }]
+	});
+	expect(screen.container.querySelector('.rank-range')).toBeNull();
+	expect(screen.container.querySelector('.related-reference')).toBeNull();
+	await expect
+		.element(
+			screen.getByText(/Fixture Reference has 1 reviewer, so its reference-side variation isn't assessed/)
+		)
+		.toBeVisible();
+});
+
 test('rating an existing row retains preferences, and duplicate reference labels render independently', async () => {
 	const candidate: CandidateInfo = {
 		id: 'c',

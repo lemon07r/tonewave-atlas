@@ -31,6 +31,11 @@
 				? 'Each distance is level-aligned independently to its reference. Sort by the mean distance for overall closeness, or the worst-case distance for a balanced compromise.'
 				: 'Liked measurements form one or more taste centres. Sound-related dislikes add measured directional constraints, or near-duplicate avoidance when no usable reason is given.'}
 	</p>
+	{#if route !== 'taste'}<p class="stability-caveat">
+			Rank ranges show what changes when one reviewer is left out, among the returned matches plus up to 10
+			more; sides with fewer than 3 reviewers aren't assessed, so a narrow range does not establish stability
+			there. This does not assess unit variation or whether a difference is audible.
+		</p>{/if}
 	{@render children?.()}
 </details>
 

@@ -8,6 +8,7 @@
 	import { resolve } from '$app/paths';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, productList } from '#lib/atlas.ts';
+	import { analysisError, datasetUpdate } from '#lib/analysis/errors.svelte.ts';
 	import type { Form } from '#core/dataset/types.ts';
 	import type { AtlasError, AtlasSummary, ProductListItem, SourceMode } from '#core/atlas/types.ts';
 	import { BANDS, type Band } from '#core/analysis/common.ts';
@@ -159,6 +160,21 @@
 			? result.data.references.map((reference) => nameFor(reference.productId ?? ''))
 			: []
 	);
+	let referenceReviewers = $derived.by(() => {
+		const references =
+			result?.kind === 'similar'
+				? [result.data.reference]
+				: result?.kind === 'compare'
+					? result.data.references
+					: [];
+		return references.map((reference) => ({
+			name: reference.uploadId ? 'Your local measurement' : nameFor(reference.productId ?? ''),
+			count: reference.sources.length,
+			explicit:
+				Boolean(reference.uploadId) ||
+				resultItems.some((item) => item.productId === reference.productId && Boolean(item.measurementId))
+		}));
+	});
 	let compareReferences = $derived(
 		resultItems
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
@@ -184,8 +200,7 @@
 		} satisfies QuerySpec)
 	);
 	const controller = latestQuery<Awaited<ReturnType<typeof queryDiscovery>>>();
-	const errorText = (cause: unknown) =>
-		cause instanceof Error ? cause.message : 'Analysis unavailable. Please try again.';
+	const errorText = analysisError;
 	function nameFor(id: string): string {
 		const resolved = result?.data.resolvedIds?.find(
 			(entry) => entry.productId === id || entry.measurementId === id
@@ -331,7 +346,8 @@
 			navigate(withItems(page.url.searchParams, next.profiles[form]));
 			profileError = '';
 		} catch (cause) {
-			profileError = `Import failed: ${errorText(cause)}`;
+			const message = errorText(cause);
+			profileError = message ? `Import failed: ${message}` : '';
 		}
 		input.value = '';
 	}
@@ -441,6 +457,9 @@
 					const changed =
 						current && (await migrateLocation(href, current, catalogs[form === 'iem' ? 'headphone' : 'iem']));
 					if (!changed && !cancelled() && revision === locationVersion) migratedHref = href;
+				},
+				(cause: unknown) => {
+					if (!cancelled()) catalogError = errorText(cause);
 				}
 			);
 		});
@@ -462,7 +481,10 @@
 		const key = queryKey;
 		if (key === untrack(() => approvedQuery)) return;
 		// Clearing the approval cancels a superseded debounce or run and lets a return to it restart.
-		approvedQuery = ready && !catalogLoading && !catalogError && migratedHref === page.url.href ? key : '';
+		approvedQuery =
+			ready && !catalogLoading && !catalogError && !datasetUpdate.message && migratedHref === page.url.href
+				? key
+				: '';
 	});
 	$effect(() => {
 		if (!approvedQuery) return;
@@ -669,13 +691,35 @@
 							Listed prices are historical reviewer entries, not current deals. A budget excludes products
 							without a USD price.
 						</p>
-						<Toggle
-							label="Include separate tunings"
-							checked={settings.tunings}
-							onchange={(checked) => {
-								change({ tunings: checked ? '1' : undefined });
-							}}
-						/>
+						<div class="candidate-toggles">
+							<Toggle
+								label="Include separate tunings"
+								checked={settings.tunings}
+								onchange={(checked) => {
+									change({ tunings: checked ? '1' : undefined });
+								}}
+							/>
+							<label class="modified-toggle"
+								><input
+									type="checkbox"
+									checked={settings.modified}
+									onchange={(event) => {
+										change({ modified: event.currentTarget.checked ? '1' : undefined });
+									}}
+								/>Include mods &amp; prototypes</label
+							>
+						</div>
+						<label class="field-label"
+							>At least N reviewers<select
+								value={settings.minReviewers}
+								onchange={(event) => {
+									change({
+										minReviewers: event.currentTarget.value === '1' ? undefined : event.currentTarget.value
+									});
+								}}
+								>{#each [1, 2, 3, 5] as count (count)}<option value={count}>{count}</option>{/each}</select
+							></label
+						>
 						{#if route !== 'taste'}<Toggle
 								label="Treble-sensitive matching"
 								checked={settings.alpha !== undefined}
@@ -945,6 +989,10 @@
 									distance={match.distance}
 									bands={match.bands}
 									{match}
+									stability={match.stability}
+									relatedToReference={match.relatedToReference}
+									{referenceReviewers}
+									{nameFor}
 									referenceProductId={similarReferenceId}
 									selected={overlays.includes(match.candidate.id)}
 									limitReached={overlays.length >= 5}
@@ -961,6 +1009,7 @@
 									distance={row.fit.plainDistanceDb}
 									bands={row.fit.bands}
 									fit={row.fit}
+									relatedToReference={row.relatedToReference}
 									nearestLiked={nearestLikedEvidence(result.data, row)}
 									{nameFor}
 									referenceProductId={resultItems.find(
@@ -984,6 +1033,10 @@
 									referenceEvidence={evidence}
 									{compareReferences}
 									tradeoff={row.tradeoff}
+									stability={row.stability}
+									relatedToReference={row.relatedToReference}
+									{referenceReviewers}
+									{nameFor}
 									{referenceNames}
 									referenceProductId={resultItems.find(
 										(i) => i.soundRelated && ['like', 'love'].includes(i.rating)
@@ -1036,6 +1089,24 @@
 />
 
 <style>
+	.candidate-toggles {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px 20px;
+	}
+	.modified-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 36px;
+		font-size: var(--text-sm);
+	}
+	.modified-toggle input {
+		min-width: 24px;
+		min-height: 24px;
+		accent-color: var(--accent);
+	}
 	.workspace-options {
 		display: grid;
 		grid-template-columns: 1fr 1fr;

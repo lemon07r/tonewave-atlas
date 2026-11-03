@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { browser } from '$app/env';
@@ -28,7 +29,7 @@
 				summary = data;
 			})
 			.catch((e: unknown) => {
-				if (active) error = String(e);
+				if (active) error = analysisError(e);
 			});
 		return () => {
 			active = false;
@@ -46,7 +47,7 @@
 				if (active) targets = data;
 			})
 			.catch((cause: unknown) => {
-				if (active) targetError = cause instanceof Error ? cause.message : String(cause);
+				if (active) targetError = analysisError(cause);
 			})
 			.finally(() => {
 				if (active) targetsLoading = false;

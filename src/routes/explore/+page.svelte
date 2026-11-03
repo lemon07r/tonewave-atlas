@@ -6,6 +6,7 @@
 	import { untrack } from 'svelte';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, formFromUrl, productList } from '#lib/atlas.ts';
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import { migrationCatalogs, priceListings } from '#lib/product/data.ts';
 	import { migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
@@ -102,7 +103,7 @@
 			}
 		})()
 			.catch((e: unknown) => {
-				if (!abort.signal.aborted) error = String(e);
+				if (!abort.signal.aborted) error = analysisError(e);
 			})
 			.finally(() => {
 				if (!abort.signal.aborted) loading = false;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import type {
 		AtlasSummary,
 		MeasurementInfo,
@@ -71,8 +72,19 @@
 		]).then((outcomes) => {
 			if (abort.signal.aborted) return;
 			measurements = outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : []));
-			if (outcomes.some((outcome) => outcome.status === 'rejected'))
-				error = 'Variant metadata could not be loaded. No measurement has been substituted.';
+			error = outcomes
+				.flatMap((outcome) =>
+					outcome.status === 'rejected'
+						? [
+								analysisError(
+									outcome.reason,
+									'Variant metadata could not be loaded. No measurement has been substituted.'
+								)
+							]
+						: []
+				)
+				.filter(Boolean)
+				.join(' ');
 			loading = false;
 		});
 		return () => {

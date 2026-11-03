@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { CandidateInfo, SimilarMatch } from '#core/atlas/types.ts';
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
+	import type { CandidateInfo, RankStability, SimilarMatch } from '#core/atlas/types.ts';
 	import type { BandDistance } from '#core/analysis/distance.ts';
 	import type { TasteFit } from '#core/analysis/taste.ts';
 	import type { MultiReferenceResult } from '#core/analysis/multi-reference.ts';
@@ -19,6 +20,9 @@
 		existing,
 		rank,
 		rankChange,
+		stability,
+		relatedToReference = false,
+		referenceReviewers,
 		distance,
 		bands,
 		match,
@@ -39,6 +43,9 @@
 		existing?: WorkspaceItem | undefined;
 		rank: number;
 		rankChange?: RankChange | undefined;
+		stability?: RankStability | undefined;
+		relatedToReference?: boolean | undefined;
+		referenceReviewers?: { name: string; count: number; explicit: boolean }[];
 		distance: number;
 		bands: BandDistance[];
 		match?: SimilarMatch;
@@ -77,7 +84,7 @@
 				}
 			},
 			(cause: unknown) => {
-				if (current) error = cause instanceof Error ? cause.message : 'Could not load measurement sources.';
+				if (current) error = analysisError(cause, 'Could not load measurement sources.');
 			}
 		);
 		return () => {
@@ -125,12 +132,17 @@
 				>{/if}</span
 		>
 	</div>
-	{#if match}<p class="reviewers">
-			{reviewerSummary(match.perSourceRange, match.sourceCount)}
-		</p>{/if}
-	{#if !match}<p class="reviewers">
-			{reviewerSummary(null, candidate.sources.length)}
-		</p>{/if}
+	<p class="reviewers">
+		{reviewerSummary(match?.perSourceRange ?? null, match?.sourceCount ?? candidate.sources.length)}
+		{#if stability && (stability.referenceSide || stability.candidateSide)}<span class="rank-range">
+				· {stability.rankRange[0] === stability.rankRange[1]
+					? 'Rank holds if one reviewer is left out'
+					: `Rank ${stability.rankRange[0]}–${stability.rankRange[1]} if one reviewer is left out`}
+			</span>{/if}
+		{#if relatedToReference}<span class="related-reference">
+				· Variant of {nameFor(candidate.product.baseProductId ?? referenceProductId ?? '')}</span
+			>{/if}
+	</p>
 	{#if tradeoff}<!-- svelte-ignore a11y_no_noninteractive_tabindex (Overflowing tables need keyboard scrolling.) -->
 		<div class="tradeoff table-scroll" tabindex="0" role="region" aria-label="Reference distance table">
 			<table class="data-table">
@@ -229,6 +241,22 @@
 		</details>{/if}
 	<details bind:open>
 		<summary>Measured differences &amp; sources</summary>
+		{#if referenceReviewers}
+			{#if !stability?.candidateSide}<p class="stability-note">
+					{candidate.sources.length < 3
+						? `This product has ${candidate.sources.length} ${candidate.sources.length === 1 ? 'reviewer' : 'reviewers'}, so its own variation isn't assessed.`
+						: "This product's own reviewer variation isn't assessed for this measurement selection."}
+				</p>{/if}
+			{#each referenceReviewers as reference, index (index)}
+				{#if reference.count < 3 || reference.explicit || !stability?.referenceSide}<p class="stability-note">
+						{reference.explicit
+							? `${reference.name} uses an exact measurement, so its reference-side reviewer variation isn't assessed.`
+							: reference.count < 3
+								? `${reference.name} has ${reference.count} ${reference.count === 1 ? 'reviewer' : 'reviewers'}, so its reference-side variation isn't assessed.`
+								: `${reference.name}: reference-side reviewer variation isn't assessed for this comparison.`}
+					</p>{/if}
+			{/each}
+		{/if}
 		{#if fit}<div class="fit">
 				<p>
 					Taste {fit.taste + 1}: ordinary response distance {fit.plainDistanceDb.toFixed(1)} dB; tolerance-weighted
@@ -345,6 +373,7 @@
 	.reviewers,
 	.price,
 	.metrics,
+	.stability-note,
 	.fit p {
 		font-size: var(--text-xs);
 		margin: 8px 0 0 34px;
@@ -427,6 +456,7 @@
 		min-height: 1.5em;
 	}
 	.metrics,
+	.stability-note,
 	.fit p {
 		margin-left: 0;
 	}

@@ -74,7 +74,9 @@ it is never silently substituted.
 - A sound-related dislike or five rated sound-related items uses the taste model. Neutral/unrated
   and fit/comfort-only items never enter the sound model.
 
-Rig, budget, reviewer coverage, tunings, focus and treble controls live behind Refine matches.
+Rig, budget, reviewer coverage, tunings, modified products, minimum reviewers, focus and treble controls live behind Refine matches.
+Mods and prototypes are excluded by default. The native minimum-reviewer select offers 1, 2, 3 or 5
+contributing reviewers; both filters re-rank and round-trip through the URL, omitting their defaults.
 Reviewer scoring offers coverage (products measured by selected reviewers, scoring all sources) or
 selected-reviewer-only reference/candidate consensus. Engine caveats disclose lost source support;
 no selected measurements means a reference is unavailable, not silently replaced. Settings auto-apply
@@ -91,6 +93,13 @@ references using the existing measurement diagnostics and engine taste exclusion
 preference edit, accepted results are compared by product with the previous displayed list: “New”,
 “↑N” and “↓N” markers accompany one polite count summary. First loads have no markers. Sort, filters,
 pagination and chart/view changes never create markers; existing markers last until the next workspace change.
+
+Similar and trade-off rows add leave-one-reviewer-out rank ranges to the reviewer line when assessed,
+or “Rank holds” for an assessed unchanged rank. This is sensitivity among the returned matches plus
+up to ten more, not a probability or a claim about audibility. Sides with fewer than three contributing
+reviewers are unassessed; expanded evidence explains missing assessment, and the method disclosure
+explains the evaluated pool and excludes unit variation and perceptual claims. Included related
+mods/prototypes have a quiet “Variant of [reference]” text label.
 
 Rows lead with rank, product and dB distance, or an explicitly labelled taste ranking score (not dB
 or percent). The summary keeps at most two important band differences. One historical USD listing
@@ -144,6 +153,11 @@ Existing focus, alpha, rig, budget, source, tuning and correction parameters rem
 Canonical edits write a JSON `ratings` parameter; an explicit empty list overrides local storage.
 Malformed shared evidence is reported without overwriting the saved profile. Form switching removes
 form-specific URL evidence and restores the appropriate local profile. Uploads are never serialised.
+
+A dataset update reported by any analysis operation produces one persistent, polite shell message:
+“The dataset was updated. Reload to continue.” A Reload button opens a fresh session; the same failure
+does not also produce a generic catalog, ranking or detail error. Comlink errors are reconstructed
+from their transported name and message.
 
 ## Review
 

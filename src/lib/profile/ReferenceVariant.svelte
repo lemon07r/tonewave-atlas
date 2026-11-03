@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import type { ProductDetail } from '#core/atlas/types.ts';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { detail } from '#lib/discover/display.ts';
@@ -68,8 +69,8 @@
 			(value) => {
 				if (active) data = value;
 			},
-			() => {
-				if (active) error = 'Measurements could not be loaded.';
+			(cause: unknown) => {
+				if (active) error = analysisError(cause, 'Measurements could not be loaded.');
 			}
 		);
 		return () => {

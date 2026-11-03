@@ -16,6 +16,11 @@ test('explains each ranking route in one sentence with details available on dema
 		.toBeVisible();
 	await screen.getByText('How this ranking works', { exact: true }).click();
 	await expect.element(screen.getByText(/after smoothing and level alignment/)).toBeVisible();
+	await expect.element(screen.getByText(/returned matches plus up to 10\s+more/)).toBeVisible();
+	await expect.element(screen.getByText(/sides with fewer than 3 reviewers aren't assessed/)).toBeVisible();
+	await expect
+		.element(screen.getByText(/does not assess unit variation or whether a difference is audible/))
+		.toBeVisible();
 	await screen.rerender({ route: 'compare', likedCount: 3 });
 	await expect
 		.element(
