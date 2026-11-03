@@ -6,8 +6,8 @@ import { isFoldedReference } from './identity-folds.ts';
 import { buildRedirects } from './redirects.ts';
 import { mergeSampleIdentities } from './samples.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults } from './switches.ts';
-import { identity } from './transform.ts';
-import { readInputs } from './common.ts';
+import { identity, variant } from './transform.ts';
+import { readInputs, type Phone } from './common.ts';
 
 function fixture(models: string[], form: Form = 'iem', brand = 'Maker') {
 	const products = new Map<string, Product>();
@@ -416,6 +416,82 @@ describe('fit/tip/pad product identities', () => {
 			);
 		}
 	);
+	it('keeps file-level replacement samples as units through fit and switch folding, selecting sample 2 before sample 3', () => {
+		const phone: Phone = {
+			brand: 'Maker',
+			name: 'Model Deep',
+			file: ['Model Deep Sample 3', 'Model Deep Sample 2'],
+			suffix: [],
+			price: null,
+			reviewLink: null
+		};
+		const { products, rows } = fixture([phone.name]);
+		const first = rows[0];
+		if (!first) throw new Error('Missing file-level sample fixture');
+		const second = structuredClone(first);
+		second.measurement.id = 'm-1';
+		second.sourceOrder = 1;
+		rows.push(second);
+		const product = products.get(first.measurement.productId);
+		if (!product) throw new Error('Missing file-level sample product');
+		product.measurementIds.push(second.measurement.id);
+		for (const [i, row] of rows.entries()) row.measurement.variant = variant(phone, i, row.measurement.id);
+		const units = [
+			{ kind: 'unit', isDefault: false },
+			{ kind: 'unit', isDefault: false }
+		];
+		expect(rows.map((r) => r.measurement.variant)).toMatchObject(units);
+		expect(mergeSampleIdentities(products, rows).moves).toEqual([]);
+		expect(mergeSwitchIdentities(products, rows).moves).toEqual([]);
+		expect(mergeFitIdentities(products, rows).moves).toHaveLength(1);
+		expect(rows.map((r) => r.measurement.variant)).toMatchObject(units);
+		expect(mergeSampleIdentities(products, rows).moves).toEqual([]);
+		expect([...products.values()].map((p) => p.model)).toEqual(['Model']);
+
+		// Exercise the unit exclusion with a real preferred-state vote, not an early no-state return.
+		const switchRows = structuredClone(rows);
+		for (const row of switchRows) row.measurement.variant.label += ' · DU';
+		for (const [i, state] of ['DU', 'DD'].entries()) {
+			const vote = structuredClone(first);
+			vote.measurement.id = `m-vote-${i}`;
+			vote.measurement.sourceId = 'other-source';
+			vote.measurement.provenance.sourceId = 'other-source';
+			vote.measurement.provenance.processing = [];
+			vote.measurement.variant = {
+				id: `v-vote-${i}`,
+				file: `Model ${state}`,
+				label: state,
+				kind: i === 0 ? 'default' : 'tuning',
+				isDefault: i === 0
+			};
+			switchRows.push(vote);
+		}
+		const switchProducts = structuredClone(products);
+		const base = switchProducts.get(first.measurement.productId);
+		if (!base) throw new Error('Missing switch-vote base');
+		base.measurementIds = switchRows.map((r) => r.measurement.id);
+		const switched = reconcileSwitchDefaults(switchProducts, switchRows);
+		expect(switched.decisions).toMatchObject([
+			{ preferred: 'switch:du:du', changedSources: [], unresolvedSources: ['source'] }
+		]);
+		expect(switchRows.slice(0, 2).map((r) => r.measurement.variant)).toMatchObject(units);
+		finaliseDefaults(switchProducts, switchRows, switched.decisions);
+		expect(switchRows.slice(0, 2).map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
+
+		const { decisions } = reconcileSwitchDefaults(products, rows);
+		expect(rows.map((r) => r.measurement.variant)).toMatchObject(units);
+		finaliseDefaults(products, rows, decisions);
+		expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['unit', 'default']);
+		expect(rows.map((r) => r.measurement.variant.isDefault)).toEqual([false, true]);
+		expect(rows.map((r) => r.measurement.variant.file)).toEqual(phone.file);
+		for (const [i, row] of rows.entries()) {
+			expect(row.measurement.variant.label).toContain(phone.file[i]);
+			expect(row.measurement.variant.label).toContain('Deep');
+		}
+		expect(second.measurement.provenance.processing).toContain(
+			'default coverage: deterministic coverage fallback; previous kind unit; original label retained'
+		);
+	});
 	it('composes explicit sample folding after fit folding, not bare S2/year/unit model qualifiers', () => {
 		const { products, rows } = fixture([
 			'Model',
