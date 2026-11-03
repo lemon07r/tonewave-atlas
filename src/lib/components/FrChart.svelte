@@ -213,7 +213,10 @@
 						splits: () => FREQUENCY_TICKS,
 						// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
 						filter: (_, splits) => splits,
-						values: (_, splits) => splits.map(frequencyLabel),
+						values: (_, splits) =>
+							splits.map((hz) =>
+								host.clientWidth < 400 && [50, 200, 2000, 10000].includes(hz) ? '' : frequencyLabel(hz)
+							),
 						font: `${getComputedStyle(host).fontSize} "IBM Plex Mono"`,
 						gap: 8,
 						size: 36,

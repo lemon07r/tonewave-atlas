@@ -81,6 +81,12 @@ test('unrated additions, real similar matches, exact-rank chart controls, URL mi
 	await expect(page.getByRole('combobox', { name: 'Difference baseline' })).toHaveValue('reference');
 	await first.locator('details:not(.rate-row) > summary').click();
 	await expect(first.getByRole('table')).toBeVisible();
+	if ((page.viewportSize()?.width ?? 0) <= 640) {
+		const evidence = first.getByRole('region', { name: 'Band differences versus reference', exact: true });
+		await evidence.focus();
+		await evidence.press('ArrowRight');
+		await expect.poll(() => evidence.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+	}
 	await expect(first.getByText(/Tilt .* dB\/oct/)).toBeVisible();
 	await expect(first.locator('.sources a').first()).toHaveAttribute('href', /^https?:\/\//);
 	await page.getByRole('switch', { name: 'Regions', exact: true }).check();
@@ -485,7 +491,7 @@ test('updating notice never pushes the previous first result, with readable type
 					const box = element.getBoundingClientRect();
 					return {
 						label:
-							element.textContent?.trim() ||
+							element.textContent.trim() ||
 							element.getAttribute('aria-label') ||
 							element.getAttribute('value'),
 						width: box.width,

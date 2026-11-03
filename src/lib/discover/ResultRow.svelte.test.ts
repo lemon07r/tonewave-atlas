@@ -132,6 +132,11 @@ test('keeps small reference and band headers readable with normal tracking and e
 		onshow: vi.fn()
 	});
 	const headers = screen.container.querySelectorAll('.data-table th');
+	for (const region of screen.container.querySelectorAll('.table-scroll')) {
+		expect(region.getAttribute('tabindex')).toBe('0');
+		expect(region.getAttribute('role')).toBe('region');
+		expect(region.getAttribute('aria-label')).toBeTruthy();
+	}
 	expect([...headers].map((header) => header.firstChild?.textContent)).toContain('Softears Volume S');
 	expect([...headers].map((header) => header.textContent)).toContain('sub-bass');
 	for (const header of headers) {

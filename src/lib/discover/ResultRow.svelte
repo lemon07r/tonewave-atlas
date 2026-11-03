@@ -131,7 +131,8 @@
 	{#if !match}<p class="reviewers">
 			{reviewerSummary(null, candidate.sources.length)}
 		</p>{/if}
-	{#if tradeoff}<div class="tradeoff table-scroll">
+	{#if tradeoff}<!-- svelte-ignore a11y_no_noninteractive_tabindex (Overflowing tables need keyboard scrolling.) -->
+		<div class="tradeoff table-scroll" tabindex="0" role="region" aria-label="Reference distance table">
 			<table class="data-table">
 				<caption>Distance to each reference (dB)</caption><thead
 					><tr
@@ -174,11 +175,19 @@
 			role="group"
 			aria-label={`Quick rating for ${candidate.product.brand} ${candidate.product.model}`}
 		>
-			<button type="button" aria-pressed={existing?.rating === 'like'} onclick={() => quickRate('like')}
-				>Like</button
+			<button
+				type="button"
+				aria-pressed={existing?.rating === 'like'}
+				onclick={() => {
+					quickRate('like');
+				}}>Like</button
 			>
-			<button type="button" aria-pressed={existing?.rating === 'dislike'} onclick={() => quickRate('dislike')}
-				>Dislike</button
+			<button
+				type="button"
+				aria-pressed={existing?.rating === 'dislike'}
+				onclick={() => {
+					quickRate('dislike');
+				}}>Dislike</button
 			>
 			{#if existing && (existing.rating === 'love' || existing.rating === 'neutral' || !existing.soundRelated)}<span
 					class="saved-rating"
@@ -243,8 +252,12 @@
 				Tilt {dbLabel(match.tilt, true)} dB/oct · Coverage {(match.coverage * 100).toFixed(0)}% · {match.points}
 				rank samples
 			</p>{/if}
-		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence, index (index)}<div
+		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence, index (index)}<!-- svelte-ignore a11y_no_noninteractive_tabindex (Overflowing tables need keyboard scrolling.) -->
+			<div
 				class="table-scroll"
+				tabindex="0"
+				role="region"
+				aria-label={`Band differences versus ${evidence.label}`}
 			>
 				<table class="data-table">
 					<caption>Candidate minus {evidence.label}, after independent level alignment</caption><thead

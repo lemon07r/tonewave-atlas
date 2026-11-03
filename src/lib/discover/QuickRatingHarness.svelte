@@ -25,7 +25,7 @@
 		distance={1}
 		bands={[]}
 		onshow={() => {}}
-		onrate={(item) => {
+		onrate={(item: WorkspaceItem) => {
 			store.change({ ...store.value, profiles: { ...store.value.profiles, iem: [item] } });
 			items = store.value.profiles.iem;
 			message = 'Rating saved.';

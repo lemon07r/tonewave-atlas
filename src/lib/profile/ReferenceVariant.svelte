@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ProductDetail } from '#core/atlas/types.ts';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { detail } from '#lib/discover/display.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
@@ -29,7 +30,7 @@
 		) ?? []
 	);
 	let reviewers = $derived.by(() => {
-		const grouped = new Map<string, { id: string; name: string; count: number; rigs: Set<string> }>();
+		const grouped = new SvelteMap<string, { id: string; name: string; count: number; rigs: Set<string> }>();
 		for (const entry of eligible) {
 			const group = grouped.get(entry.source.id) ?? {
 				id: entry.source.id,
@@ -101,7 +102,9 @@
 		{#if reviewer}<label class="field-label"
 				>Measurement for {name}<select
 					value={reviewer === selectedSource ? currentMeasurement : ''}
-					onchange={(event) => onchange(event.currentTarget.value)}
+					onchange={(event) => {
+						onchange(event.currentTarget.value);
+					}}
 				>
 					<option value="" disabled>Choose this reviewer’s measurement</option>
 					{#if reviewer === 'unavailable'}<option value={currentMeasurement}
