@@ -71,7 +71,8 @@ Reviewer scoring offers coverage (products measured by selected reviewers, scori
 selected-reviewer-only reference/candidate consensus. Engine caveats disclose lost source support;
 no selected measurements means a reference is unavailable, not silently replaced. Settings auto-apply
 with an updating notice; generation guards reject
-older successes and errors. Show more increases the engine topK beyond 20.
+older successes and errors. Charting a match or other view-only URL changes redraw without
+re-ranking. Show more increases the engine topK beyond 20.
 Source-only mode requires at least one reviewer; emptying the selection resets coverage atomically.
 Changing rig or reviewers clears serialised corrections for the previous model. Pending results keep
 the references and sort of their response until the replacement arrives.

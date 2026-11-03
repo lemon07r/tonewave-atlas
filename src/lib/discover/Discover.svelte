@@ -443,13 +443,13 @@
 			});
 	});
 	// View-only URL changes such as charted products keep the approved query; only a changed,
-	// migrated query re-ranks. A pending change still cancels the superseded run at once.
+	// migrated query re-ranks.
 	let approvedQuery = $state('');
 	$effect(() => {
 		const key = queryKey;
 		if (key === untrack(() => approvedQuery)) return;
-		if (ready && !catalogLoading && !catalogError && migratedHref === page.url.href) approvedQuery = key;
-		else controller.invalidate();
+		// Clearing the approval cancels a superseded debounce or run and lets a return to it restart.
+		approvedQuery = ready && !catalogLoading && !catalogError && migratedHref === page.url.href ? key : '';
 	});
 	$effect(() => {
 		if (!approvedQuery) return;
