@@ -203,6 +203,9 @@ brand/model identity key; missing or ambiguous bases stay unlinked.
 An unmatched base next tries removing a trailing bracketed/parenthesised mod/prototype segment, then
 a trailing one- or two-word qualifier plus `mod`, `modded` or `prototype`; multiple matching stock
 bases stay ambiguous, and a stripped model that would itself be modified is never a base.
+The phrase fallback stops before Roman numerals II–X, digit-containing tokens (including V-number
+revisions), single letters, or Pro/Plus/Max/Mini/Lite/SE/MK/Mark/Gen/Edition, case-insensitively;
+only a shorter permitted strip can then match stock, never a strip across a protected model token.
 These annotations never change identities, IDs, measurements or redirects. The build report's `productFlags` gives overlapping
 per-rule counts and every word-rule match, including the `modified` word inside explicit markers.
 

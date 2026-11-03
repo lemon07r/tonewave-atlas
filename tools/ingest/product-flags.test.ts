@@ -114,6 +114,63 @@ describe('modified product metadata', () => {
 		expect(products.at(-1)).not.toHaveProperty('baseProductId');
 		expect(report.baseLinks).toBe(0);
 	});
+	it('never removes the II revision from QUIET SEA II PROTOTYPE', () => {
+		const original = product('original', 'QuietSea');
+		const prototype = product('prototype', 'QUIET SEA II PROTOTYPE');
+		markModifiedProducts([original, prototype]);
+		expect(prototype).toMatchObject({ modified: true });
+		expect(prototype).not.toHaveProperty('baseProductId');
+		const revision = product('revision', 'Quiet Sea II');
+		markModifiedProducts([original, revision, prototype]);
+		expect(prototype.baseProductId).toBe(revision.id);
+	});
+	it.each([
+		'II',
+		'III',
+		'IV',
+		'V',
+		'VI',
+		'VII',
+		'VIII',
+		'IX',
+		'X',
+		'2x',
+		'PR2',
+		'2024',
+		'V2',
+		'A',
+		'z',
+		'Pro',
+		'Plus',
+		'Max',
+		'Mini',
+		'Lite',
+		'SE',
+		'MK',
+		'Mark',
+		'Gen',
+		'Edition'
+	])('stops qualifier stripping at the protected token %s', (token) => {
+		const stock = product('stock', 'Reference');
+		const modified = product('modified', `Reference ${token} Mod`);
+		markModifiedProducts([stock, modified]);
+		expect(modified).toMatchObject({ modified: true });
+		expect(modified).not.toHaveProperty('baseProductId');
+		// A protected token farther left allows only the shorter, exact stock match.
+		const shorter = product('shorter', `Reference ${token}`);
+		const qualified = product('qualified', `Reference ${token} Bass Mod`);
+		markModifiedProducts([stock, shorter, qualified]);
+		expect(qualified.baseProductId).toBe(shorter.id);
+		const missingShorter = product('missing-shorter', `Reference ${token} Bass Mod`);
+		markModifiedProducts([stock, missingShorter]);
+		expect(missingShorter).not.toHaveProperty('baseProductId');
+	});
+	it('retains CHU BASS MOD linking after guarding revision tokens', () => {
+		const stock = product('stock', 'Chu');
+		const modified = product('modified', 'CHU BASS MOD');
+		markModifiedProducts([stock, modified]);
+		expect(modified.baseProductId).toBe(stock.id);
+	});
 	it('preserves the existing resolver priority instead of replacing accepted links', () => {
 		const products = [
 			product('stock', 'Susvara'),

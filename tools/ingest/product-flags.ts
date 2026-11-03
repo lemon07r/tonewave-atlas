@@ -44,7 +44,18 @@ function stockModelCandidates(model: string): string[][] {
 			`(?:^|\\s+)(?:${qualifier}\\s+){${count}}(?:mod|modded|prototype)\\s*$`,
 			'iu'
 		).exec(normalized);
-		if (phrase) phrases.push(normalized.slice(0, phrase.index).trim());
+		if (!phrase) continue;
+		const consumed = phrase[0].trim().split(/\s+/).slice(0, -1);
+		if (
+			consumed.some(
+				(token) =>
+					/\p{N}/u.test(token) ||
+					/^\p{L}$/u.test(token) ||
+					/^(?:ii|iii|iv|v|vi|vii|viii|ix|x|pro|plus|max|mini|lite|se|mk|mark|gen|edition)$/i.test(token)
+			)
+		)
+			break;
+		phrases.push(normalized.slice(0, phrase.index).trim());
 	}
 	candidates.push(phrases);
 	return candidates;
