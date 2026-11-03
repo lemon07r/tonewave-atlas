@@ -17,7 +17,13 @@ export async function removeStaging(path: string): Promise<void> {
 	}
 }
 
-async function sweep(output: string, staging: string, manifest: Manifest, committed: boolean): Promise<void> {
+async function sweep(
+	output: string,
+	staging: string,
+	manifest: Manifest,
+	committed: boolean,
+	previousVersion: string | null
+): Promise<void> {
 	await removeStaging(staging);
 	try {
 		// Only the committed manifest can authorize deletion of recovery data. On any failed
@@ -48,7 +54,12 @@ async function sweep(output: string, staging: string, manifest: Manifest, commit
 			if (!verifiedCommit && entry.name.startsWith('.backup-')) continue;
 			if (
 				/^\.(?:build|pull|backup|interrupted)-/.test(entry.name) ||
-				(verifiedCommit && /^[a-f0-9]{24}$/.test(entry.name) && entry.name !== manifest.version)
+				(verifiedCommit &&
+					// Re-publishing the same manifest does not advance history or identify an older version.
+					previousVersion !== manifest.version &&
+					/^[a-f0-9]{24}$/.test(entry.name) &&
+					entry.name !== manifest.version &&
+					entry.name !== previousVersion)
 			)
 				await removeStaging(resolve(output, entry.name));
 		}
@@ -95,7 +106,15 @@ export async function publishDataset(
 	const target = resolve(output, manifest.version);
 	const backup = resolve(output, `.backup-${manifest.version}`);
 	let committed = false;
+	let previousVersion: string | null = null;
 	try {
+		try {
+			const previous = await readJson(resolve(output, 'manifest.json'));
+			if (record(previous) && typeof previous.version === 'string' && /^[a-f0-9]{24}$/.test(previous.version))
+				previousVersion = previous.version;
+		} catch (error) {
+			if (!missing(error) && !(error instanceof SyntaxError)) throw error;
+		}
 		if (await matches(target, manifest)) {
 			await atomicWrite(resolve(output, 'manifest.json'), manifestText);
 		} else {
@@ -131,6 +150,6 @@ export async function publishDataset(
 		}
 		committed = true;
 	} finally {
-		await sweep(output, staging, manifest, committed);
+		await sweep(output, staging, manifest, committed, previousVersion);
 	}
 }

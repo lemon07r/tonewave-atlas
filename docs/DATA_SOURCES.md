@@ -195,6 +195,14 @@ pairs within original identity parts, with linear percentile interpolation; larg
 never vetoes, and absent shared-rig/default support or calibration is explicitly missing, not invented.
 Reviewed plural/HiFi/Labs/typo aliases and their shared-model evidence are recorded in `data/aliases.json`.
 
+Products receive metadata-only `modified: true` for a `[modified: …]` model marker, a standalone
+case-insensitive `mod`, `modded`, `modified`, `prototype` or `proto` model word, or a source-local
+`Custom (…)` brand (never Custom Art). Removing a terminal marker or those words and an adjacent
+Foam descriptor links `baseProductId` only to one existing unmodified product with the same form and
+brand/model identity key; missing or ambiguous bases stay unlinked. These annotations never change
+identities, IDs, measurements or redirects. The build report's `productFlags` gives overlapping
+per-rule counts and every word-rule match, including the `modified` word inside explicit markers.
+
 Catalog redirects preserve historical product and measurement links across identity/form moves.
 Measurements match only by source ID and their unordered original file-URL set. Removed products
 follow those moves; splits choose a unique plurality of former defaults, otherwise stay unmapped.
@@ -383,7 +391,10 @@ resume from cached files. `pnpm data:pull` retrieves the published manifest/file
 Builds are deterministic for unchanged cache/inputs; build time is the newest relevant cached content
 fetch time, not the current wall clock. Output versions hash the artifacts and source attribution.
 Verified existing versions stay in place on repeat publication; repairs use a recoverable backup and
-commit the manifest last. Generated old versions are removed only after successful local publication.
+commit the manifest last. Successful publication retains the current version and the version named
+by the previous manifest; only older generated versions are removed, so pre-deploy tabs can still fetch
+their remaining artifacts.
+Re-publishing the same version preserves the already-retained history rather than guessing its age.
 Serial publication sweeps abandoned build/pull/interrupted staging on success and failure. Every
 backup survives a failed publication; backup and old-version sweeping requires a committed manifest
 whose current version and live files are reverified. Cleanup errors are warnings after a committed

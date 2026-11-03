@@ -14,6 +14,7 @@ import { datasetVersion, DIRECTORY_URL, phoneBook, ROOT, sha256 } from './common
 import { identity, variant } from './transform.ts';
 import { modification } from './quality.ts';
 import type { identityAudit } from './identity-audit.ts';
+import type { ProductFlagReport } from './product-flags.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -86,6 +87,7 @@ async function result(paths: { cache: string; output: string }) {
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
 		identityAudit: ReturnType<typeof identityAudit>;
+		productFlags: ProductFlagReport;
 		fitIdentity: { moves: { before: string; parent: string; label: string }[] };
 		switchIdentity: { moves: { kind: string; before: string; parent: string }[] };
 		switchDefaults: {
@@ -117,6 +119,57 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('marks modified products and links the CanJam prototype to stock without changing identities', async () => {
+		const entries = [
+			{
+				name: 'CrinEar',
+				phones: [
+					{ name: 'Reference', file: 'reference' },
+					{ name: 'Reference [modified: (version: CanJam NYC 2025 prototype)]', file: 'canjam' }
+				]
+			},
+			{
+				name: 'BLON',
+				phones: [
+					{ name: 'BL03', file: 'bl03' },
+					{ name: 'BL03 Foam Mod', file: 'foam' }
+				]
+			},
+			{ name: 'Custom (reviewer)', phones: [{ name: 'Handbuilt', file: 'custom' }] },
+			{ name: 'Custom Art', phones: [{ name: 'FIBAE 7', file: 'fibae' }] },
+			{
+				name: 'Maker',
+				phones: [
+					{ name: 'Modena', file: 'modena' },
+					{ name: 'Model X', file: 'model-x' }
+				]
+			}
+		];
+		const { paths } = await fixture('const DIR = "data/", rig_description = "B&K 5128";', [
+			[bookUrl, JSON.stringify(entries)],
+			...entries.flatMap((g) =>
+				g.phones.map((p): [string, string] => [`${base}data/${p.file}%20L.txt`, curve(80)])
+			)
+		]);
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		const stock = catalog.products.find((p) => p.brand === 'CrinEar' && p.model === 'Reference');
+		const prototype = catalog.products.find((p) => p.model.includes('CanJam'));
+		expect(prototype).toMatchObject({ modified: true, baseProductId: stock?.id });
+		expect(prototype?.id).toBe(
+			identity('CrinEar', 'Reference [modified: (version: CanJam NYC 2025 prototype)]', 'iem', {}).id
+		);
+		expect(catalog.products.find((p) => p.model === 'BL03 Foam Mod')).toMatchObject({
+			modified: true,
+			baseProductId: catalog.products.find((p) => p.model === 'BL03')?.id
+		});
+		expect(catalog.products.find((p) => p.brand === 'Custom (reviewer)')).toMatchObject({ modified: true });
+		for (const model of ['Reference', 'BL03', 'FIBAE 7', 'Modena', 'Model X'])
+			expect(catalog.products.find((p) => p.model === model)).not.toHaveProperty('modified');
+		expect(catalog.products).toHaveLength(8);
+		expect(catalog.measurements).toHaveLength(8);
+		expect(report.productFlags).toMatchObject({ modified: 3, baseLinks: 2, rules: { a: 1, b: 2, c: 1 } });
+	});
 	it('integrates brand/CJK/placeholder keys and plus separation, recording diagnostic parts without touching raw curves', async () => {
 		const other = 'https://other.squig.link/';
 		const entries = [

@@ -55,6 +55,7 @@ import {
 import type { KnownBrand } from './transform.ts';
 import { brandKey, canonicalBrandKey, identityKey, modelIdentity } from './identity-keys.ts';
 import { identityAudit, type IdentityOrigin } from './identity-audit.ts';
+import { markModifiedProducts } from './product-flags.ts';
 import { publishDataset, removeStaging } from './publish.ts';
 import { medianSpreadByBand, rankStatistics } from './statistics.ts';
 import { referenceTargets } from './targets.ts';
@@ -924,6 +925,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		});
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
+	const productFlags = markModifiedProducts(sortedProducts, aliases);
 	const productsBefore = new Set([...originalIdentities.values()].flatMap((ids) => [...ids])).size;
 	const identityMergeGroups = [...originalIdentities]
 		.filter(([, ids]) => ids.size > 1)
@@ -1021,6 +1023,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				publishersIncluded: new Set(sources.map((s) => s.username)).size,
 				products: products.size,
 				identityMerges,
+				productFlags,
 				identityAudit: identityAudit(sortedProducts, allCurves, identityOrigins, aliases),
 				groupwiseMerges,
 				remainingCollisionGroups,
