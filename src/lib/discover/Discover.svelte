@@ -522,13 +522,11 @@
 <div class={['page discover', { starting }]}>
 	{#if starting}<div class="page-heading">
 			<h1>
-				{starting
-					? `Find ${form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.`
-					: 'Your discovery workspace'}
+				Find {form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.
 			</h1>
-			{#if starting}<p>
-					Add products you know, then rate your experience. Start with one Like or build a set of references.
-				</p>{/if}
+			<p>
+				Add products you know, then rate your experience. Start with one Like or build a set of references.
+			</p>
 		</div>{:else}<h1 class="sr-only">Your discovery workspace</h1>{/if}
 	<MigrationNote
 		messages={migrationDisplay}
@@ -879,7 +877,7 @@
 				</p>
 				<div class="update-slot">
 					<span role="status">{rankSummary}</span>{#if loading}<p role="status" class="updating">
-							{result ? 'Updating matches… previous results shown below.' : 'Finding measured matches…'}
+							{result ? 'Updating matches…' : 'Finding measured matches…'}
 						</p>{/if}
 				</div>
 				{#if loading && !result}<Skeleton rows={4} />{/if}

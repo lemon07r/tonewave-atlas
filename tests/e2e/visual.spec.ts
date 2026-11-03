@@ -70,6 +70,7 @@ for (const theme of ['light', 'dark'] as const) {
 				.click();
 			await expect(page.locator('.legend-row')).toHaveCount(2);
 			await capture('discover-single');
+			await capture('discover-single-results', '.results');
 			await capture('discover-single-chart', '.chart-panel');
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
 			await capture('discover-evidence', '.result-row');
@@ -85,6 +86,30 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.locator('.result-row').first().locator('details:not(.rate-row) > summary').click();
 			await expectTradeoffRows(page, ['CrinEar Reference', 'Softears Volume S'], 'mean');
 			await capture('discover-multi-evidence', '.result-row');
+			await page.goto(ratingsUrl([positive(reference)]));
+			await ready();
+			await page.locator('.result-row').nth(3).getByRole('button', { name: 'Like', exact: true }).click();
+			await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
+			await expect(page.locator('.rank-change').first()).toBeVisible();
+			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+			await capture('discover-rank-changes', '.results');
+			await capture('discover-rank-markers', '.result-row:has(.rank-change)');
+			await page.goto(ratingsUrl([positive('p-19d1654fcb150bf1aa2f')]));
+			await ready();
+			const hexa = page.getByRole('region', { name: 'Truthear Hexa', exact: true });
+			await hexa.locator('details > summary').click();
+			const measurementReviewer = hexa.getByRole('combobox', {
+				name: 'Reviewer for Truthear Hexa',
+				exact: true
+			});
+			await expect(measurementReviewer).toHaveValue('');
+			const reviewerId = await measurementReviewer.locator('option').nth(1).getAttribute('value');
+			if (!reviewerId) throw new Error('Hexa needs a measured reviewer.');
+			await measurementReviewer.selectOption(reviewerId);
+			await expect(
+				hexa.getByRole('combobox', { name: 'Measurement for Truthear Hexa', exact: true })
+			).toBeVisible();
+			await capture('discover-measurement-selection', '.profile-row');
 			const reviewer = reviewerForReference(reference);
 			await page.goto(
 				`/?${new URLSearchParams({ ref: reference, rig: reviewer.selectedPartition, sources: reviewer.id, sourceMode: 'only' })}`
@@ -118,6 +143,21 @@ for (const theme of ['light', 'dark'] as const) {
 				(await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze())
 					.violations
 			).toEqual([]);
+			await page.goto(
+				ratingsUrl([
+					positive(reference),
+					{ ...positive(volume), rating: 'neutral', strength: 0 },
+					{ ...positive(nova), rating: 'dislike', strength: 1, soundRelated: false },
+					{ ...positive('p-19d1654fcb150bf1aa2f'), rating: 'unrated', strength: 0 }
+				])
+			);
+			await ready();
+			await page.locator('.ranking-method > summary').click();
+			await expect(page.locator('.ranking-method .diagnostics')).toContainText('participates · like');
+			await expect(page.locator('.ranking-method .diagnostics')).toContainText('excluded · neutral');
+			await expect(page.locator('.ranking-method .diagnostics')).toContainText('excluded · comfort-only');
+			await expect(page.locator('.ranking-method .diagnostics')).toContainText('excluded · unrated');
+			await capture('discover-method', '.ranking-method');
 			await page.goto(
 				`/?${new URLSearchParams({ rig: 'iem-5128', ratings: JSON.stringify([positive(reference), { ...positive(volume), measurementId: 'm-016c491c5c1e659cc5ac' }]) })}`
 			);
