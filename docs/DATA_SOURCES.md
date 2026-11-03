@@ -398,26 +398,31 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `60e816fc2db9ba2291ea4ece`: **9,507 products / 40,802 measurements / 138 databases / 118 publishers**
-(7,801 IEM products / 33,488 measurements; 1,706 headphone products / 7,314 measurements).
+Build `2aef1e0a76fa5ae93807815e`: **9,482 products / 40,802 measurements / 138 databases / 118 publishers**
+(7,789 IEM products / 33,488 measurements; 1,693 headphone products / 7,314 measurements).
 Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
 24 target/calibration/delta/sandbox and two population averages; these are candidates, not counts of
 previously published removals. **86 unresolved state
 groups** have one source-order default each; **zero duplicate source defaults** remain. The **65 existing
-selected-switch-state source exceptions** remain; every folded sample source/partition has exactly one
-default, and all 10,967 measured product/partitions have a default and an engine candidate in both raw
+selected-switch-state source exceptions** are the identical groups from the preceding build; every
+newly folded fit source/partition has exactly one default. All 10,948 measured product/partitions have
+a default and an engine candidate in both raw
 and harmonised indexes across 53 partitions.
 
-Against published `bd5618f51ff28af2d3f6d189`, **93 IEM / 24 headphone sample identities retire**,
-creating eight IEM / six headphone bases where only samples existed: net reductions **85 / 18**.
-All **117 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
-redirects are needed. Complete inherited maps contain **743 product / 890 measurement redirects**, with
+Against published `60e816fc2db9ba2291ea4ece`, **22 IEM / 18 headphone fit identities retire**,
+creating ten IEM / five headphone bases where only fit-labelled products existed: net reductions **12 / 13**.
+All **40 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
+redirects are needed. Complete inherited maps contain **783 product / 890 measurement redirects**, with
 zero invalid targets or lost historical redirects. No accepted raw file, channel or rank curve was
 added, removed or changed: **40,802 rank / 80,342 channel curves** remain byte-equivalent after decoding,
-and no measurement changed rig partition. Eleven mixed/unnamed sample descriptors remain outside the
-exact sample identity rules. The manifest publishes all 138 source counts and 53 partition counts,
-verified against both catalogs; its gzip size is **25,552 bytes**, versus **23,900** before the change.
+and no measurement changed rig partition. The **15 changed default flags are all demotions of folded
+fits**, with no existing base default lost or gained. **25 folded fit-descriptor curves remain source
+defaults because no stock reference is available in their source/partition**; labels and provenance
+retain the fit, not a stock claim. All **380 modification identities** are unchanged. Eleven mixed/unnamed
+sample descriptors remain outside the exact sample rules, and unidentified `Sample | 1 Deep` remains
+unfolded. The manifest publishes all 138 source counts and 53 partition counts,
+verified against both catalogs; its gzip size is **25,530 bytes**, versus **25,552** before the change.
 LOCO reports
 **37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.
