@@ -87,6 +87,17 @@ mixes available observational variation, not solely reviewer disagreement. A sin
 measurement's zero-width band is not evidence of certainty. Detail averages repetitions within each
 channel and then L/R in dB; its full-resolution consensus is not an upsampled rank curve.
 
+Candidate filters apply to similar, compare and taste, never to the chosen references/ratings.
+Modified, DIY and prototype product identities are excluded by default (`includeModified: false`),
+independently of opt-in tunings. A product is modified when `modified === true`; `[modified:` in the
+model is the compatibility fallback for older datasets. When included, `relatedToReference: true`
+marks a modified row whose `baseProductId` is a reference product, or, when absent, whose brand and
+model before ` [modified` match that reference. No broader name/prototype heuristic is used.
+`minReviewers` defaults to 1 and must be a positive integer. It counts distinct contributing sources
+in the active rig's default consensus (one for a tuning), not measurements, fit variants or reviewers
+on another rig. Source-only mode counts only selected contributing reviewers; coverage mode still
+counts the full consensus. This is an eligibility filter, not a reviewer-count score adjustment.
+
 For the top-K similarity winners only, compute D from each contributing reviewer's default curve to
 the selected reference, using exactly the query's weights and directional penalty. If a reviewer has
 several defaults, first take its aligned median. Report the min/max of valid per-source distances
@@ -95,6 +106,49 @@ overlap for this query (the candidate separately retains all contributing source
 For a tuning, use only that tuning's source, not the product's default-source pool. Thus a displayed
 “1.1–1.9 dB across 4 sources” is an observed reviewer range against the chosen reference, **not** a
 confidence interval and not all pairwise distances among reference and candidate measurements.
+
+### Ranking stability: leave-one-reviewer-out rank range
+
+Similar (one reference) and compare (2–4 references) report **reviewer sensitivity, not a confidence
+interval**. For each evaluated candidate, recompute its ranking score under every
+leave-one-reviewer-out variant of each reference consensus with **at least three contributing
+reviewers**, and of the candidate's own consensus when it has at least three. Omit all measurements
+from one reviewer at a time on one side/reference; do not combine simultaneous omissions. Rebuild
+using the same overlap-medoid alignment and measurement-level median from the original default
+pool, including the same selected-source restriction and published source correction. Reviewers
+to omit are those contributing to the actual consensus. Previously excluded measurements may
+become eligible under the rebuilt medoid. An exact single-measurement reference or upload has no
+reference-consensus variation to assess.
+
+Score rebuilt curves on the same float32 rank basis, with the exact query weights, focus, treble
+penalty and fresh LS alignment. Compare uses its actual arithmetic-mean or minimax combination:
+a reference omission replaces only that reference's objective; a candidate omission recomputes
+every reference objective. Inadequate-overlap variants do not supply a score; each side's boolean
+requires at least one usable variant score. No missing distance is replaced with zero.
+
+Each row's score interval `[lo, hi]` includes its actual score and all usable omission scores.
+Evaluate the actual topK **plus the next 10 rows** (or all remaining rows when fewer), so candidates
+just below the output cutoff contribute. For compare this uses the requested sort and, if enabled,
+the actual `paretoOnly` set; neither membership nor Pareto status is re-fitted under omissions.
+Incomplete compare rows have no scored interval. Within this evaluated set:
+
+```
+best  = 1 + #{rows whose hi < this lo}
+worst =     #{rows whose lo <= this hi}  // includes itself
+```
+
+Return `stability: { scoreRange: [lo, hi], rankRange: [best, worst], referenceSide, candidateSide }`.
+The booleans identify assessable sides; omit stability when neither side can be assessed.
+Unassessed rows still contribute their actual-score point interval to other rows' rank ranges.
+Intervals are not chained into transitive groups. Actual ranking order and scores are unchanged,
+and identical inputs give identical outputs. All reviewer omissions are evaluated, without
+subsampling; variants are cached by the partition/source/correction-specific index candidate.
+
+One or two reviewers on a side means that side's variation is **not assessed**, so a narrow range
+there is not evidence of stability. Missing-overlap omissions also remain unassessed evidence.
+These are bounded-set descriptive rank ranges, not exhaustive possible re-rankings or a
+probabilistic guarantee: rows beyond the margin are not evaluated. This measures reviewer
+sensitivity only, not unit variation or perceptual difference.
 
 ### Distance calculation
 

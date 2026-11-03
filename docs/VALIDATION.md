@@ -76,6 +76,142 @@ PEQ fitting is unchanged. The single/taste differences in these one-pass observa
 controlled regression measurement; both remain below their synthetic interactive budgets.
 These are single-pass local observations, not a controlled performance study or a timing distribution.
 
+## Reviewer sensitivity and candidate safeguards (2026-11-03)
+
+`pnpm verify` passes **1,168 tests in 79 files**, plus format, lint, types and knip.
+
+Service regressions independently derive the omission medians, score intervals and rank bounds
+from alternating ±a curves: 20 equally weighted sub-bass bins give D(a,b)=|a−b|. They cover
+one-reviewer unassessed sides, exact-measurement references, source-only pools, published source
+correction, removal of every measurement from one reviewer, all 57 omissions without sampling,
+touching endpoints, non-transitive overlap, cutoff margins, unchanged actual ranking scores, and
+compare's mean/minimax objectives. A separate weighted-moment oracle checks focus and directional
+treble settings. Candidate tests cover explicit/fallback modified identities, inclusion, permitted
+modified references/ratings, related-reference flags, distinct-reviewer minima and source-only
+interactions in all three ranking routes.
+
+### Performance
+
+Same Linux/Ryzen 7 9800X3D/Node v26.12.1; dataset **4199d08ffc44cf0977b5bae0**.
+`pnpm bench` before/after: single-reference 30,000 candidates **18.62 / 13.06 ms**;
+four-reference 8,000 candidates **45.06 / 57.22 ms**; checksum **7479.111729** both times.
+These unchanged lower-level scorers do **not** invoke service stability, so their run-to-run
+differences do not measure its overhead. The benchmark file was not changed.
+
+`node benchmarks/atlas.ts` exercises the real service, including stability after this change.
+Each workload has one cold service call and five resident calls; topK=20, explicit iem-711,
+default correction, disk fetch included, network/worker/message costs excluded:
+
+| Request               | Before cold ms | Before warm median / max ms | After cold ms | After warm median / max ms |
+| --------------------- | -------------: | --------------------------: | ------------: | -------------------------: |
+| Similar               |        1169.45 |                 7.67 / 8.92 |       1268.74 |               8.25 / 10.23 |
+| Taste, 3 likes        |        1199.23 |               11.86 / 16.07 |       1270.54 |              12.33 / 17.61 |
+| Compare, 2 references |        1225.33 |               27.19 / 30.61 |       1288.38 |              27.94 / 29.53 |
+| Compare, 3 references |        1198.93 |               37.38 / 41.23 |       1253.83 |              37.68 / 40.44 |
+| Compare, 4 references |        1235.07 |               62.31 / 64.14 |       1292.68 |              63.45 / 64.67 |
+
+These are local observations, not controlled latency estimates. The existing harness's fixed
+references are not a high-reviewer stress test. A separate iem-711 audit timed every omission for
+**Hexa's 57 reviewers: 57 consensus reconstructions in 61.17 ms**, and CrinEar Reference's 32 in
+**16.48 ms**, excluding index building. No subsampling was needed. Once reference variants were
+cached, the first topK=20 stability pass over 30 rows took **31.71 / 32.31 ms** for Hexa/CrinEar,
+including construction of those candidates' variants; repeat stability scoring took **2.59 /
+1.62 ms**. Corresponding actual top-30 rank scans took **5.24 / 4.30 ms**. These are component
+timings, not complete request latencies. Separate topK=10 service calls measured cold **1379.73 /
+1462.01 ms**, warm medians **10.72 / 12.11 ms** and maxima **13.82 / 32.88 ms** respectively.
+
+A four-reference stress query used reviewer counts **57/32/5/10**, with reference ids
+`p-19d1654fcb150bf1aa2f`, `p-437de4e3e3402077cdc3`, `p-0001388837f2a6d2eb8e`,
+`p-000d6749a69b2861ce4f`. Over 7,397 candidates, mean-score ranking took **52.57 ms**;
+first-use stability over the best 30 rows took **140.66 ms**, versus **249.88 ms** before adding
+pairwise-medoid distance reuse. Five resident stability passes had median/max **4.57 / 4.76 ms**.
+First use with uncached high-reviewer products can therefore exceed a 150 ms request budget even
+with a resident partition index; no universal first-query latency guarantee is claimed. The reuse
+changes neither anchor selection nor alignment/median arithmetic. Tests compare all 57 memoized
+variants against full independent reconstructions; live top-10 scores, intervals and ranks for
+both named references remained exactly identical before/after this optimisation.
+
+Consensus variants are cached weakly with each partition/source/correction-specific candidate,
+so source-index eviction can release them. For E evaluated rows and R references, scoring costs
+`E × sum(reference reviewer omissions) + R × sum(candidate reviewer omissions)` extra scalar
+distances (unassessed sides contribute zero), not a full-catalog rerank per omission. A changed
+reference objective reuses the other actual objectives. Rebuilding consensus still uses its actual
+medoid/median algorithm; there is no simplified median-of-reviewer-medians approximation.
+
+### Real-engine top-10 stability
+
+Queries: `similar({productId, partition: 'iem-711', topK: 10})`, balanced focus, default validated
+source correction **on**, default reliability, treble penalty 1, no tunings/modified identities.
+Ranks therefore use **20 evaluated rows**, not only the ten shown. Scores/ranges below are rounded
+to three decimals for numerical inspection, not claimed perceptual precision. Reviewer counts
+are contributing candidate sources; all ten rows in each table have an assessed reference side.
+Candidate-side sensitivity is unassessed for counts 1–2, even where a range looks narrow.
+
+**Truthear Hexa**, `p-19d1654fcb150bf1aa2f`, 57 reference reviewers:
+
+| #   | Candidate (catalog spelling)        | Score dB | Score range dB | Rank range | Reviewers |
+| --- | ----------------------------------- | -------: | -------------- | ---------- | --------: |
+| 1   | Truthears Hexa                      |    0.484 | 0.474–0.493    | 1–2        |         1 |
+| 2   | I/O Audio Cielo                     |    0.491 | 0.486–0.498    | 1–2        |         1 |
+| 3   | I/O Cielo                           |    0.558 | 0.554–0.564    | 3–3        |         2 |
+| 4   | Binary Acoustics EP321 MEMS         |    0.618 | 0.601–0.639    | 4–5        |        20 |
+| 5   | Tangzu Xuan NV                      |    0.646 | 0.621–0.705    | 4–9        |        10 |
+| 6   | 7th Acoustics STARGAZER 3 PROTOTYPE |    0.656 | 0.651–0.661    | 5–6        |         1 |
+| 7   | NiceHCK Rockies                     |    0.695 | 0.684–0.725    | 6–11       |        12 |
+| 8   | SLIIVO SL224                        |    0.708 | 0.702–0.711    | 6–9        |         1 |
+| 9   | Kiwi Ears KE4 II                    |    0.717 | 0.699–0.805    | 6–20       |         4 |
+| 10  | 7Hz x Crinacle Divine               |    0.734 | 0.714–0.762    | 8–17       |        10 |
+
+**CrinEar Reference**, `p-437de4e3e3402077cdc3`, 32 reference reviewers:
+
+| #   | Candidate (catalog spelling)    | Score dB | Score range dB | Rank range | Reviewers |
+| --- | ------------------------------- | -------: | -------------- | ---------- | --------: |
+| 1   | EPZ 550                         |    0.492 | 0.475–0.548    | 1–2        |         8 |
+| 2   | EPZ 550 Purple Phoenix          |    0.520 | 0.506–0.536    | 1–2        |         2 |
+| 3   | Softears Studio 4               |    0.740 | 0.729–0.754    | 3–4        |        26 |
+| 4   | PROJECT RED V3.0                |    0.815 | 0.801–0.831    | 4–9        |         1 |
+| 5   | Apple AirPods Pro               |    0.817 | 0.801–1.325    | 4–20       |         4 |
+| 6   | Tanchjim Bunny DSP Default      |    0.832 | 0.821–0.849    | 4–9        |         1 |
+| 7   | Dunu PRS6                       |    0.836 | 0.824–0.908    | 4–11       |         5 |
+| 8   | Oriveti O400                    |    0.837 | 0.824–0.849    | 4–9        |         1 |
+| 9   | Moondrop Space Travel Reference |    0.902 | 0.886–0.918    | 7–12       |         1 |
+| 10  | Prisma Lumen                    |    0.918 | 0.858–0.995    | 7–20       |         3 |
+
+The weighted, corrected engine is not the earlier unweighted, uncorrected RMS approximation:
+Hexa's first two rows overlap here. Catalog identity defects remain visible: “Truthears Hexa” is
+currently separate from the reference. An unflagged name containing only “PROTOTYPE” also remains
+eligible: the specified compatibility rule recognises `[modified:`, not every possible name.
+No identity or classification fixes were made in this engine workstream. The marked modified
+CrinEar prototype is absent under the default candidate filter.
+
+### Single-reviewer investigation
+
+On iem-711 the engine builds **7,550** default consensuses; the new default candidate filter leaves
+**7,401** after excluding modified identities. With the same corrected, balanced weighted distance
+as the tables, **4,943 / 7,401 (66.8%)** eligible products have one contributing reviewer. Among
+**974** eligible products with ≥5 reviewers, sort product ids and select 300 at indices
+`floor(i × 974 / 300)`, i=0…299. For each, exclude itself and rank the same candidate pool. The
+top 20 contain **3,035 / 6,000 (50.6%)** single-reviewer rows. This is one deterministic reference
+sample, not a random-sampling interval or a universal exposure rate.
+
+For every eligible product, exclude itself and measure its nearest neighbour in that pool:
+
+| Contributing reviewers | Products | Median nearest-neighbour distance dB |
+| ---------------------- | -------: | -----------------------------------: |
+| 1                      |    4,943 |                                0.731 |
+| 2                      |      812 |                                0.673 |
+| 3–5                    |      833 |                                0.592 |
+| ≥6                     |      813 |                                0.472 |
+
+These engine figures differ from the supplied plain-RMS approximation (67.4% of all 7,550 defaults,
+45.3% of sampled top-20 rows, medians 1.19/1.06/1.02/0.86 dB). Weighting, correction, modified-row
+eligibility and the explicitly specified reference sample differ. Single-reviewer products have
+larger observed nearest-neighbour distances and are less represented in these top-20 results than
+in the eligible catalog. That is consistent with noisier single curves, but does not isolate noise
+from catalog composition, identity duplication, selection or reviewer effects. **No reviewer-count
+reweighting was applied.** The optional minimum-reviewer filter controls eligibility, while the
+stability booleans disclose the unassessed side instead of inventing a noise/confidence adjustment.
+
 ## Phase-2 audits (2026-11-02)
 
 Initial phase-2 `pnpm verify` passed **532 tests in 54 files**, plus format, lint, types and knip. The initial knip
