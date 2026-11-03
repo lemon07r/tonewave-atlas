@@ -235,8 +235,14 @@ These annotations never change identities, IDs, measurements or redirects. The b
 per-rule counts and every word-rule match, including the `modified` word inside explicit markers.
 
 Catalog redirects preserve historical product and measurement links across identity/form moves.
-Measurements match only by source ID and their unordered original file-URL set. Removed products
-follow those moves; splits choose a unique plurality of former defaults, otherwise stay unmapped.
+Candidates match by source ID and their unordered original file-URL set. When several rows match,
+the old variant's kind and label narrow that set if an exact match survives; `isDefault` is not an
+identity constraint. A measurement redirects only to one eligible row, while a product can resolve
+when all eligible rows share one destination product. Each old measurement contributes at most one
+product vote, regardless of duplicate current rows. Splits first maximize former-default counts,
+then total former-measurement counts among those leaders, then require a unique matching identity
+among the remaining tied candidates, recomputed with current brand/product aliases and identity
+rules. Otherwise they stay unmapped.
 Existing IDs never redirect. Previous redirects are retained, chains collapse to current IDs and dead
 targets are dropped; unavailable previous catalogs produce warnings, not a failed build. The build
 report's `redirects` records the baseline version, counts and split decisions. Engine ID-taking
@@ -460,7 +466,7 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Local build `4faef5c62875b2b41735c95e`: **9,155 products / 40,821 measurements / 138 databases /
+Local build `f9ba2374a78706b8379bfed8`: **9,155 products / 40,821 measurements / 138 databases /
 118 publishers**, across **57 partitions** (7,477 IEM products / 33,507 measurements; 1,678 headphone
 products / 7,314 measurements). The build has **305 quality-quarantine candidates**, not counts of
 previously published removals. All **10,717 measured product/partition groups** have a default;
@@ -506,16 +512,26 @@ NM2 and NM2+ are two products with **nine / ten measurements**: compact `NFaudio
 duplicates. The CanJam NYC 2025 prototype is modified and links to CrinEar Reference
 `p-437de4e3e3402077cdc3`.
 
-Of **1,241 disappeared seed product IDs**, **1,235 redirect**. Truthears Hexa redirects to Truthear
+Of **1,241 disappeared seed product IDs**, **1,237 redirect**. Truthears Hexa redirects to Truthear
 Hexa; I/O Audio Cielo redirects to the retained I/O Cielo ID. The old NF Audio NM2 ID
 `p-4403886ad1f935e4f84b` is not retained literally: it redirects to NM2 `p-6c8049b80dd9c29ce91f`,
-not NM2+ `p-49559a08f80ed81c94c7`. Full inherited maps contain **2,007 product / 4,708 measurement
-redirects**, with zero invalid product targets or lost inherited product routes. Universal disappeared-ID
+not NM2+ `p-49559a08f80ed81c94c7`. Full inherited maps contain **2,009 product / 4,710 measurement
+redirects**, with zero invalid targets or lost inherited routes. Universal disappeared-ID
 coverage is **not** achieved: four products (Nowa Acoustics Inferno, QoA x 7th Acoustics Ryusei,
-FAudio Mezzo and Aure Nirvana EP) have no surviving raw-file match; old NF ACOUS NM2+ has a tied
-one-default-per-target split; EarAcoustic Audio Silver Angel SPA Limited has duplicate current
-raw-file references to one product, which the existing unique-measurement resolver leaves unmapped.
-No arbitrary targets or redirect-policy changes were introduced for these exceptions.
+FAudio Mezzo and Aure Nirvana EP) have no surviving raw-file match and remain unmapped.
+Old NF ACOUS NM2+ `p-f625e0cf0798654fbf72` now redirects to NM2+: former defaults tie 1–1,
+but NM2+ holds two of its three former measurements. EarAcoustic Audio Silver Angel SPA Limited
+`p-ab9faeabbd0c6f9a33e2` redirects to `p-6b89f8d0f23ef2a5cfb6` after matching variant kind/label.
+
+The frozen tonedeafmonk index explicitly reuses the Limited raw file under High End Ultra:
+`m-2149597d444f511add19` is a **non-default fit**, labelled `(SPA LIMITED EDITION FOAM TIPS)`,
+while `m-d30d9dec8d271b0e88bb` is Limited's empty-label default-kind row. The old Limited measurement
+matches the latter variant. This is source-defined reuse, not an importer-created second stock
+default. Both source references remain intact; their physical equivalence is not independently
+verified. These general redirect rules add **two product / two measurement routes** versus
+`4faef5c62875b2b41735c95e`, without removing or retargeting any existing route.
+The redirect-only rebuild uses the same frozen cache and `4199d08` seed; products, measurements,
+all curves, non-redirect catalog fields and statistics are identical to `4faef5c`.
 
 Upstream drift is separate: B0 versus `4199d08` adds **five products / 27 measurements**, removes
 **four products / eight measurements**, and changes **one matched Cozoy D2 rank curve**. No database

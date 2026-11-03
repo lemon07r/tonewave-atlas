@@ -511,7 +511,7 @@ describe('cached dataset build safety', () => {
 		expect(catalog.measurements.filter((m) => m.variant.isDefault)).toHaveLength(1);
 		expect(catalog.measurements.map((m) => m.variant.label).sort()).toEqual(['foam tips', 'stock tips']);
 	});
-	it('uses strict plurality of former defaults for split products, leaving ties unmapped across forms', async () => {
+	it('prioritizes former defaults then total measurements for split products across forms', async () => {
 		const { paths } = await fixture();
 		await build(paths);
 		const { catalog } = await result(paths);
@@ -556,9 +556,9 @@ describe('cached dataset build safety', () => {
 		for (const defaults of [[0, 2], []]) {
 			const tied = current();
 			expect(buildRedirects([old(defaults)], tied).splits).toMatchObject([
-				{ target: null, reason: 'unmapped: tied or absent former defaults' }
+				{ target: 'b', reason: 'strict plurality of former measurements' }
 			]);
-			expect(tied.every((c) => !c.redirects?.products.old)).toBe(true);
+			expect(tied[1]?.redirects?.products.old).toBe('b');
 		}
 	});
 	it('redirects previous published identities by source and unordered original URL set, carrying chains', async () => {

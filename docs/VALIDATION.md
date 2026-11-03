@@ -82,6 +82,32 @@ historical-product redirect coverage fails**; no arbitrary redirects were substi
 The automated equality/grouping/spot checks pass; missing redirects are inspected separately, not
 counted as an equality-test success.
 
+### Redirect-only refinement
+
+Dataset `f9ba2374a78706b8379bfed8` rebuilds from the same frozen cache and `4199d08` seed after
+general redirect disambiguation rules. Versus audited `4faef5c`, **all 9,155 products / 40,821
+measurements and every non-redirect catalog field are identical**. All **229 non-catalog artifacts**,
+including **57 rank packs**, are byte-identical; the headphone catalog is byte-identical too.
+Only the IEM catalog's redirects change, adding **two product / two measurement routes**, with no
+removed or retargeted routes. Its compressed size rises **105 bytes**; version-prefixed manifest
+paths, that catalog's size/hash and publication timestamps change accordingly. All **231 artifacts**
+pass manifest size/SHA-256 checks. Build-report fields other than redirects and derived publication
+metadata are unchanged, including all rig evidence, statistics, defaults and modified/base-link counts.
+
+Coverage becomes **1,237 / 1,241 disappeared seed products**, leaving only the four accepted upstream
+removals unmapped. NF ACOUS NM2+ follows its two-of-three overall measurement majority after a 1–1
+former-default tie. Limited's variant kind/label disambiguates the source's explicit non-default
+foam-tip reuse under Ultra; this is not a second stock default. Product resolution also handles
+multiple eligible rows with one parent without inventing a measurement redirect. Still-tied cases
+remain unmapped. Regression fixtures exercise default/count/identity priority, current brand/product
+aliases and plus keys, duplicate-row vote inflation, metadata fallback and unresolved ties.
+
+The rebuild's **182,761 read-only input files / 1,875,054,088 bytes** retain the frozen fingerprint
+above. Focused scripts and outputs under `~/.local/tmp/tw2` are `redirects-refinement-scan.{ts,json}`,
+`redirects-refinement-audit.{py,json,log}`, `redirects-source-reuse.json`, `build-b1-redirects.log`
+and `verify-redirects-refinement.log`. The previous dataset and report are preserved locally in
+`b1-before-redirects/`; the final dataset remains in `static/data/f9ba2374a78706b8379bfed8/`.
+
 ## Benchmarks
 
 Run `pnpm bench` (plain Node TypeScript stripping, no build). Deterministic synthetic curves, one

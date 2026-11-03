@@ -961,7 +961,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const redirects = {
 		baselineVersion: previous.version,
 		warnings: previous.warnings,
-		...buildRedirects(previous.catalogs, catalogs)
+		...buildRedirects(previous.catalogs, catalogs, { aliases, productAliases })
 	};
 	for (const catalog of catalogs)
 		artifacts.set(`catalog-${catalog.form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));
