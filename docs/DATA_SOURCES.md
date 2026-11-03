@@ -512,11 +512,11 @@ no measurement or curve changes, no partition moves and two default-flag changes
 after renewed rig evidence; the curves themselves do not change. MYER-AUDIO/Myer Audio maker
 duplicates are resolved; distinct CKLVX and SLIIVO model/revision near-name groups remain separate.
 
-The identity audit flags **53 shared-rig comparisons across 28 products**, all above the iem-711
-same-product P90 of **2.625960 dB**. The five watched products are present: CVJ MEI has 12 flagged
-comparisons (largest **6.375170 dB**); Noble Audio Kaiser Encore **4.662281**; Hi-Fri Audio 1+3
-**4.627270**; Moondrop Block **4.617915**; Whizzer A15 **3.586715**. These are diagnostic flags,
-not automatic identity vetoes.
+The identity audit, using final published defaults, flags **31 shared-rig comparisons across 27
+products**, all above the iem-711 same-product P90 of **2.623528 dB**. The five watched products are
+present: CVJ MEI has three flagged comparisons (largest **6.004870 dB**); Noble Audio Kaiser Encore
+**4.662281**; Hi-Fri Audio 1+3 **4.627270**; Moondrop Block **4.617915**; Whizzer A15 **3.586715**.
+These are diagnostic flags, not automatic identity vetoes.
 
 Metadata flags cover **429 modified products** (249 IEM / 180 headphone) and **308 base links**
 (163 / 145). Overlapping marker/word/custom rule counts are **282 / 419 / 30**. Truthear Hexa is one

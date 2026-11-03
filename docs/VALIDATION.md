@@ -95,6 +95,11 @@ from cached fetch times, not the build clock. All **231 artifacts**
 pass manifest size/SHA-256 checks. Build-report fields other than redirects and derived publication
 metadata are unchanged, including all rig evidence, statistics, defaults and modified/base-link counts.
 
+The PR #19 review fixes (accepted-source placeholder recovery, exact-measurement redirect priority,
+collection brand keys, plus-sign boundaries, product-alias base links) rebuild the same frozen cache
+to the same `f9ba2374a78706b8379bfed8`: all 231 artifacts are byte-identical. Only the identity audit
+in the build report changes, because it now uses final published defaults (see `DATA_SOURCES.md`).
+
 Coverage becomes **1,237 / 1,241 disappeared seed products**, leaving only the four accepted upstream
 removals unmapped. NF ACOUS NM2+ follows its two-of-three overall measurement majority after a 1–1
 former-default tie. Limited's variant kind/label disambiguates the source's explicit non-default
