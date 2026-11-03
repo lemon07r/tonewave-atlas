@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 import type { Catalog, Manifest } from '../../src/core/dataset/types.ts';
 import { parseProfile, PROFILE_KEY, type WorkspaceItem } from '../../src/lib/profile/profile.ts';
@@ -31,6 +31,17 @@ const measurement = catalog.measurements.find(
 );
 if (!measurement) throw new Error('Cross-form fixtures require a real default HD 600 measurement.');
 const measurementId = measurement.id;
+// Patch once and retain the published gzip transport instead of re-fetching and expanding
+// the full catalog through Playwright for every analysis/metadata request and navigation.
+const redirectedCatalog = gzipSync(
+	JSON.stringify({
+		...catalog,
+		redirects: {
+			products: { ...catalog.redirects?.products, 'misfiled-hd600': hdId, 'misfiled-mv1': mvId },
+			measurements: { ...catalog.redirects?.measurements, 'misfiled-headphone-measurement': measurementId }
+		}
+	})
+);
 const hexa = 'p-19d1654fcb150bf1aa2f';
 const item = (
 	productId: string,
@@ -46,16 +57,7 @@ const item = (
 
 async function redirectFixture(page: Page) {
 	await page.route('**/catalog-headphone.json.gz', async (route) => {
-		const response = await route.fetch();
-		const bytes = await response.body();
-		const data = JSON.parse(
-			(bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString()
-		) as Catalog;
-		data.redirects = {
-			products: { ...data.redirects?.products, 'misfiled-hd600': hdId, 'misfiled-mv1': mvId },
-			measurements: { ...data.redirects?.measurements, 'misfiled-headphone-measurement': measurementId }
-		};
-		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+		await route.fulfill({ status: 200, contentType: 'application/gzip', body: redirectedCatalog });
 	});
 }
 

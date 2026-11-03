@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 import type { Catalog, Manifest } from '../../src/core/dataset/types.ts';
 import { parseProfile, PROFILE_KEY } from '../../src/lib/profile/profile.ts';
@@ -19,18 +19,15 @@ const aliases = {
 	products: { 'legacy-product': reference, 'legacy-hexa': hexa },
 	measurements: { 'legacy-measurement': variant }
 };
+// Keep the real catalog compressed, as served in production. Expanding it in every route
+// sends ~59 MB through Playwright per request and makes runner load look like a migration failure.
+const redirectedCatalog = gzipSync(JSON.stringify({ ...catalog, redirects: aliases }));
 const like = (productId: string) => ({ productId, rating: 'like', strength: 0.6, soundRelated: true });
 const dislike = (productId: string) => ({ productId, rating: 'dislike', strength: 1, soundRelated: true });
 
 async function redirects(page: Page) {
 	await page.route('**/catalog-iem.json.gz', async (route) => {
-		const response = await route.fetch();
-		const bytes = await response.body();
-		const data = JSON.parse(
-			(bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString()
-		) as Catalog;
-		data.redirects = aliases;
-		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+		await route.fulfill({ status: 200, contentType: 'application/gzip', body: redirectedCatalog });
 	});
 }
 
