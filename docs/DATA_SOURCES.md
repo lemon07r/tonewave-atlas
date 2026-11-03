@@ -174,7 +174,7 @@ normalization, so cross-table conflicts and brand-hidden product chains are reje
 duplicate, cyclic or chained mappings stop ingestion. Numeral, MEMS and collaboration-spelling aliases
 require explicit reviewed mappings, with evidence in the input notes; such descriptors are not stripped
 generically. Response distances corroborate identity evidence, never authorize automatic merges.
-Only recognized switch/cable/tip suffixes below are folded; sample/revision labels remain separate.
+Only the recognized sample/unit and switch/cable/tip rules below fold descriptors; revisions remain separate.
 `identityMerges.productsBefore` counts globally unique original keys; `productsAfter` is the final
 count and `merged` is their net difference. Separately, `groupwiseMerges` lists each many-to-one group's
 original keys and reduction plus their total; this can differ from net reduction when an original key
@@ -209,6 +209,29 @@ labels/descriptors, retained verbatim in original filenames. Heuristic kinds can
 processing provenance retain the evidence rather than claiming a verified physical configuration.
 Every non-default measurement must have a non-empty label, using its filename when an originally
 unlabelled default is demoted; an empty non-default label stops publication.
+
+### Review sample identities
+
+In both catalogs, a trailing `Sample N`/`Unit N` (including zero-padded numbers and `Sample1`),
+or an exact parenthesized `(sample N)`/`(unit N)`/`(SN)`, identifies a review unit, not a product.
+The marker is removed from the maker/model identity. Sample-only products create the same base identity
+even when no unsuffixed entry exists; reviewed aliases supply a new base's canonical model name,
+while unaliased source spelling is retained. An empty remaining model is not invented. Bare model tokens such
+as Moondrop S8, Letshuoer S12, Simgot EA500 S and B&W Px8 S2 do not match this identity rule.
+Mixed, uninterpreted descriptors such as `Sample 3L + 4R` or `(sample 02 golden)` remain separate.
+An explicit sample/unit number immediately before a modification marker is also removed, but the mod,
+DIY, prototype or reshell descriptor stays in the identity: a modded sample never joins stock.
+
+Folding happens after curve acceptance, without shape deduplication: original measurement IDs, files,
+URLs and curve values survive. Folded measurements start as `unit`, with sample and tip/fit labels
+preserved from the original file, suffix and model marker, plus the identity move and previous kind
+in processing provenance. An existing base default from the same source/partition wins, including when
+only a folded sample matches the preferred switch state: reconciliation preserves that base default,
+and final coverage cannot select the sample over existing base defaults. A sample-only
+source/partition receives one default under final coverage, preferring the lowest sample number
+(explicit sample/unit numbers before parenthesized shorthand, never an S8 model token). Its label and
+previous `unit` kind remain recorded; default does not mean verified stock. Retired product IDs redirect
+to the base, and inherited product/measurement redirects continue to resolve.
 
 ### Switch and accessory folding
 
@@ -261,7 +284,7 @@ selects one default (lowest stable ID only if that order is unavailable); the re
 After final rig/partition assignment, **every measured (product, partition) must have a default**.
 Every (product, source, partition) must also have one except when a selected labelled switch state is
 absent at that source and another source supplies defaults for that product in the **same partition**.
-Singleton unit/fit/unknown groups always become default. Otherwise missing defaults use the lowest
+Sample-only groups and singleton fit/unknown groups always receive a default. Otherwise missing defaults use the lowest
 numbered sample (or first unit), stock/neutral fit first, or the existing tuning/default tie-break and
 source order. Every selected default has **`kind: 'default'` and `isDefault: true`**, retaining its
 label and recording the previous kind in provenance. This makes a measurement usable without claiming
@@ -322,6 +345,7 @@ category/marker changes, variant corrections and per-database form counts are re
 `pnpm data:build` writes machine-readable evidence to `.cache/ingest/report.json`: `variantReview`
 lists products with state/accessory descriptors, including every source variant's ID, partition,
 filename, label and kind;
+`sampleIdentity` contains unit identity moves and newly created bases;
 `switchIdentity`/`switchDefaults` contain moves, ambiguities, votes and source choices; `defaultCoverage`
 contains before/after counts, selections, exceptions, `unresolvedStates` and `unresolvedMultipleDefaults`, with provisional
 coverage in `rigDefaultCoverage`; `unknownVariants`, `rigEvidence`, `sourceEvidence`, `quality`,
@@ -334,7 +358,7 @@ Switch-state ties and incompatible encodings (including Quartet, Canon Pro and B
 leave unresolved state choices or justified source-level gaps; source-order selection is not successful state
 reconciliations. Opaque colors, positions and multi-position codes remain uninterpreted, and suffixes
 without an accepted exact parent remain separate. Abbreviations, real model families, revisions and
-samples are not fuzzy aliases. Cross-form names can genuinely name both forms, as with 1MORE Triple
+ambiguous sample descriptors are not fuzzy aliases. Cross-form names can genuinely name both forms, as with 1MORE Triple
 Driver; mixed-index earbud/open-ear candidates such as QKZ MDR, Yuin PK1 and TrueFree O1 remain reported
 pending a supported form policy rather than inventing a third `Form`. Newer index schemas without
 `file` lists are reported as unsupported, not guessed. Source hardware, raw calibration, insertion,
@@ -343,14 +367,26 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `bd5618f51ff28af2d3f6d189`: **9,610 products / 40,802 measurements / 138 databases / 118 publishers**.
+Build `60e816fc2db9ba2291ea4ece`: **9,507 products / 40,802 measurements / 138 databases / 118 publishers**
+(7,801 IEM products / 33,488 measurements; 1,706 headphone products / 7,314 measurements).
 Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
 24 target/calibration/delta/sandbox and two population averages; these are candidates, not counts of
 previously published removals. **86 unresolved state
-groups** now have one source-order default each; **zero duplicate source defaults** remain. Against
-published `47e17d0fbadf1919b2caade0`, catalogs resolve **four retired product / three retired measurement IDs**;
-the three quarantined products' **19 measurements** have no redirect. Complete inherited maps contain
-**626 product / 890 measurement redirects**. LOCO reports
+groups** have one source-order default each; **zero duplicate source defaults** remain. The **65 existing
+selected-switch-state source exceptions** remain; every folded sample source/partition has exactly one
+default, and all 10,967 measured product/partitions have a default and an engine candidate in both raw
+and harmonised indexes across 53 partitions.
+
+Against published `bd5618f51ff28af2d3f6d189`, **93 IEM / 24 headphone sample identities retire**,
+creating eight IEM / six headphone bases where only samples existed: net reductions **85 / 18**.
+All **117 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
+redirects are needed. Complete inherited maps contain **743 product / 890 measurement redirects**, with
+zero invalid targets or lost historical redirects. No accepted raw file, channel or rank curve was
+added, removed or changed: **40,802 rank / 80,342 channel curves** remain byte-equivalent after decoding,
+and no measurement changed rig partition. Eleven mixed/unnamed sample descriptors remain outside the
+exact sample identity rules. The manifest publishes all 138 source counts and 53 partition counts,
+verified against both catalogs; its gzip size is **25,552 bytes**, versus **23,900** before the change.
+LOCO reports
 **37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.

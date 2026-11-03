@@ -1218,6 +1218,23 @@ describe('atlas service', () => {
 		expect(result.ok && result.results.length).toBeGreaterThan(0);
 		expect(result.ok && result.results.every((r) => Number.isFinite(r.distance))).toBe(true);
 	});
+	it('returns the legacy summary using only the manifest when summary counts are published', async () => {
+		const legacy = fixture();
+		const expected = await legacy.service.summary();
+		expect(legacy.calls).toEqual(['manifest.json', 'v1/catalog-iem.json.gz', 'v1/catalog-headphone.json.gz']);
+		const current = fixture();
+		const bytes = current.files.get('manifest.json');
+		if (!bytes) throw new Error('Missing manifest fixture');
+		const manifest = JSON.parse(new TextDecoder().decode(bytes)) as Manifest;
+		current.files.set(
+			'manifest.json',
+			new TextEncoder().encode(
+				JSON.stringify({ ...manifest, sources: expected.sources, partitions: expected.partitions })
+			)
+		);
+		expect(await current.service.summary()).toEqual(expected);
+		expect(current.calls).toEqual(['manifest.json']);
+	});
 	it('loads only the requested catalog for search and attributes counts, variants and prices', async () => {
 		const { service, calls } = fixture();
 		const list = await service.products('iem');

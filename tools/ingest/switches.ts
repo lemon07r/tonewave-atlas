@@ -1,5 +1,6 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import { classifyEq } from './eq.ts';
+import { isFoldedSample } from './samples.ts';
 import { collisionGroups, normalise, withoutAttribution } from './transform.ts';
 import {
 	adapterState,
@@ -306,13 +307,27 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 						classifyEq(`${m.variant.file} ${m.variant.label}`) !== 'ambiguous'
 				);
 				const selected = eligible.find((m) => m.variant.isDefault) ?? eligible[0];
+				// A sample-only match cannot replace this source/partition's existing base default,
+				// either here or through the later missing-default coverage fallback.
+				const protectedBaseDefaults = new Set(
+					ms.filter(
+						(m) =>
+							m.variant.isDefault &&
+							!isFoldedSample(m) &&
+							!eligible.some((candidate) => candidate.partition === m.partition) &&
+							ms.some(
+								(sample) =>
+									isFoldedSample(sample) && sample.partition === m.partition && state(sample) === preferred
+							)
+					)
+				);
 				const explicit = ms.filter((m) => state(m) !== null);
 				if (!selected && explicit.length) unresolvedSources.push(source);
 				// Unresolved multiple defaults must survive unchanged unless the selected state is present.
 				if (!selected && before.length > 1) continue;
 				if (!explicit.length) continue;
 				for (const m of explicit)
-					if (m.variant.kind !== 'unit') {
+					if (m.variant.kind !== 'unit' && !protectedBaseDefaults.has(m)) {
 						m.variant.isDefault = m === selected;
 						m.variant.kind =
 							m === selected
@@ -327,7 +342,7 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 				// An explicit canonical state replaces the source's unlabelled fallback, never a second default.
 				if (selected)
 					for (const m of ms)
-						if (m !== selected && m.variant.isDefault) {
+						if (m !== selected && m.variant.isDefault && !protectedBaseDefaults.has(m)) {
 							m.variant.isDefault = false;
 							m.variant.kind =
 								state(m) === null &&

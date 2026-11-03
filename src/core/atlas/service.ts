@@ -477,11 +477,19 @@ export class AtlasService {
 		};
 	}
 	async summary(): Promise<AtlasSummary> {
-		const [manifest, ...catalogs] = await Promise.all([
-			this.manifest(),
-			this.catalog('iem'),
-			this.catalog('headphone')
-		]);
+		const manifest = await this.manifest();
+		const sources = manifest.sources.flatMap((source) =>
+			source.measurementCount === undefined ? [] : [{ ...source, measurementCount: source.measurementCount }]
+		);
+		if (manifest.partitions && sources.length === manifest.sources.length)
+			return {
+				version: manifest.version,
+				builtAt: manifest.builtAt,
+				sources,
+				partitions: manifest.partitions.map((partition) => ({ ...partition }))
+			};
+		// During deployment new code can briefly use the previous dataset's manifest.
+		const catalogs = await Promise.all([this.catalog('iem'), this.catalog('headphone')]);
 		const counts = new Map<string, number>();
 		for (const m of catalogs.flatMap((c) => c.measurements))
 			counts.set(m.sourceId, (counts.get(m.sourceId) ?? 0) + 1);

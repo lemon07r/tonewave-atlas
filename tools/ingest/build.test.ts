@@ -114,6 +114,51 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('publishes catalog-equivalent manifest counts across forms and retains folded sample curves offline', async () => {
+		const files = ['Model', 'Model (sample 2)', 'HD600 Sample 2', 'HD600 Sample 1'];
+		const { paths } = await fixture(config, [
+			[
+				bookUrl,
+				JSON.stringify([
+					{ name: 'Maker', phones: files.slice(0, 2).map((name) => ({ name, file: name })) },
+					{ name: 'Sennheiser', phones: files.slice(2).map((name) => ({ name, file: name })) }
+				])
+			],
+			...files.map((file): [string, string] => [`${base}data/${encodeURIComponent(file)}%20L.txt`, curve(80)])
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+		await build(paths);
+		const { manifest, catalog } = await result(paths);
+		const headphones = JSON.parse(
+			gunzipSync(
+				await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
+			).toString()
+		) as Catalog;
+		const catalogs = [catalog, headphones];
+		expect(catalogs.map((c) => [c.products.length, c.measurements.length])).toEqual([
+			[1, 2],
+			[1, 2]
+		]);
+		expect(catalog.measurements.map((m) => m.variant.kind).sort()).toEqual(['default', 'unit']);
+		expect(headphones.measurements.find((m) => m.variant.isDefault)?.variant.file).toBe('HD600 Sample 1');
+		for (const source of manifest.sources)
+			expect(source.measurementCount).toBe(
+				catalogs.flatMap((c) => c.measurements).filter((m) => m.sourceId === source.id).length
+			);
+		expect(manifest.sources[0]?.measurementCount).toBe(4);
+		expect(manifest.partitions).toEqual(
+			catalogs.flatMap((c) =>
+				c.partitions.map((p) => ({
+					id: p.id,
+					form: p.form,
+					measurementCount: p.measurementCount,
+					productCount: new Set(c.measurements.filter((m) => m.partition === p.id).map((m) => m.productId))
+						.size
+				}))
+			)
+		);
+		expect(manifest.partitions).toHaveLength(2);
+	});
 	it.each(['clone 711', 'B&K 5128'])(
 		'quarantines source-chain products but retains named tests, headphones and insertion-depth fits offline on %s',
 		async (rig) => {

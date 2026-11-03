@@ -69,6 +69,7 @@ import { rigEvidence } from './rig-evidence.ts';
 import { classifyEq, factoryMode } from './eq.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults, reviewVariantStates } from './switches.ts';
 import { finaliseDefaults, withProvisionalDefaults } from './default-coverage.ts';
+import { mergeSampleIdentities } from './samples.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -648,8 +649,9 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	displayNames.apply(products.values());
 	const allCurves = [...partitions.values()].flat();
+	const sampleIdentity = mergeSampleIdentities(products, allCurves, aliases, productAliases);
 	const switchIdentity = mergeSwitchIdentities(products, allCurves);
-	for (const move of switchIdentity.moves) {
+	for (const move of [...sampleIdentity.moves, ...switchIdentity.moves]) {
 		for (const map of [identities, originalIdentities]) {
 			const names = map.get(move.to) ?? new Set<string>();
 			for (const name of map.get(move.from) ?? []) names.add(name);
@@ -721,6 +723,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		}));
 	for (const source of sources) {
 		const rows = allCurves.filter((c) => c.measurement.sourceId === source.id);
+		source.measurementCount = rows.length;
 		source.forms = [
 			...new Set(
 				rows.map((c) => {
@@ -924,7 +927,17 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		version,
 		builtAt,
 		files: files.map((f) => ({ ...f, path: `${version}/${f.path}` })),
-		sources
+		sources,
+		partitions: catalogs.flatMap((catalog) =>
+			catalog.partitions.map((partition) => ({
+				id: partition.id,
+				form: partition.form,
+				measurementCount: partition.measurementCount,
+				productCount: new Set(
+					catalog.measurements.filter((m) => m.partition === partition.id).map((m) => m.productId)
+				).size
+			}))
+		)
 	};
 	await mkdir(paths.output, { recursive: true });
 	const staging = await mkdtemp(resolve(paths.output, '.build-'));
@@ -940,6 +953,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			{
 				...report,
 				redirects,
+				sampleIdentity,
 				switchIdentity,
 				switchDefaults,
 				defaultCoverage,

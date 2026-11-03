@@ -30,6 +30,38 @@ async function output(): Promise<string> {
 }
 
 describe('dataset pull', () => {
+	it('preserves optional summary counts and rejects invalid counts', () => {
+		const source = {
+			...sourceFor(
+				{ id: 'source', username: 'source', name: 'Source', url: 'https://fixture.invalid/', dbType: 'IEMs' },
+				'',
+				'date',
+				{}
+			),
+			measurementCount: 2
+		};
+		const version = datasetVersion([file], [source]);
+		const current = {
+			...manifest,
+			version,
+			sources: [source],
+			files: [{ ...file, path: `${version}/${file.path}` }],
+			partitions: [{ id: 'iem-711', form: 'iem', measurementCount: 2, productCount: 1 }]
+		};
+		expect(validateManifest(current)).toEqual(current);
+		for (const count of [-1, 0.5, '2', NaN]) {
+			expect(() =>
+				validateManifest({ ...current, sources: [{ ...source, measurementCount: count }] })
+			).toThrow('source measurement count');
+			for (const field of ['measurementCount', 'productCount'])
+				expect(() =>
+					validateManifest({ ...current, partitions: [{ ...current.partitions[0], [field]: count }] })
+				).toThrow('partition counts');
+		}
+		expect(() =>
+			validateManifest({ ...current, partitions: [...current.partitions, ...current.partitions] })
+		).toThrow('Duplicate manifest partition');
+	});
 	it('hashes and preserves additive rig evidence and mixed-form metadata without changing older versions', () => {
 		const s = sourceFor(
 			{

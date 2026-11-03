@@ -109,6 +109,13 @@ export function validateManifest(value: unknown): Manifest {
 				!s.partitions.every((p: unknown) => typeof p === 'string' && /^[a-z0-9-]+$/.test(p)))
 		)
 			throw new Error('Invalid source partitions');
+		if (
+			s.measurementCount !== undefined &&
+			(typeof s.measurementCount !== 'number' ||
+				!Number.isInteger(s.measurementCount) ||
+				s.measurementCount < 0)
+		)
+			throw new Error('Invalid source measurement count');
 		return {
 			id: s.id,
 			username: s.username,
@@ -124,9 +131,33 @@ export function validateManifest(value: unknown): Manifest {
 			calibration: s.calibration,
 			...(evidence === undefined ? {} : { rigEvidence: evidence as NonNullable<Source['rigEvidence']> }),
 			...(s.forms === undefined ? {} : { forms: s.forms }),
-			...(s.partitions === undefined ? {} : { partitions: s.partitions.map((p: unknown) => String(p)) })
+			...(s.partitions === undefined ? {} : { partitions: s.partitions.map((p: unknown) => String(p)) }),
+			...(s.measurementCount === undefined ? {} : { measurementCount: s.measurementCount })
 		};
 	});
+	let partitions: Manifest['partitions'];
+	if (value.partitions !== undefined) {
+		if (!Array.isArray(value.partitions)) throw new Error('Invalid manifest partitions');
+		partitions = value.partitions.map((p: unknown) => {
+			if (
+				!record(p) ||
+				typeof p.id !== 'string' ||
+				!/^[a-z0-9-]+$/.test(p.id) ||
+				(p.form !== 'iem' && p.form !== 'headphone') ||
+				typeof p.measurementCount !== 'number' ||
+				!Number.isInteger(p.measurementCount) ||
+				p.measurementCount < 0 ||
+				typeof p.productCount !== 'number' ||
+				!Number.isInteger(p.productCount) ||
+				p.productCount < 0 ||
+				p.productCount > p.measurementCount
+			)
+				throw new Error('Invalid manifest partition counts');
+			return { id: p.id, form: p.form, measurementCount: p.measurementCount, productCount: p.productCount };
+		});
+		if (new Set(partitions.map((p) => p.id)).size !== partitions.length)
+			throw new Error('Duplicate manifest partition');
+	}
 	if (
 		datasetVersion(
 			files.map((file) => ({ ...file, path: file.path.slice(version.length + 1) })),
@@ -134,7 +165,14 @@ export function validateManifest(value: unknown): Manifest {
 		) !== version
 	)
 		throw new Error('Dataset version/content mismatch');
-	return { formatVersion: 1, version, builtAt: value.builtAt, files, sources };
+	return {
+		formatVersion: 1,
+		version,
+		builtAt: value.builtAt,
+		files,
+		sources,
+		...(partitions === undefined ? {} : { partitions })
+	};
 }
 
 /** Bound decoded response bytes, including chunked responses without Content-Length. */
