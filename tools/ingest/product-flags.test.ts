@@ -11,6 +11,22 @@ const product = (id: string, model: string, brand = 'Maker', form: Product['form
 });
 
 describe('modified product metadata', () => {
+	it('applies reviewed product aliases to stock display names without crossing forms or guessing ambiguity', () => {
+		const stock = product('stock', 'Aria II', 'MOONDROP');
+		const modified = product('modified', 'Aria 2 Mod', 'Moondrop Audio');
+		markModifiedProducts([stock, modified], {}, { 'moondrop|ariaii': 'MOONDROP|Aria 2' });
+		expect(modified.baseProductId).toBe(stock.id);
+		const ambiguous = product('ambiguous', 'Aria 2 Mod', 'MOONDROP');
+		markModifiedProducts(
+			[stock, product('duplicate', 'Aria 2', 'MOONDROP'), ambiguous],
+			{},
+			{ 'moondrop|ariaii': 'MOONDROP|Aria 2' }
+		);
+		expect(ambiguous).not.toHaveProperty('baseProductId');
+		const cross = product('cross', 'Aria 2 Mod', 'MOONDROP', 'headphone');
+		markModifiedProducts([stock, cross], {}, { 'moondrop|ariaii': 'MOONDROP|Aria 2' });
+		expect(cross).not.toHaveProperty('baseProductId');
+	});
 	it.each(['mod', 'MoDdEd', 'MODIFIED', 'PROTOTYPE', 'proto', 'Foam Mod', 'foam-mod', 'Mod Foam'])(
 		'flags a standalone %s and links its unchanged identity to stock',
 		(descriptor) => {

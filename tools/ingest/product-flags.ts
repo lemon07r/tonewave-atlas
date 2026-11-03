@@ -1,5 +1,6 @@
 import type { Product } from '#core/dataset/types.ts';
-import { canonicalBrandKey, identityKey, modelIdentity } from './identity-keys.ts';
+import { identityKey, modelIdentity } from './identity-keys.ts';
+import { identity } from './transform.ts';
 
 const marker = /\[modified:[\s\S]*\]/i;
 const word = /\b(?:mod|modded|modified|prototype|proto)\b/i;
@@ -64,7 +65,8 @@ function stockModelCandidates(model: string): string[][] {
 /** Metadata only: never rewrite identities, measurement membership, or redirects. Rule counts overlap. */
 export function markModifiedProducts(
 	products: readonly Product[],
-	aliases: Readonly<Record<string, string>> = {}
+	aliases: Readonly<Record<string, string>> = {},
+	productAliases: Readonly<Record<string, string>> = {}
 ): ProductFlagReport {
 	const report: ProductFlagReport = {
 		modified: 0,
@@ -89,7 +91,7 @@ export function markModifiedProducts(
 	});
 	report.modified = modified.length;
 	const key = (product: Product, model = product.model): string =>
-		`${product.form}:${canonicalBrandKey(product.brand, aliases)}:${identityKey(modelIdentity(model))}`;
+		identity(product.brand, model, product.form, aliases, productAliases).key;
 	const stocks = Map.groupBy(
 		products.filter((product) => !product.modified),
 		(product) => key(product)

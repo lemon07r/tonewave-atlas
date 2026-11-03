@@ -119,6 +119,56 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it.each(['config', 'calibration', 'curves', 'maker'])(
+		'does not recover a maker from rejected %s evidence',
+		async (missing) => {
+			const other = 'https://other.squig.link/';
+			const bodies: [string, string][] = [
+				[
+					DIRECTORY_URL,
+					JSON.stringify(
+						['reviewer', 'other'].map((username) => ({
+							username,
+							name: username,
+							urlType: 'subdomain',
+							dbs: [{ type: 'IEMs', folder: '/' }]
+						}))
+					)
+				],
+				[
+					bookUrl,
+					JSON.stringify([
+						{ name: 'Unbranded (reviewer)', phones: [{ name: 'Maker Reference', file: 'unbranded' }] }
+					])
+				],
+				[`${base}data/unbranded%20L.txt`, curve(80)],
+				[
+					`${other}data/phone_book.json`,
+					JSON.stringify([
+						{
+							name: 'Maker',
+							phones: [{ name: missing === 'maker' ? 'Harman Target' : 'Reference', file: 'maker' }]
+						},
+						{ name: 'Witness', phones: [{ name: 'Reference', file: 'witness' }] }
+					])
+				]
+			];
+			if (missing !== 'config')
+				bodies.push([
+					`${other}config.js`,
+					missing === 'calibration' ? config : 'const DIR = "data/", rig_description = "B&K 5128";'
+				]);
+			if (missing !== 'curves')
+				bodies.push([`${other}data/maker%20L.txt`, curve(80)], [`${other}data/witness%20L.txt`, curve(80)]);
+			const { paths } = await fixture('const DIR = "data/", rig_description = "B&K 5128";', bodies);
+			vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+			await build(paths);
+			const { catalog } = await result(paths);
+			expect(catalog.products).toContainEqual(
+				expect.objectContaining({ brand: 'Unbranded (reviewer)', model: 'Maker Reference' })
+			);
+		}
+	);
 	it('marks modified products and links the CanJam prototype to stock without changing identities', async () => {
 		const entries = [
 			{
@@ -222,15 +272,51 @@ describe('cached dataset build safety', () => {
 		const { catalog, report } = await result(paths);
 		expect(catalog.products).toHaveLength(5);
 		expect(catalog.measurements).toHaveLength(8);
+		const manifest = JSON.parse(await readFile(resolve(paths.output, 'manifest.json'), 'utf8')) as Manifest;
+		const shapes = new Map(
+			entries.flatMap((g) => g.phones.map((p, i) => [p.file, i + (p.file.endsWith('b') ? 1 : 0)] as const))
+		);
+		shapes.set('pure', 0);
+		const ranks = decodePack(
+			gunzipSync(await readFile(resolve(paths.output, manifest.version, 'rank-iem-5128.bin.gz')))
+		);
+		for (const m of catalog.measurements) {
+			const shape = shapes.get(m.variant.file);
+			if (shape === undefined) throw new Error('Missing input signal fixture');
+			const detail = decodePack(
+				gunzipSync(await readFile(resolve(paths.output, manifest.version, m.detailFile)))
+			);
+			const channels = detail.curves.filter((c) => c.measurementId === m.id);
+			expect(channels).toHaveLength(m.channels.length);
+			for (const channel of channels)
+				for (let i = 0; i < GRID.length; i++)
+					expect(
+						Math.abs((channel.values[i] ?? NaN) - (80 + Math.sin(i / 20) + shape * Math.cos(i / 15)))
+					).toBeLessThanOrEqual(0.010000001);
+			const rank = ranks.curves.find((c) => c.measurementId === m.id);
+			if (!rank) throw new Error('Missing published rank fixture');
+			// Independently evaluated cosine responses of the normalized 7-tap Gaussian
+			// (sigma = sqrt(2/pi)): sum(w_j*cos(j/period))/sum(w_j), periods 20 and 15.
+			for (const i of [10, 30, 60, 100]) {
+				const expected =
+					80 +
+					0.9992047485071099 * Math.sin((2 * i) / 20) +
+					shape * 0.998586657224486 * Math.cos((2 * i) / 15);
+				expect(Math.abs((rank.values[i] ?? NaN) - expected)).toBeLessThanOrEqual(0.010000001);
+			}
+		}
 		expect(catalog.products.find((p) => p.model === 'Pure')?.brand).toBe('Truthear');
 		expect(catalog.products.filter((p) => /^NM2/.test(p.model)).map((p) => p.id)).toHaveLength(2);
 		expect(report.identityAudit.merges).toHaveLength(2);
 		expect(report.identityAudit.merges.some((g) => g.reasons.includes('placeholder'))).toBe(true);
 		expect(
-			report.identityAudit.merges.every(
-				(g) => g.comparisons.length === 1 && g.comparisons[0]?.partition === 'iem-5128'
-			)
-		).toBe(true);
+			report.identityAudit.merges.find((g) => g.reasons.includes('placeholder'))?.comparisons
+		).toMatchObject([{ partition: 'iem-5128' }]);
+		// Same-source Campfire synonyms have only one final default, not two audit defaults.
+		expect(report.identityAudit.merges.find((g) => !g.reasons.includes('placeholder'))).toMatchObject({
+			comparisons: [],
+			evidence: 'no shared-rig default evidence'
+		});
 		expect(report.identityAudit.modelAnnotations).toContainEqual({
 			original: 'ORMOSIA (红豆）',
 			keyModel: 'ORMOSIA'

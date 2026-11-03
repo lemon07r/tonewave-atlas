@@ -20,12 +20,18 @@ function fixture() {
 		partition = 'iem-711',
 		placeholder = false
 	) => {
-		origins.set(id, { key, brand, model: 'Reference', placeholder, isDefault: true });
+		origins.set(id, { key, brand, model: 'Reference', placeholder });
+		const variant: Pick<Measurement['variant'], 'isDefault'> = { isDefault: true };
 		return {
-			measurement: { id, productId: 'merged', sourceId, partition } satisfies Pick<
-				Measurement,
-				'id' | 'productId' | 'sourceId' | 'partition'
-			>,
+			measurement: {
+				id,
+				productId: 'merged',
+				sourceId,
+				partition,
+				variant
+			} satisfies Pick<Measurement, 'id' | 'productId' | 'sourceId' | 'partition'> & {
+				variant: Pick<Measurement['variant'], 'isDefault'>;
+			},
 			rank: { values: Float64Array.from(values) }
 		};
 	};
@@ -33,6 +39,20 @@ function fixture() {
 }
 
 describe('repeatable identity diagnostics', () => {
+	it('uses final demotions and promotions for both threshold calibration and merge comparisons', () => {
+		const { origins, row } = fixture();
+		const a = row('a', 'old-a', 'Campfire', 's1', [0, 0, 0]);
+		const b = row('b', 'old-a', 'Campfire', 's2', [0, 2, 0]);
+		const c = row('c', 'old-b', 'Campfire Audio', 's3', [0, 6, 0]);
+		b.measurement.variant.isDefault = false;
+		const demoted = identityAudit([product('merged', 'Campfire')], [a, b, c], origins, {});
+		expect(demoted.thresholds.every((t) => t.p90Db === null)).toBe(true);
+		expect(demoted.merges[0]?.comparisons[0]?.distanceDb).toBeCloseTo(Math.sqrt(8), 10);
+		b.measurement.variant.isDefault = true;
+		const promoted = identityAudit([product('merged', 'Campfire')], [a, b, c], origins, {});
+		expect(promoted.thresholds[0]?.sameProductPairs).toBe(1);
+		expect(promoted.thresholds[0]?.p90Db).toBeCloseTo(Math.sqrt(8 / 9), 10);
+	});
 	it('reports each merged part and independently derived LS RMS/p90, flagging rather than blocking outliers', () => {
 		const { origins, row } = fixture();
 		const rows = [

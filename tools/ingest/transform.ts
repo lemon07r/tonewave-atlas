@@ -44,7 +44,7 @@ export function identity(
 				.map((b) => canonicalBrandKey(b.brand, aliases))
 		);
 		for (let end = model.length - 1; end > 0; end--) {
-			if (/[\p{L}\p{N}]/u.test(model[end] ?? '') || !model.slice(end).trim()) continue;
+			if (/[\p{L}\p{N}+]/u.test(model[end] ?? '') || !model.slice(end).trim()) continue;
 			const prefix = model.slice(0, end).trim();
 			if (known.has(canonicalBrandKey(prefix, aliases))) {
 				brand = prefix;

@@ -71,6 +71,33 @@ function split(models = ['Alpha', 'Beta'], oldModel = 'Original', extra = true) 
 }
 
 describe('historical redirect disambiguation', () => {
+	it('follows a surviving measurement ID to its fold base before another row’s matching variant', () => {
+		const previous = catalog(
+			[product('old', 'Reference Sample 2')],
+			[measurement('surviving', 'old', 'shared')]
+		);
+		const current = catalog(
+			[product('base', 'Reference'), product('other', 'Other')],
+			[
+				measurement('surviving', 'base', 'shared', 'unit', 'sample 2'),
+				measurement('duplicate', 'other', 'shared')
+			]
+		);
+		buildRedirects([previous], [current]);
+		expect(current.redirects?.products.old).toBe('base');
+		expect(current.redirects?.measurements).toEqual({});
+	});
+	it.each(['other', 'source'])(
+		'recomputes placeholder identity with accepted brands and the original source (%s)',
+		(sourceId) => {
+			const { previous, current } = split(['Reference', 'Other'], 'Maker Reference', false);
+			const old = previous.products[0];
+			if (!old) throw new Error('Missing placeholder fixture');
+			old.brand = 'Unbranded (source)';
+			buildRedirects([previous], [current], { knownBrands: [{ brand: 'Maker', sourceId }] });
+			expect(current.redirects?.products.old).toBe(sourceId === 'other' ? 'a' : undefined);
+		}
+	);
 	it('breaks tied former defaults by old-measurement totals, including non-defaults', () => {
 		const { previous, current } = split(['Original', 'Beta']);
 		const report = buildRedirects([previous], [current]);

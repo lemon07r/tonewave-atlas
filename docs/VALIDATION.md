@@ -90,7 +90,8 @@ measurements and every non-redirect catalog field are identical**. All **229 non
 including **57 rank packs**, are byte-identical; the headphone catalog is byte-identical too.
 Only the IEM catalog's redirects change, adding **two product / two measurement routes**, with no
 removed or retargeted routes. Its compressed size rises **105 bytes**; version-prefixed manifest
-paths, that catalog's size/hash and publication timestamps change accordingly. All **231 artifacts**
+paths and that catalog's size/hash change accordingly; `builtAt` stays identical because it derives
+from cached fetch times, not the build clock. All **231 artifacts**
 pass manifest size/SHA-256 checks. Build-report fields other than redirects and derived publication
 metadata are unchanged, including all rig evidence, statistics, defaults and modified/base-link counts.
 

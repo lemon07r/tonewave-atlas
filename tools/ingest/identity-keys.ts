@@ -14,6 +14,7 @@ const brackets = /\([^()]*\)|\[[^[\]]*\]|\{[^{}]*\}|【[^【】]*】/gu;
 
 export function brandKey(value: string): string {
 	let stem = value.normalize('NFKC').trim();
+	if (/^(?:Custom|Unbranded)\s*\([^()]+\)$/i.test(stem)) return identityKey(stem);
 	const last = [...stem.matchAll(brackets)].at(-1);
 	if (last && last.index + last[0].length === stem.length && cjk.test(last[0]))
 		stem = stem.slice(0, last.index).trim();

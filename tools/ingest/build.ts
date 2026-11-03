@@ -115,7 +115,14 @@ interface SourceCount {
 	reasons: Record<string, number>;
 }
 
-export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
+interface BuildPaths {
+	root: string;
+	cache: string;
+	output: string;
+}
+
+/** First used without recovery to collect only makers with accepted, calibrated curves. */
+async function ingest(paths: BuildPaths, knownBrands: readonly KnownBrand[]) {
 	const { excluded, brands, overrides, productAliases } = await readInputs(paths.root);
 	const targets = await referenceTargets(paths.root);
 	const directory = await cached(DIRECTORY_URL, paths.cache);
@@ -236,22 +243,6 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				report.excluded.push({ id: String(site.username), reason: 'altDomain/crinacle' });
 		}
 	const databases = discover(raw).sort((a, b) => a.id.localeCompare(b.id, 'en'));
-	// Whole-index discovery makes placeholder recovery independent of source processing order.
-	const knownBrands: KnownBrand[] = [];
-	for (const db of databases) {
-		if (db.dbType === 'Earbuds' || excluded.sources.some((s) => [db.id, db.username, db.url].includes(s)))
-			continue;
-		const book = await cached(new URL('data/phone_book.json', db.url).href, paths.cache);
-		if (book?.entry.status !== 200) continue;
-		try {
-			const phones = phoneBook(
-				JSON.parse(new TextDecoder().decode(book.body).replace(/^\uFEFF/, '')) as unknown
-			).phones;
-			for (const brand of new Set(phones.map((p) => p.brand))) knownBrands.push({ brand, sourceId: db.id });
-		} catch {
-			/* The ordinary source pass records invalid indexes. */
-		}
-	}
 	for (const db of databases) {
 		const why = excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
 			? 'local exclusion'
@@ -655,8 +646,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					brand: phone.brand,
 					model: phone.name,
 					key: `${form}:${identityKey(phone.brand)}:${identityKey(phone.name)}`,
-					placeholder: /^Unbranded\s*\(/i.test(phone.brand) && product.observedBrand !== phone.brand,
-					isDefault: selectedVariant.isDefault
+					placeholder: /^Unbranded\s*\(/i.test(phone.brand) && product.observedBrand !== phone.brand
 				});
 				trackIdentity(product, `${phone.brand} ${phone.name}`);
 				if (!aliases[brandKey(phone.brand)]) unmatchedBrands.add(phone.brand);
@@ -684,6 +674,54 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		);
 	}
 	displayNames.apply(products.values());
+	return {
+		aliases,
+		targets,
+		productAliases,
+		products,
+		identities,
+		originalIdentities,
+		identityOrigins,
+		unmatchedBrands,
+		sources,
+		partitions,
+		report,
+		builtAt,
+		originalPartitions
+	};
+}
+
+async function acceptedBrands(paths: BuildPaths): Promise<KnownBrand[]> {
+	const evidence = await ingest(paths, []);
+	const brands = new Map<string, KnownBrand>();
+	for (const row of [...evidence.partitions.values()].flat()) {
+		const origin = evidence.identityOrigins.get(row.measurement.id);
+		if (!origin) throw new Error('Missing accepted maker evidence');
+		const brand = { brand: origin.brand, sourceId: row.measurement.sourceId };
+		brands.set(JSON.stringify(brand), brand);
+	}
+	return [...brands.values()];
+}
+
+export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }): Promise<void> {
+	// The first pass never recovers placeholders; the second uses only accepted maker/source evidence.
+	// Reuse the actual ingestion gates rather than maintaining a weaker index-only eligibility check.
+	const knownBrands = await acceptedBrands(paths);
+	const {
+		aliases,
+		targets,
+		productAliases,
+		products,
+		identities,
+		originalIdentities,
+		identityOrigins,
+		unmatchedBrands,
+		sources,
+		partitions,
+		report,
+		builtAt,
+		originalPartitions
+	} = await ingest(paths, knownBrands);
 	const allCurves = [...partitions.values()].flat();
 	// Preserve established exact-parent accessory folds before inventing any fit-only base.
 	const initialSamples = mergeSampleIdentities(products, allCurves, aliases, productAliases);
@@ -925,7 +963,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 		});
 	}
 	const sortedProducts = [...products.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
-	const productFlags = markModifiedProducts(sortedProducts, aliases);
+	const productFlags = markModifiedProducts(sortedProducts, aliases, productAliases);
 	const productsBefore = new Set([...originalIdentities.values()].flatMap((ids) => [...ids])).size;
 	const identityMergeGroups = [...originalIdentities]
 		.filter(([, ids]) => ids.size > 1)
@@ -961,7 +999,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	const redirects = {
 		baselineVersion: previous.version,
 		warnings: previous.warnings,
-		...buildRedirects(previous.catalogs, catalogs, { aliases, productAliases })
+		...buildRedirects(previous.catalogs, catalogs, { aliases, productAliases, knownBrands })
 	};
 	for (const catalog of catalogs)
 		artifacts.set(`catalog-${catalog.form}.json.gz`, gzipSync(JSON.stringify(catalog), { level: 9 }));

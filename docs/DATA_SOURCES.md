@@ -158,10 +158,11 @@ of at least 200 measurements; non-product exclusions and data-preserving moves a
 
 Identity/alias keys ignore case, accents, spacing and punctuation except that `+` means `plus`:
 NM2 and NM2+ stay separate. Before alias lookup, brand keys drop a trailing bracketed CJK/Japanese/Korean
-annotation, then one whitespace-separated `Audio`, `Acoustic` or `Acoustics` suffix with a nonempty
+annotation (except source-local `Custom (…)` and unrecovered `Unbranded (…)` brands), then one whitespace-separated `Audio`, `Acoustic` or `Acoustics` suffix with a nonempty
 remainder; embedded/leading Audio names are untouched. Only `Unbranded (…)` collections recover a
 complete leading catalog brand observed in another source (longest matching prefix after maker aliases);
-unknown prefixes, `Custom (…)` collections and Custom Art stay unchanged. Model keys strip bracketed
+unknown prefixes, `Custom (…)` collections and Custom Art stay unchanged; `+` is not a maker boundary.
+Model keys strip bracketed
 CJK-only translations or dash-wrapped CJK text only when Latin letters/digits remain; bare trailing CJK
 tokens stay separate and are reported as ambiguous. Complete repeated raw/canonical brand prefixes are
 removed at word boundaries, never partial words. Display labels are separate from identity: every accepted measurement contributes one vote
@@ -194,6 +195,10 @@ median curves in each shared rig partition. Its per-rig same-product 90th percen
 pairs within original identity parts, with linear percentile interpolation; larger distances are flags,
 never vetoes, and absent shared-rig/default support or calibration is explicitly missing, not invented.
 Reviewed plural/HiFi/Labs/typo aliases and their shared-model evidence are recorded in `data/aliases.json`.
+Diagnostic thresholds and merge comparisons use final published default flags after switch/default
+reconciliation, not provisional classification. Modified-product base lookup applies both reviewed
+brand and product aliases to stock display names and stripped candidates, with the same ambiguity
+and same-form guards as before.
 
 The frozen-cache `8a730bf5584c9e0011d182ad` supplemental review found 17 glued/hyphenated maker pairs.
 Eight explicit aliases below have distinct-source, shared-model/default evidence in `iem-711`, below
@@ -235,14 +240,17 @@ These annotations never change identities, IDs, measurements or redirects. The b
 per-rule counts and every word-rule match, including the `modified` word inside explicit markers.
 
 Catalog redirects preserve historical product and measurement links across identity/form moves.
-Candidates match by source ID and their unordered original file-URL set. When several rows match,
+An existing measurement ID wins first, even after its variant or parent changed during a descriptor
+fold. Otherwise candidates match by source ID and their unordered original file-URL set. When several rows match,
 the old variant's kind and label narrow that set if an exact match survives; `isDefault` is not an
 identity constraint. A measurement redirects only to one eligible row, while a product can resolve
 when all eligible rows share one destination product. Each old measurement contributes at most one
 product vote, regardless of duplicate current rows. Splits first maximize former-default counts,
 then total former-measurement counts among those leaders, then require a unique matching identity
 among the remaining tied candidates, recomputed with current brand/product aliases and identity
-rules. Otherwise they stay unmapped.
+rules, with the same accepted-maker evidence and measurement source context used during ingestion.
+Otherwise they stay unmapped. Maker recovery evidence comes only from makers with an accepted curve
+after source config, calibration, exclusion and curve-quality gates, never merely a cached index.
 Existing IDs never redirect. Previous redirects are retained, chains collapse to current IDs and dead
 targets are dropped; unavailable previous catalogs produce warnings, not a failed build. The build
 report's `redirects` records the baseline version, counts and split decisions. Engine ID-taking

@@ -8,10 +8,11 @@ export interface IdentityOrigin {
 	model: string;
 	key: string;
 	placeholder: boolean;
-	isDefault: boolean;
 }
 interface Row {
-	measurement: Pick<Measurement, 'id' | 'productId' | 'sourceId' | 'partition'>;
+	measurement: Pick<Measurement, 'id' | 'productId' | 'sourceId' | 'partition'> & {
+		variant: Pick<Measurement['variant'], 'isDefault'>;
+	};
 	rank: { values: Float64Array };
 }
 
@@ -57,7 +58,7 @@ export function identityAudit(
 		if (!value) throw new Error(`Missing identity origin: ${r.measurement.id}`);
 		return value;
 	};
-	const defaults = rows.filter((r) => origin(r).isDefault);
+	const defaults = rows.filter((r) => r.measurement.variant.isDefault);
 	const rawParts = Map.groupBy(defaults, (r) => `${r.measurement.partition}\0${origin(r).key}`);
 	const calibration = new Map<string, number[]>();
 	for (const part of rawParts.values()) {
@@ -104,11 +105,11 @@ export function identityAudit(
 				const left = groups[i] ?? [],
 					right = groups[j] ?? [];
 				const leftDefaults = Map.groupBy(
-					left.filter((r) => origin(r).isDefault),
+					left.filter((r) => r.measurement.variant.isDefault),
 					(r) => r.measurement.partition
 				);
 				const rightDefaults = Map.groupBy(
-					right.filter((r) => origin(r).isDefault),
+					right.filter((r) => r.measurement.variant.isDefault),
 					(r) => r.measurement.partition
 				);
 				for (const [partition, a] of leftDefaults) {

@@ -387,8 +387,16 @@ describe('source transforms', () => {
 		expect(identity(brand, a, 'iem', {}).id).toBe(identity(brand, b, 'iem', {}).id);
 	});
 	it('preserves real Audio names, mixed annotations, CJK-only names and bare CJK tokens', () => {
-		for (const brand of ['Audio-Technica', 'Thieaudio', 'Audio', 'Audio Maker'])
+		for (const [brand, key] of [
+			['Audio-Technica', 'audiotechnica'],
+			['Thieaudio', 'thieaudio'],
+			['Audio', 'audio'],
+			['Audio Maker', 'audiomaker']
+		] as const) {
 			expect(identity(brand, 'Model', 'iem', {}).brand).toBe(brand);
+			expect(identity(brand, 'Model', 'iem', {}).key).toBe(`iem:${key}:model`);
+		}
+		expect(identity('Thieaudio', 'Model', 'iem', {}).id).not.toBe(identity('Thie', 'Model', 'iem', {}).id);
 		for (const model of ['Model (2025 青龙)', 'Model (Deep 青龙)', '红豆', 'x Z Reviews Defiant 鳴神']) {
 			expect(identity('Maker', model, 'iem', {}).model).toBe(model);
 			expect(identity('Maker', model, 'iem', {}).id).not.toBe(identity('Maker', 'Model', 'iem', {}).id);
@@ -398,6 +406,25 @@ describe('source transforms', () => {
 			expect(identity('Maker', model, 'iem', {}).model).toBe(model);
 			expect(identity('Maker', model, 'iem', {}).id).toBe(identity('Maker', 'Model', 'iem', {}).id);
 		}
+	});
+	it.each(['Custom', 'Unbranded'])('preserves CJK source-local %s collection keys', (collection) => {
+		expect(brandKey(`${collection} (甲)`)).not.toBe(brandKey(`${collection} (乙)`));
+		expect(identity(`${collection} (甲)`, 'Reference', 'iem', {}).id).not.toBe(
+			identity(`${collection} (乙)`, 'Reference', 'iem', {}).id
+		);
+	});
+	it('does not treat plus as a placeholder brand boundary', () => {
+		expect(
+			identity(
+				'Unbranded (sai)',
+				'Maker+ Reference',
+				'iem',
+				{},
+				{},
+				[{ brand: 'Maker', sourceId: 'other' }],
+				'sai'
+			)
+		).toMatchObject({ brand: 'Unbranded (sai)', model: 'Maker+ Reference' });
 	});
 	it('recovers only complete known brands from other sources in Unbranded collections', () => {
 		const known = [
