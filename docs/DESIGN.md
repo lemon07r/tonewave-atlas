@@ -9,8 +9,8 @@ it does not promise a listening experience or turn a measurement into a verdict.
 
 Self-hosted **Newsreader Variable** carries page titles and product names. **DM Sans Variable** is the
 interface and reading face; **IBM Plex Mono** is reserved for values, axes and technical labels.
-Product brands are supporting text, not slogans. Body text is 16px; primary controls 14px; secondary text and compact row actions
-uses the 13px minimum token, raised to 14px at mobile widths (640px and below), including chart labels.
+Product brands are supporting text, not slogans. Body text is 16px; primary controls 14px. Secondary text and compact row
+actions use the 13px minimum token, raised to 14px at mobile widths (640px and below), including chart labels.
 Display titles scale with viewport width. Tabular figures keep changing results steady.
 
 `src/lib/styles/app.css` owns base mechanics and fallback theme tokens; `direction.css` owns the
