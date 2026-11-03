@@ -46,13 +46,15 @@ import {
 	DisplayNames,
 	defaultVariantIndex,
 	identity,
-	normalise,
 	sampleContext,
 	sourceFor,
 	suspiciousNames,
 	usdPrice,
 	variant
 } from './transform.ts';
+import type { KnownBrand } from './transform.ts';
+import { brandKey, canonicalBrandKey, identityKey, modelIdentity } from './identity-keys.ts';
+import { identityAudit, type IdentityOrigin } from './identity-audit.ts';
 import { publishDataset, removeStaging } from './publish.ts';
 import { medianSpreadByBand, rankStatistics } from './statistics.ts';
 import { referenceTargets } from './targets.ts';
@@ -119,13 +121,14 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	if (directory?.entry.status !== 200) throw new Error('Run data:crawl first (source directory required)');
 	const aliases: Record<string, string> = {};
 	for (const [a, b] of Object.entries(brands)) {
-		aliases[normalise(a)] = b;
-		aliases[normalise(b)] = b;
+		aliases[brandKey(a)] = b;
+		aliases[brandKey(b)] = b;
 	}
 	const products = new Map<string, Product>();
 	const displayNames = new DisplayNames();
 	const identities = new Map<string, Set<string>>();
 	const originalIdentities = new Map<string, Set<string>>();
+	const identityOrigins = new Map<string, IdentityOrigin>();
 	const trackIdentity = (product: ReturnType<typeof identity>, originalName: string) => {
 		const names = identities.get(product.id) ?? new Set<string>();
 		names.add(originalName);
@@ -232,6 +235,22 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				report.excluded.push({ id: String(site.username), reason: 'altDomain/crinacle' });
 		}
 	const databases = discover(raw).sort((a, b) => a.id.localeCompare(b.id, 'en'));
+	// Whole-index discovery makes placeholder recovery independent of source processing order.
+	const knownBrands: KnownBrand[] = [];
+	for (const db of databases) {
+		if (db.dbType === 'Earbuds' || excluded.sources.some((s) => [db.id, db.username, db.url].includes(s)))
+			continue;
+		const book = await cached(new URL('data/phone_book.json', db.url).href, paths.cache);
+		if (book?.entry.status !== 200) continue;
+		try {
+			const phones = phoneBook(
+				JSON.parse(new TextDecoder().decode(book.body).replace(/^\uFEFF/, '')) as unknown
+			).phones;
+			for (const brand of new Set(phones.map((p) => p.brand))) knownBrands.push({ brand, sourceId: db.id });
+		} catch {
+			/* The ordinary source pass records invalid indexes. */
+		}
+	}
 	for (const db of databases) {
 		const why = excluded.sources.some((s) => [db.id, db.username, db.url].includes(s))
 			? 'local exclusion'
@@ -377,7 +396,15 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					file: index === null ? null : (cleanPhone.file[index] ?? null)
 				});
 			}
-			const originalProduct = identity(cleanPhone.brand, cleanPhone.name, form, aliases, productAliases);
+			const originalProduct = identity(
+				cleanPhone.brand,
+				cleanPhone.name,
+				form,
+				aliases,
+				productAliases,
+				knownBrands,
+				db.id
+			);
 			const originalProblem = identityProblem(originalProduct.brand, originalProduct.model);
 			for (const [index, file] of cleanPhone.file.entries()) {
 				const phone = modification(cleanPhone, index);
@@ -411,7 +438,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 					reject(file, 'local exclusion');
 					continue;
 				}
-				const product = identity(phone.brand, phone.name, form, aliases, productAliases);
+				const product = identity(phone.brand, phone.name, form, aliases, productAliases, knownBrands, db.id);
 				const problem = originalProblem ?? identityProblem(product.brand, product.model);
 				if (problem) {
 					quarantine(problem, false);
@@ -623,8 +650,15 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				}
 				p.measurementIds.push(id);
 				displayNames.observe(product);
+				identityOrigins.set(id, {
+					brand: phone.brand,
+					model: phone.name,
+					key: `${form}:${identityKey(phone.brand)}:${identityKey(phone.name)}`,
+					placeholder: /^Unbranded\s*\(/i.test(phone.brand) && product.observedBrand !== phone.brand,
+					isDefault: selectedVariant.isDefault
+				});
 				trackIdentity(product, `${phone.brand} ${phone.name}`);
-				if (!aliases[normalise(phone.brand)]) unmatchedBrands.add(phone.brand);
+				if (!aliases[brandKey(phone.brand)]) unmatchedBrands.add(phone.brand);
 				const group = partitions.get(measurement.partition) ?? [];
 				const row = {
 					measurement,
@@ -781,7 +815,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	const formGroups = Map.groupBy(
 		[...products.values()],
-		(p) => `${normalise(p.brand)}:${normalise(p.model)}`
+		(p) => `${canonicalBrandKey(p.brand, aliases)}:${identityKey(modelIdentity(p.model))}`
 	);
 	const remainingFormConflicts = [...formGroups.values()]
 		.filter((ps) => new Set(ps.map((p) => p.form)).size > 1)
@@ -987,6 +1021,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				publishersIncluded: new Set(sources.map((s) => s.username)).size,
 				products: products.size,
 				identityMerges,
+				identityAudit: identityAudit(sortedProducts, allCurves, identityOrigins, aliases),
 				groupwiseMerges,
 				remainingCollisionGroups,
 				measurements: partitionMetadata.map((p) => ({ partition: p.id, count: p.measurementCount })),

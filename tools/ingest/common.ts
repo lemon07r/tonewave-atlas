@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DatasetFile, Form, Source } from '#core/dataset/types.ts';
 import { classifyEq } from './eq.ts';
+import { brandKey, identityKey, modelIdentity } from './identity-keys.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CACHE = resolve(ROOT, '.cache/ingest');
@@ -163,15 +164,7 @@ export function validateAliases(value: unknown): Record<string, string> {
 }
 
 export function productAliasKey(brand: string, model: string): string {
-	return [brand, model]
-		.map((part) =>
-			part
-				.normalize('NFKD')
-				.replace(/\p{M}/gu, '')
-				.toLowerCase()
-				.replace(/[^\p{L}\p{N}]/gu, '')
-		)
-		.join('|');
+	return `${brandKey(brand)}|${identityKey(modelIdentity(model))}`;
 }
 
 /** Additional maker aliases are terminal; legacy punctuation/case-only entries remain valid. */
@@ -197,9 +190,14 @@ function validateProductBrands(
 		const key = normalized(from);
 		if (!key || !normalized(to) || from.includes('|') || to.includes('|'))
 			throw new Error(`Invalid brand alias: ${from}`);
-		if (Object.hasOwn(mappings, key) || key === normalized(to))
+		if (
+			(Object.hasOwn(mappings, key) && normalized(mappings[key] ?? '') !== normalized(to)) ||
+			(key === normalized(to) && identityKey(from) === identityKey(to))
+		)
 			throw new Error(`Invalid duplicate/redundant brand alias: ${from}`);
 		brands[key] = to.trim().replace(/\s+/g, ' ');
+		// Retain reviewed compact spellings (e.g. BINARYACOUSTICS) as well as the new stem key.
+		brands[identityKey(from)] = brands[key];
 		mappings[key] = brands[key];
 	}
 	for (const to of Object.values(mappings)) {

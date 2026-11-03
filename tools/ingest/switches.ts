@@ -3,6 +3,7 @@ import { classifyEq } from './eq.ts';
 import { isFoldedPad, isFoldedReference } from './identity-folds.ts';
 import { fitIdentity, isPadSwapDescriptor } from './fits.ts';
 import { collisionGroups, normalise, withoutAttribution } from './transform.ts';
+import { brandKey, identityKey, modelIdentity } from './identity-keys.ts';
 import {
 	adapterState,
 	cableDescriptor,
@@ -33,7 +34,8 @@ function cableKind(m: Measurement): Measurement['variant']['kind'] {
 /** Fold only recognized terminal state descriptors into an already accepted exact parent. */
 export function mergeSwitchIdentities(products: Map<string, Product>, rows: readonly SwitchRow[]) {
 	const before = collisionGroups([...products.values()]);
-	const key = (p: Product, model = p.model) => `${p.form}:${normalise(p.brand)}:${normalise(model)}`;
+	const key = (p: Product, model = p.model) =>
+		`${p.form}:${brandKey(p.brand)}:${identityKey(modelIdentity(model))}`;
 	const parents = new Map([...products.values()].map((p) => [key(p), p]));
 	const cableMeasurements = new Set<string>();
 	const tipMeasurements = new Set<string>();

@@ -13,6 +13,7 @@ import { HttpCache } from './cache.ts';
 import { datasetVersion, DIRECTORY_URL, phoneBook, ROOT, sha256 } from './common.ts';
 import { identity, variant } from './transform.ts';
 import { modification } from './quality.ts';
+import type { identityAudit } from './identity-audit.ts';
 
 const roots: string[] = [];
 const base = 'https://reviewer.squig.link/';
@@ -84,6 +85,7 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		identityAudit: ReturnType<typeof identityAudit>;
 		fitIdentity: { moves: { before: string; parent: string; label: string }[] };
 		switchIdentity: { moves: { kind: string; before: string; parent: string }[] };
 		switchDefaults: {
@@ -115,6 +117,72 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('integrates brand/CJK/placeholder keys and plus separation, recording diagnostic parts without touching raw curves', async () => {
+		const other = 'https://other.squig.link/';
+		const entries = [
+			{ name: 'Campfire Audio', phones: [{ name: 'Reference', file: 'reference-a' }] },
+			{ name: 'Campfire', phones: [{ name: 'Reference', file: 'reference-b' }] },
+			{ name: 'Unbranded (sai)', phones: [{ name: 'Truthear Pure', file: 'unbranded-pure' }] },
+			{
+				name: 'KBEAR',
+				phones: [
+					{ name: 'ORMOSIA (红豆）', file: 'ormosia-a' },
+					{ name: 'Ormosia', file: 'ormosia-b' }
+				]
+			},
+			{
+				name: 'NF Audio',
+				phones: [
+					{ name: 'NM2', file: 'nm2' },
+					{ name: 'NM2+', file: 'nm2plus' }
+				]
+			}
+		];
+		const { paths } = await fixture('const DIR = "data/", rig_description = "B&K 5128";', [
+			[
+				DIRECTORY_URL,
+				JSON.stringify(
+					['reviewer', 'other'].map((username) => ({
+						username,
+						name: username,
+						urlType: 'subdomain',
+						dbs: [{ type: 'IEMs', folder: '/' }]
+					}))
+				)
+			],
+			[bookUrl, JSON.stringify(entries)],
+			[`${other}config.js`, 'const DIR = "data/", rig_description = "B&K 5128";'],
+			[
+				`${other}data/phone_book.json`,
+				JSON.stringify([{ name: 'Truthear', phones: [{ name: 'Pure', file: 'pure' }] }])
+			],
+			[`${other}data/pure%20L.txt`, curve(80)],
+			...entries.flatMap((g) =>
+				g.phones.map((p, i): [string, string] => [
+					`${base}data/${p.file}%20L.txt`,
+					curve(80, i + (p.file.endsWith('b') ? 1 : 0))
+				])
+			)
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products).toHaveLength(5);
+		expect(catalog.measurements).toHaveLength(8);
+		expect(catalog.products.find((p) => p.model === 'Pure')?.brand).toBe('Truthear');
+		expect(catalog.products.filter((p) => /^NM2/.test(p.model)).map((p) => p.id)).toHaveLength(2);
+		expect(report.identityAudit.merges).toHaveLength(2);
+		expect(report.identityAudit.merges.some((g) => g.reasons.includes('placeholder'))).toBe(true);
+		expect(
+			report.identityAudit.merges.every(
+				(g) => g.comparisons.length === 1 && g.comparisons[0]?.partition === 'iem-5128'
+			)
+		).toBe(true);
+		expect(report.identityAudit.modelAnnotations).toContainEqual({
+			original: 'ORMOSIA (红豆）',
+			keyModel: 'ORMOSIA'
+		});
+	});
 	it('preserves existing exact-parent accessory folds before synthesizing fit-only bases', async () => {
 		const groups = [
 			{

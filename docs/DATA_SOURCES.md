@@ -156,9 +156,15 @@ is ≤0.01 dB and every aligned bin differs by ≤0.02 dB. Separately labelled u
 deduplicated by shape. The build stops if this removes >3% of legitimate defaults from a partition
 of at least 200 measurements; non-product exclusions and data-preserving moves are exempt.
 
-Product identity removes complete leading raw or canonical brand names using the same case, accent,
-spacing and punctuation normalization as identity, with a nonempty remainder; partial words remain
-untouched. Display labels are separate from identity: every accepted measurement contributes one vote
+Identity/alias keys ignore case, accents, spacing and punctuation except that `+` means `plus`:
+NM2 and NM2+ stay separate. Before alias lookup, brand keys drop a trailing bracketed CJK/Japanese/Korean
+annotation, then one whitespace-separated `Audio`, `Acoustic` or `Acoustics` suffix with a nonempty
+remainder; embedded/leading Audio names are untouched. Only `Unbranded (…)` collections recover a
+complete leading catalog brand observed in another source (longest matching prefix after maker aliases);
+unknown prefixes, `Custom (…)` collections and Custom Art stay unchanged. Model keys strip bracketed
+CJK-only translations or dash-wrapped CJK text only when Latin letters/digits remain; bare trailing CJK
+tokens stay separate and are reported as ambiguous. Complete repeated raw/canonical brand prefixes are
+removed at word boundaries, never partial words. Display labels are separate from identity: every accepted measurement contributes one vote
 for its source-index brand and its model after complete leading-brand removal, before product aliasing.
 Rejected/duplicate measurements do not vote; multiple files from a source each vote once, not once per
 channel. Models vote within the merged product; brands vote across the entire catalog (both forms) for
@@ -181,6 +187,13 @@ original keys and reduction plus their total; this can differ from net reduction
 also splits across final products. Near-name candidates are separated by form, with known forms
 labelled in collision groups. The report retains every remaining group for manual review, never fuzzy
 auto-merging; adjacent-name heuristics are not exhaustive, particularly across unrelated brand keys.
+`identityAudit` adds every brand-key/placeholder merge and its original parts, plus-sign splits, model
+annotations, cross-brand same/near-name candidates and cross-form identities (reported, never moved).
+Merge evidence is unharmonised full-rank-grid LS RMS between finite, level-centred, source-balanced
+median curves in each shared rig partition. Its per-rig same-product 90th percentile uses distinct-source
+pairs within original identity parts, with linear percentile interpolation; larger distances are flags,
+never vetoes, and absent shared-rig/default support or calibration is explicitly missing, not invented.
+Reviewed plural/HiFi/Labs/typo aliases and their shared-model evidence are recorded in `data/aliases.json`.
 
 Catalog redirects preserve historical product and measurement links across identity/form moves.
 Measurements match only by source ID and their unordered original file-URL set. Removed products

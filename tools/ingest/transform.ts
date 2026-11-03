@@ -3,6 +3,12 @@ import { configString, formFor, nonProductName, productAliasKey, record, sha256 
 import type { Form, Product, Source, Variant } from '#core/dataset/types.ts';
 import { classifyEq, factoryMode } from './eq.ts';
 import { adapterState, cableDescriptor, tipDescriptor, tuningDescriptor } from './variant-labels.ts';
+import { brandKey, canonicalBrandKey, identityKey, modelIdentity } from './identity-keys.ts';
+
+export interface KnownBrand {
+	brand: string;
+	sourceId: string;
+}
 
 export function normalise(value: string): string {
 	return value
@@ -17,7 +23,9 @@ export function identity(
 	model: string,
 	form: Form,
 	aliases: Record<string, string>,
-	productAliases: Record<string, string> = {}
+	productAliases: Record<string, string> = {},
+	knownBrands: readonly KnownBrand[] = [],
+	sourceId = ''
 ): {
 	id: string;
 	brand: string;
@@ -27,15 +35,38 @@ export function identity(
 	observedBrand: string;
 	observedModel: string;
 } {
-	let canonical = aliases[normalise(brand)] ?? brand.trim().replace(/\s+/g, ' ');
+	const rawBrand = brand;
+	const rawModel = model;
+	if (/^Unbranded\s*\([^()]+\)$/i.test(brand.trim())) {
+		const known = new Set(
+			knownBrands
+				.filter((b) => b.sourceId !== sourceId && !/^(?:Unbranded|Custom)\s*\(/i.test(b.brand))
+				.map((b) => canonicalBrandKey(b.brand, aliases))
+		);
+		for (let end = model.length - 1; end > 0; end--) {
+			if (/[\p{L}\p{N}]/u.test(model[end] ?? '') || !model.slice(end).trim()) continue;
+			const prefix = model.slice(0, end).trim();
+			if (known.has(canonicalBrandKey(prefix, aliases))) {
+				brand = prefix;
+				model = model.slice(end).trim();
+				break;
+			}
+		}
+	}
+	let canonical = aliases[brandKey(brand)] ?? brand.trim().replace(/\s+/g, ' ');
 	let cleanModel = model.trim().replace(/\s+/g, ' ');
-	const originalKey = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
+	const originalKey = `${form}:${normalise(rawBrand === brand ? canonical : rawBrand)}:${normalise(rawModel)}`;
 	// Use identity's spelling normalization, but only at complete leading-word boundaries.
-	const prefixes = new Set([normalise(brand), normalise(canonical)].filter(Boolean));
+	const prefixes = new Set(
+		[brandKey(brand), brandKey(canonical), identityKey(brand), identityKey(canonical)].filter(Boolean)
+	);
 	for (;;) {
 		let rest: string | undefined;
 		for (const boundary of cleanModel.matchAll(/\s+/g)) {
-			if (prefixes.has(normalise(cleanModel.slice(0, boundary.index))))
+			if (
+				prefixes.has(brandKey(cleanModel.slice(0, boundary.index))) ||
+				prefixes.has(identityKey(cleanModel.slice(0, boundary.index)))
+			)
 				rest = cleanModel.slice(boundary.index + boundary[0].length);
 		}
 		if (!rest) break;
@@ -43,13 +74,14 @@ export function identity(
 	}
 	const observedBrand = brand.trim().replace(/\s+/g, ' ');
 	const observedModel = cleanModel;
+	cleanModel = modelIdentity(cleanModel);
 	const alias = productAliases[productAliasKey(canonical, cleanModel)];
 	if (alias) {
 		const [targetBrand = '', targetModel = ''] = alias.split('|');
-		canonical = aliases[normalise(targetBrand)] ?? targetBrand.trim().replace(/\s+/g, ' ');
-		cleanModel = targetModel.trim().replace(/\s+/g, ' ');
+		canonical = aliases[brandKey(targetBrand)] ?? targetBrand.trim().replace(/\s+/g, ' ');
+		cleanModel = modelIdentity(targetModel);
 	}
-	const key = `${form}:${normalise(canonical)}:${normalise(cleanModel)}`;
+	const key = `${form}:${brandKey(canonical)}:${identityKey(cleanModel)}`;
 	return {
 		id: `p-${sha256(key).slice(0, 20)}`,
 		brand: canonical,
@@ -68,7 +100,7 @@ export class DisplayNames {
 
 	observe(product: ReturnType<typeof identity>): void {
 		for (const [votes, key, spelling] of [
-			[this.brands, normalise(product.brand), product.observedBrand],
+			[this.brands, brandKey(product.brand), product.observedBrand],
 			[this.models, product.id, product.observedModel]
 		] as const) {
 			const counts = votes.get(key) ?? new Map<string, number>();
@@ -87,7 +119,7 @@ export class DisplayNames {
 			return spelling;
 		};
 		for (const product of products) {
-			product.brand = preferred(this.brands.get(normalise(product.brand)));
+			product.brand = preferred(this.brands.get(brandKey(product.brand)));
 			product.model = preferred(this.models.get(product.id));
 		}
 	}
@@ -102,7 +134,8 @@ export function withoutAttribution(text: string): string {
 export function sampleContext(phones: readonly Phone[]): ReadonlySet<Phone> {
 	const text = (p: Phone) => [p.name, ...p.file, ...p.suffix].map(withoutAttribution).join(' ');
 	const explicit = phones.some((p) => /\b(?:sample|unit)(?:s?\b|\d)/i.test(text(p)));
-	const key = (p: Phone) => `${normalise(p.brand)}:${normalise(p.name.replace(/\bs[1-9]\b/gi, ''))}`;
+	const key = (p: Phone) =>
+		`${brandKey(p.brand)}:${identityKey(modelIdentity(p.name.replace(/\bs[1-9]\b/gi, '')))}`;
 	const groups = Map.groupBy(phones, key);
 	return new Set(
 		phones.filter((p) => {
