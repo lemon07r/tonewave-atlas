@@ -247,7 +247,8 @@ test('failed optional other-catalog metadata keeps an unresolved link intact and
 }) => {
 	let requests = 0;
 	// Older manifests make the summary read both catalogs first; only the UI metadata request is optional.
-	const summaryRequests = manifest.partitions ? 0 : 1;
+	const summaryRequests =
+		manifest.partitions && manifest.sources.every((source) => source.measurementCount !== undefined) ? 0 : 1;
 	await page.route('**/catalog-headphone.json.gz', async (route) => {
 		if (++requests > summaryRequests) await route.abort('failed');
 		else await route.fallback();

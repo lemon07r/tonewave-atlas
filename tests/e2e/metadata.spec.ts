@@ -3,9 +3,9 @@ import { expect, test, type Locator } from '@playwright/test';
 import type { Manifest } from '../../src/core/dataset/types.ts';
 
 // Older manifests make the summary read both catalogs before any UI metadata request.
-const summaryRequests = (JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest).partitions
-	? 0
-	: 1;
+const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest;
+const summaryRequests =
+	manifest.partitions && manifest.sources.every((source) => source.measurementCount !== undefined) ? 0 : 1;
 
 async function assertTruthearRows(rows: Locator, timeout = 5000) {
 	await expect(rows.first()).toContainText('Truthear', { timeout });
