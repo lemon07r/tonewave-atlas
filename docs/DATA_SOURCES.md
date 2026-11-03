@@ -436,10 +436,15 @@ resume from cached files. `pnpm data:pull` retrieves the published manifest/file
 Builds are deterministic for unchanged cache/inputs; build time is the newest relevant cached content
 fetch time, not the current wall clock. Output versions hash the artifacts and source attribution.
 Verified existing versions stay in place on repeat publication; repairs use a recoverable backup and
-commit the manifest last. Successful publication retains the current version and the version named
-by the previous manifest; only older generated versions are removed, so pre-deploy tabs can still fetch
-their remaining artifacts.
-Re-publishing the same version preserves the already-retained history rather than guessing its age.
+commit the root manifest last. Each published version also has `<version>/manifest.json`; when an old
+root names a different version, it is copied into that version's existing directory before replacement,
+including legacy datasets without a version-local manifest. The root's optional `previousVersion`
+records the immediate retained dataset; it does not affect the content-derived version ID.
+Successful publication retains current plus previous and removes only older generated versions.
+`data:pull` restores both on fresh deployment runners, verifying sizes and SHA-256 for both; previous
+history is best-effort (warn and continue if its manifest/files are missing or invalid) and never
+recurses into older versions. Current-data failures still stop publication. Re-publishing the same
+version preserves its previous pointer, so code-only deploys keep serving pinned pre-deploy tabs.
 Serial publication sweeps abandoned build/pull/interrupted staging on success and failure. Every
 backup survives a failed publication; backup and old-version sweeping requires a committed manifest
 whose current version and live files are reverified. Cleanup errors are warnings after a committed

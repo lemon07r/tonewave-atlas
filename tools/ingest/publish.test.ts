@@ -48,6 +48,27 @@ async function fixture() {
 }
 
 describe('recoverable dataset publication', () => {
+	it('snapshots a legacy root manifest and carries previousVersion through same-version publication', async () => {
+		const f = await fixture();
+		const previous = 'b'.repeat(24);
+		await mkdir(resolve(f.output, previous));
+		const old = {
+			...manifest,
+			version: previous,
+			files: manifest.files.map((file) => ({ ...file, path: file.path.replace(version, previous) }))
+		};
+		const oldText = JSON.stringify(old);
+		await writeFile(resolve(f.output, 'manifest.json'), oldText);
+		await publishDataset(f.output, f.staging, manifest, text);
+		expect(await readFile(resolve(f.output, previous, 'manifest.json'), 'utf8')).toBe(oldText);
+		const current = JSON.parse(await readFile(resolve(f.output, 'manifest.json'), 'utf8')) as Manifest;
+		expect(current.previousVersion).toBe(previous);
+		expect(JSON.parse(await readFile(resolve(f.target, 'manifest.json'), 'utf8'))).toEqual(current);
+		await mkdir(f.staging);
+		await writeFile(resolve(f.staging, 'catalog-iem.json.gz'), payload);
+		await publishDataset(f.output, f.staging, manifest, text);
+		expect(JSON.parse(await readFile(resolve(f.output, 'manifest.json'), 'utf8'))).toEqual(current);
+	});
 	it('keeps the version from the previous manifest, then rotates it out on the next version', async () => {
 		const f = await fixture();
 		const previous = 'b'.repeat(24),

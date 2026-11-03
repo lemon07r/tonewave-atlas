@@ -154,6 +154,8 @@ export interface ReferenceTarget {
 export interface Manifest {
 	formatVersion: 1;
 	version: string;
+	/** Immediate retained dataset for pinned clients; not part of this version's content hash. */
+	previousVersion?: string;
 	builtAt: string;
 	files: DatasetFile[];
 	sources: Source[];
