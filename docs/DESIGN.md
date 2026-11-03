@@ -133,6 +133,9 @@ visibility controls, an accessible sampled data table and attributed PNG export.
 in a labelled grid rather than shrinking their text or touch targets. Narrow charts thin frequency
 labels, not grid ticks or inspectable values. Difference mode
 subtracts the selected baseline without another alignment.
+Ordinary data, legend visibility, regions, theme and response/difference updates reuse the uPlot
+canvas through `setData`, `setSeries` and redraw. Series identity/count, invalid-data transitions
+or mobile/desktop size-mode changes rebuild the plot; container resizes use `setSize`.
 Inspection starts at the nearest 1 kHz bin and retains the selected frequency across series/grid changes.
 Blue, orange and teal lead the shared series palette, paired with distinct dash patterns (primary
 reference solid). The plot, SVG legend and PNG export share those identities; colour is not the only cue.
