@@ -84,6 +84,7 @@ async function result(paths: { cache: string; output: string }) {
 		issues: { reason: string }[];
 		retainedFailures: { url: string; status: number | null }[];
 		identityMerges: { merged: number; productsBefore: number; productsAfter: number };
+		fitIdentity: { moves: { before: string; parent: string; label: string }[] };
 		switchIdentity: { moves: { kind: string; before: string; parent: string }[] };
 		switchDefaults: {
 			products: number;
@@ -114,6 +115,86 @@ async function result(paths: { cache: string; output: string }) {
 }
 
 describe('cached dataset build safety', () => {
+	it('preserves existing exact-parent accessory folds before synthesizing fit-only bases', async () => {
+		const groups = [
+			{
+				name: 'Binary',
+				phones: [
+					{ name: 'x Gizaudio Chopin', file: 'Chopin' },
+					{ name: 'x Gizaudio Chopin tips', file: 'Chopin (AET07 tips)' }
+				]
+			},
+			{
+				name: 'KZ',
+				phones: [
+					{ name: 'Castor', file: 'Castor' },
+					{ name: 'Castor Harman Stock Tip', file: 'CastorG' }
+				]
+			}
+		];
+		const { paths } = await fixture(config, [
+			[bookUrl, JSON.stringify(groups)],
+			...groups.flatMap((g) =>
+				g.phones.map((p): [string, string] => [
+					`${base}data/${encodeURIComponent(p.file)}%20L.txt`,
+					curve(80)
+				])
+			)
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+		await build(paths);
+		const { catalog, report } = await result(paths);
+		expect(catalog.products.map((p) => p.model).sort()).toEqual(['Castor', 'x Gizaudio Chopin']);
+		expect(catalog.measurements).toHaveLength(4);
+		expect(report.fitIdentity.moves).toEqual([]);
+		expect(report.switchIdentity.moves.map((m) => m.kind)).toEqual(['tip', 'tip']);
+	});
+	it('folds fit identities across forms offline, preserving stock defaults and reporting fit-only coverage', async () => {
+		const files = ['Simgot SM5', 'Simgot SM5 (D)', 'HD650 ZMF'];
+		const { paths } = await fixture(config, [
+			[
+				bookUrl,
+				JSON.stringify([
+					{
+						name: 'Simgot',
+						phones: [
+							{ name: 'Supermix 5', file: files[0] },
+							{ name: 'Supermix 5 (Deep Insertion)', file: files[1] }
+						]
+					},
+					{ name: 'Sennheiser', phones: [{ name: 'HD 650 ZMF Pads', file: files[2] }] }
+				])
+			],
+			...files.map((file): [string, string] => [`${base}data/${encodeURIComponent(file)}%20L.txt`, curve(80)])
+		]);
+		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Must stay offline')));
+		await build(paths);
+		const { manifest, catalog, report } = await result(paths);
+		const headphones = JSON.parse(
+			gunzipSync(
+				await readFile(resolve(paths.output, manifest.version, 'catalog-headphone.json.gz'))
+			).toString()
+		) as Catalog;
+		expect(catalog.products.map((p) => p.model)).toEqual(['Supermix 5']);
+		expect(catalog.measurements.find((m) => m.variant.isDefault)?.variant.file).toBe(files[0]);
+		expect(catalog.measurements.find((m) => m.variant.file === files[1])?.variant).toMatchObject({
+			kind: 'fit',
+			isDefault: false,
+			label: 'Simgot SM5 (D) · (Deep Insertion)'
+		});
+		expect(headphones.products.map((p) => p.model)).toEqual(['HD 650 ZMF Pads']);
+		expect(headphones.measurements[0]?.variant).toMatchObject({
+			kind: 'default',
+			isDefault: true
+		});
+		expect(
+			headphones.measurements[0]?.provenance.processing.some((p) => p.startsWith('recognized fit identity:'))
+		).toBe(false);
+		expect(report.fitIdentity.moves).toHaveLength(1);
+		expect(report.defaultCoverage.changes.map((c) => c.selected)).not.toContain(
+			headphones.measurements[0]?.id
+		);
+	});
 	it('publishes catalog-equivalent manifest counts across forms and retains folded sample curves offline', async () => {
 		const files = ['Model', 'Model (sample 2)', 'HD600 Sample 2', 'HD600 Sample 1'];
 		const { paths } = await fixture(config, [
@@ -514,6 +595,7 @@ describe('cached dataset build safety', () => {
 			'switch',
 			'tip'
 		]);
+		expect(report.fitIdentity.moves).toEqual([]);
 		expect(report.switchDefaults.decisions[0]?.preferred).toBe('impedance:low');
 		for (const source of catalog.sources) {
 			const defaults = catalog.measurements.filter((m) => m.sourceId === source.id && m.variant.isDefault);

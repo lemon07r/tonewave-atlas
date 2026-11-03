@@ -174,7 +174,7 @@ normalization, so cross-table conflicts and brand-hidden product chains are reje
 duplicate, cyclic or chained mappings stop ingestion. Numeral, MEMS and collaboration-spelling aliases
 require explicit reviewed mappings, with evidence in the input notes; such descriptors are not stripped
 generically. Response distances corroborate identity evidence, never authorize automatic merges.
-Only the recognized sample/unit and switch/cable/tip rules below fold descriptors; revisions remain separate.
+Only the recognized sample/unit, fit/tip/pad and switch/cable rules below fold descriptors; revisions remain separate.
 `identityMerges.productsBefore` counts globally unique original keys; `productsAfter` is the final
 count and `merged` is their net difference. Separately, `groupwiseMerges` lists each many-to-one group's
 original keys and reduction plus their total; this can differ from net reduction when an original key
@@ -233,6 +233,43 @@ source/partition receives one default under final coverage, preferring the lowes
 previous `unit` kind remain recorded; default does not mean verified stock. Retired product IDs redirect
 to the base, and inherited product/measurement redirects continue to resolve.
 
+### Fit, tip and pad identities
+
+After the established sample and exact-parent switch/accessory folds, both catalogs remove only
+remaining positioned fit descriptors:
+terminal parentheses containing `Deep Insertion`/`Shallow Insertion`, `Foam`/recognized foam-tip terms, `… pad(s)`/
+`… earpad(s)` (including `used pads` and `foam pads on`); a terminal standalone `deep`/`shallow`;
+`Stock [colour] Tip`; a named `Tip`/`Pads` suffix; and `pad-rolling`, `[Pads Collection]` or `- Pads`.
+Named multiword accessories require an already accepted exact parent; otherwise only one accessory
+word, or an alphanumeric accessory code followed by `PRO`, is removed. No fuzzy parent is inferred.
+Parenthesized content must be entirely a recognized fit descriptor; mixed model/fit text such as
+`PR1(HiFi version foam)` stays a separate product and is reported as an ambiguous marker.
+Years, bare S1/S2 and ordinal unit qualifiers are retained; only the existing explicit sample rules
+run again to remove a sample marker exposed by fit folding. Existing exact-parent accessory decisions
+take precedence over synthesizing fit-only bases, so a model word before bare `tips` is not guessed
+away. Empty or unidentified `Sample N`/`Unit N` identities
+are not invented: `Sample | 1 Deep` remains a known limitation, as does the uninterpreted `2nd Unit`
+in `Sonata 2nd Unit`.
+
+Fit words inside real names remain identity: `Fit Open S50`, `Fit Pro`, `LinkBuds Fit`, `Deep Blue`,
+`Deep Bass` and `Deep Cup` do not match these positions, and `(S)` is not interpreted as shallow.
+Any `[modified: …]`, whole-word mod/modded/modification, DIY, prototype or reshell marker takes
+precedence over the fit rule, including Foam Mod products and modded builds ending in named tips.
+
+The shared sample-fold machinery resolves canonical IDs and reviewed aliases, synthesizes missing
+bases, preserves every accepted measurement/file/URL/curve and redirects retired IDs with history.
+The full source label and descriptor survive in variant labels and processing provenance. Curves
+start as `fit`, preserving an existing `tuning` or stronger `unit` kind; a combined sample/fit keeps
+both descriptors and the lowest-numbered-sample coverage fallback. A folded fit cannot displace an
+existing base default from the same source/partition, even if it alone matches the preferred switch state.
+Without a base default, unchanged final coverage can select one fit/tuning/unit curve as `default`, with
+its descriptor and previous kind retained; this is a usable source reference, not verified stock.
+The build report's `fitIdentity` lists each move and synthesized base.
+
+Aftermarket pad descriptors fold only when the same source already has a stock default for the exact
+base product and partition; otherwise the pad product keeps its original ID with no redirect.
+Folded pad curves can never be defaults, while `(used pads)` denotes worn stock and keeps ordinary fit/default coverage.
+
 ### Switch and accessory folding
 
 Recognized terminal switch-state suffixes (high/low impedance, including “impedence”/“imp”, DU or
@@ -245,7 +282,8 @@ A source's sole cable option stays default; multiple split cable options retain 
 standard/stock/default first, then source order). Existing unit/fit/tuning meaning wins over generic
 cable metadata; DSP cables and bass/impedance plugs are not neutral cable defaults.
 
-Tip suffixes include Stock Tip, branded tips, foam, wide/narrow/standard bore, CP100/CP145 and named
+The established vocabulary-based tip suffixes include Stock Tip, branded tips,
+foam, wide/narrow/standard bore, CP100/CP145 and named
 tip families. They become `fit` only when every token is a recognized tip term; a source's sole neutral
 tip option stays default, while additional split tip defaults prefer stock/standard/default then source
 order. Other tokens (including `02`/`12` in Hisenior T4's foam labels) stay in the variant label and
@@ -367,26 +405,37 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `60e816fc2db9ba2291ea4ece`: **9,507 products / 40,802 measurements / 138 databases / 118 publishers**
-(7,801 IEM products / 33,488 measurements; 1,706 headphone products / 7,314 measurements).
+Build `4199d08ffc44cf0977b5bae0`: **9,489 products / 40,802 measurements / 138 databases / 118 publishers**
+(7,790 IEM products / 33,488 measurements; 1,699 headphone products / 7,314 measurements).
 Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
 24 target/calibration/delta/sandbox and two population averages; these are candidates, not counts of
 previously published removals. **86 unresolved state
 groups** have one source-order default each; **zero duplicate source defaults** remain. The **65 existing
-selected-switch-state source exceptions** remain; every folded sample source/partition has exactly one
-default, and all 10,967 measured product/partitions have a default and an engine candidate in both raw
+selected-switch-state source exceptions** are the identical groups from the preceding build; every
+newly folded fit source/partition has exactly one default. All 10,949 measured product/partitions have
+a default and an engine candidate in both raw
 and harmonised indexes across 53 partitions.
 
-Against published `bd5618f51ff28af2d3f6d189`, **93 IEM / 24 headphone sample identities retire**,
-creating eight IEM / six headphone bases where only samples existed: net reductions **85 / 18**.
-All **117 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
-redirects are needed. Complete inherited maps contain **743 product / 890 measurement redirects**, with
+Against published `60e816fc2db9ba2291ea4ece`, **21 IEM / eight headphone fit identities retire**,
+creating ten IEM bases and one headphone base where only fit-labelled products existed: net reductions **11 / 7**.
+All **29 retired product IDs redirect**; all measurement IDs survive unchanged, so no new measurement
+redirects are needed. Complete inherited maps contain **772 product / 890 measurement redirects**, with
 zero invalid targets or lost historical redirects. No accepted raw file, channel or rank curve was
 added, removed or changed: **40,802 rank / 80,342 channel curves** remain byte-equivalent after decoding,
-and no measurement changed rig partition. Eleven mixed/unnamed sample descriptors remain outside the
-exact sample identity rules. The manifest publishes all 138 source counts and 53 partition counts,
-verified against both catalogs; its gzip size is **25,552 bytes**, versus **23,900** before the change.
+and no measurement changed rig partition. The **15 changed default flags are all demotions of folded
+fits**, with no existing base default lost or gained. **14 folded fit-descriptor curves remain source
+defaults because no stock reference is available in their source/partition**; labels and provenance
+retain the fit, not a stock claim; the sole pad label among them is worn stock `(used pads)`.
+All **72 folded aftermarket-pad curves are non-default**, with prior same-source/partition stock
+evidence for every fold. Ten pad products lacking stock coverage and ambiguous `PR1(HiFi version foam)`
+retain their baseline IDs and variants without redirects. All **380 modification identities** are unchanged. Eleven mixed/unnamed
+sample descriptors remain outside the exact sample rules, and unidentified `Sample | 1 Deep` remains
+unfolded. Relative to `7108689ce37f48ad83288d35`, preserving incoming unit metadata changes only
+jacstone's `Tanchjim Tanya DSP S2 D` (`m-acdcd88a9568197a26d1`) from `fit` to `unit`; all default flags,
+labels, provenance, identities, partitions, curves, rig evidence and statistics are unchanged.
+The manifest publishes all 138 source counts and 53 partition counts,
+verified against both catalogs; its gzip size is **25,541 bytes**, versus **25,552** before the change.
 LOCO reports
 **37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.

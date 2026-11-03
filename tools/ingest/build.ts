@@ -70,6 +70,7 @@ import { classifyEq, factoryMode } from './eq.ts';
 import { mergeSwitchIdentities, reconcileSwitchDefaults, reviewVariantStates } from './switches.ts';
 import { finaliseDefaults, withProvisionalDefaults } from './default-coverage.ts';
 import { mergeSampleIdentities } from './samples.ts';
+import { mergeFitIdentities } from './fits.ts';
 
 export interface PartitionCurve {
 	measurement: Measurement;
@@ -649,14 +650,26 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 	}
 	displayNames.apply(products.values());
 	const allCurves = [...partitions.values()].flat();
-	const sampleIdentity = mergeSampleIdentities(products, allCurves, aliases, productAliases);
+	// Preserve established exact-parent accessory folds before inventing any fit-only base.
+	const initialSamples = mergeSampleIdentities(products, allCurves, aliases, productAliases);
 	const switchIdentity = mergeSwitchIdentities(products, allCurves);
-	for (const move of [...sampleIdentity.moves, ...switchIdentity.moves]) {
+	const fitIdentity = mergeFitIdentities(products, allCurves, aliases, productAliases);
+	const exposedSamples = mergeSampleIdentities(products, allCurves, aliases, productAliases);
+	const sampleIdentity = {
+		moves: [...initialSamples.moves, ...exposedSamples.moves],
+		created: [...initialSamples.created, ...exposedSamples.created]
+	};
+	for (const move of [
+		...initialSamples.moves,
+		...switchIdentity.moves,
+		...fitIdentity.moves,
+		...exposedSamples.moves
+	]) {
 		for (const map of [identities, originalIdentities]) {
 			const names = map.get(move.to) ?? new Set<string>();
 			for (const name of map.get(move.from) ?? []) names.add(name);
 			map.set(move.to, names);
-			map.delete(move.from);
+			if (!products.has(move.from)) map.delete(move.from);
 		}
 	}
 	const switchDefaults = reconcileSwitchDefaults(products, allCurves);
@@ -954,6 +967,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 				...report,
 				redirects,
 				sampleIdentity,
+				fitIdentity,
 				switchIdentity,
 				switchDefaults,
 				defaultCoverage,
