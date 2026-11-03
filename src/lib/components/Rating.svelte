@@ -95,16 +95,32 @@
 		outline-offset: 3px;
 	}
 	.compact .ratings {
-		gap: 4px;
+		display: grid;
+		grid-template-columns: 1.25fr 0.85fr 0.8fr 1fr 1fr;
+		gap: 0;
+		border: 1px solid var(--strong-line);
+		border-radius: var(--radius);
+	}
+	.compact label {
+		min-width: 0;
+	}
+	.compact label + label {
+		border-left: 1px solid var(--strong-line);
 	}
 	.compact label > span {
-		min-height: 32px;
-		padding: 4px 6px;
-		gap: 4px;
-		font-size: 12px;
+		justify-content: center;
+		min-height: 36px;
+		padding: 4px;
+		border: 0;
+		border-radius: 0;
+		font-size: var(--text-xs);
+		white-space: nowrap;
+	}
+	.compact input:checked + span {
+		box-shadow: inset 0 -2px var(--accent);
+		font-weight: 600;
 	}
 	.compact svg {
-		width: 16px;
-		height: 16px;
+		display: none;
 	}
 </style>

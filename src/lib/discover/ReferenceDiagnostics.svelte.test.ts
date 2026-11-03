@@ -1,6 +1,8 @@
-import { expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { MeasurementInfo, ProductListItem } from '#core/atlas/types.ts';
+import { DatasetUpdatedError } from '#core/atlas/errors.ts';
+import { datasetUpdate } from '#lib/analysis/errors.svelte.ts';
 import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
 
 const service = vi.hoisted(() => ({ measurements: vi.fn<(ids: string[]) => Promise<MeasurementInfo[]>>() }));
@@ -10,6 +12,14 @@ vi.mock('#lib/product/data.ts', async (original) => ({
 	...(await original<typeof import('#lib/product/data.ts')>()),
 	productMeasurements: metadata
 }));
+
+beforeEach(() => {
+	service.measurements.mockReset();
+	metadata.mockReset();
+});
+afterEach(() => {
+	datasetUpdate.message = '';
+});
 
 const product: ProductListItem = {
 	id: 'p',
@@ -124,4 +134,65 @@ test('a failed default metadata lookup cannot erase explicit or other default di
 		.toBeVisible();
 	await expect.element(screen.getByText(/Variant metadata could not be loaded/)).toBeVisible();
 	expect(metadata).toHaveBeenCalledWith('iem', 'fixture', 'good', expect.any(AbortSignal));
+});
+
+test('ranking explanation reuses measurement diagnostics and engine exclusions alongside inactive ratings', async () => {
+	service.measurements.mockResolvedValueOnce([measurement]);
+	const base = { rating: 'like' as const, strength: 0.6, soundRelated: true };
+	const screen = await render(ReferenceDiagnostics, {
+		items: [
+			{ ...base, productId: 'used' },
+			{ ...base, productId: 'unrated', rating: 'unrated', strength: 0 },
+			{ ...base, productId: 'neutral', rating: 'neutral', strength: 0 },
+			{ ...base, productId: 'comfort', soundRelated: false },
+			{ ...item, productId: 'p' },
+			{ ...base, productId: 'missing', measurementId: 'missing-measurement' },
+			{ ...base, productId: 'unused' }
+		],
+		form: 'iem',
+		version: 'fixture',
+		partition: 'iem-5128',
+		sources: [],
+		explain: true,
+		products: ['used', 'unrated', 'neutral', 'comfort', 'p', 'missing', 'unused'].map((id) => ({
+			...product,
+			id,
+			model: id,
+			defaultPartitions: ['iem-5128']
+		})),
+		unused: [{ productId: 'unused', measurementId: null, reason: 'insufficient-overlap' }]
+	});
+	await expect.element(screen.getByText('Fixture used: participates · like.', { exact: true })).toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture unrated: excluded · unrated.', { exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture neutral: excluded · neutral.', { exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByText(/Fixture comfort: excluded · comfort-only/)).toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture p: excluded · incompatible rig (B&K 5128).', { exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture missing: excluded · missing measurement.', { exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Fixture unused: excluded · insufficient overlap.', { exact: true }))
+		.toBeVisible();
+});
+
+test('a transported dataset update uses shared Reload guidance without a generic metadata error', async () => {
+	const updated = new DatasetUpdatedError('old', 'new');
+	service.measurements.mockRejectedValueOnce({ name: updated.name, message: updated.message });
+	const screen = await render(ReferenceDiagnostics, {
+		items: [item],
+		form: 'iem',
+		version: 'fixture',
+		products: [product],
+		partition: 'iem-711',
+		sources: []
+	});
+	await expect.poll(() => datasetUpdate.message).toBe('The dataset was updated. Reload to continue.');
+	await expect.element(screen.getByText(/Variant metadata could not be loaded/)).not.toBeInTheDocument();
+	await expect.element(screen.getByText(/the selected measurement is not available/)).toBeVisible();
 });

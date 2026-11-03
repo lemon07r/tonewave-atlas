@@ -10,6 +10,132 @@ vi.mock('#lib/atlas.ts', () => {
 	return { analysis: () => worker };
 });
 
+test('reviewer line shows assessed rank sensitivity and a related-reference label, with honest expanded limits', async () => {
+	const screen = await render(ResultRow, {
+		candidate: {
+			id: 'c',
+			product: { id: 'p', brand: 'Fixture', model: 'Prototype', form: 'iem', baseProductId: 'base' },
+			kind: 'default',
+			variantLabel: null,
+			measurementIds: [],
+			sources: [],
+			prices: [],
+			priceUsd: null
+		},
+		rank: 4,
+		distance: 1,
+		bands: [],
+		onshow: vi.fn(),
+		stability: { scoreRange: [0.8, 1.2], rankRange: [4, 20], referenceSide: true, candidateSide: false },
+		relatedToReference: true,
+		nameFor: () => 'Fixture Reference',
+		referenceReviewers: [{ name: 'Fixture Reference', count: 3, explicit: false }]
+	});
+	await expect.element(screen.getByText(/Rank 4–20 if one reviewer is left out/)).toBeVisible();
+	await expect.element(screen.getByText(/Variant of Fixture Reference/)).toBeVisible();
+	await expect
+		.element(screen.getByText(/This product has 0 reviewers, so its own variation isn't assessed/))
+		.not.toBeVisible();
+	await screen.getByText('Measured differences & sources', { exact: true }).click();
+	await expect
+		.element(screen.getByText(/This product has 0 reviewers, so its own variation isn't assessed/))
+		.toBeVisible();
+	await screen.rerender({
+		stability: { scoreRange: [1, 1], rankRange: [4, 4], referenceSide: true, candidateSide: false }
+	});
+	await expect.element(screen.getByText(/Rank holds if one reviewer is left out/)).toBeVisible();
+	await screen.rerender({
+		stability: undefined,
+		relatedToReference: false,
+		referenceReviewers: [{ name: 'Fixture Reference', count: 1, explicit: false }]
+	});
+	expect(screen.container.querySelector('.rank-range')).toBeNull();
+	expect(screen.container.querySelector('.related-reference')).toBeNull();
+	await expect
+		.element(
+			screen.getByText(/Fixture Reference has 1 reviewer, so its reference-side variation isn't assessed/)
+		)
+		.toBeVisible();
+});
+
+test('expanded evidence identifies each unassessed reference even when another reference is assessed', async () => {
+	const references = [
+		{ name: 'Fixture A', count: 3, explicit: false },
+		{ name: 'Fixture B', count: 3, explicit: false }
+	];
+	const stability = {
+		scoreRange: [1, 1] as [number, number],
+		rankRange: [1, 1] as [number, number],
+		referenceSide: true,
+		referenceSides: [true, false],
+		candidateSide: false
+	};
+	const screen = await render(ResultRow, {
+		candidate: {
+			id: 'c',
+			product: { id: 'p', brand: 'Fixture', model: 'Candidate', form: 'iem' },
+			kind: 'default',
+			variantLabel: null,
+			measurementIds: [],
+			sources: [],
+			prices: [],
+			priceUsd: null
+		},
+		rank: 1,
+		distance: 1,
+		bands: [],
+		onshow: vi.fn(),
+		referenceReviewers: references,
+		stability
+	});
+	await screen.getByText('Measured differences & sources', { exact: true }).click();
+	const missing = "Fixture B: reference-side reviewer variation isn't assessed for this comparison.";
+	const assessed = "Fixture A: reference-side reviewer variation isn't assessed for this comparison.";
+	await expect.element(screen.getByText(missing, { exact: true })).toBeVisible();
+	await expect.element(screen.getByText(assessed, { exact: true })).not.toBeInTheDocument();
+	await screen.rerender({
+		referenceReviewers: [...references].reverse(),
+		stability: { ...stability, referenceSides: [false, true] }
+	});
+	await expect.element(screen.getByText(missing, { exact: true })).toBeVisible();
+	await expect.element(screen.getByText(assessed, { exact: true })).not.toBeInTheDocument();
+});
+
+test.each([false, true])(
+	'legacy variant labels match their base reference with reversed order = %s',
+	async (reversed) => {
+		const references: CandidateInfo['product'][] = [
+			{ id: 'a', brand: 'Fixture', model: 'A', form: 'iem' },
+			{ id: 'b', brand: 'Fixture', model: 'B', form: 'iem' }
+		];
+		if (reversed) references.reverse();
+		const screen = await render(ResultRow, {
+			candidate: {
+				id: 'modified-b',
+				product: { id: 'modified-b', brand: 'Fixture', model: 'B [modified: prototype]', form: 'iem' },
+				kind: 'default',
+				variantLabel: null,
+				measurementIds: [],
+				sources: [],
+				prices: [],
+				priceUsd: null
+			},
+			rank: 1,
+			distance: 1,
+			bands: [],
+			onshow: vi.fn(),
+			relatedToReference: true,
+			referenceProductId: references[0]?.id ?? '',
+			referenceProducts: references,
+			nameFor: (id: string) => `Fixture ${id.toUpperCase()}`
+		});
+		await expect.element(screen.getByText('· Variant of Fixture B', { exact: true })).toBeVisible();
+		await expect.element(screen.getByText('· Variant of Fixture A', { exact: true })).not.toBeInTheDocument();
+		await screen.rerender({ referenceProducts: [{ id: 'a', brand: 'Fixture', model: 'A', form: 'iem' }] });
+		await expect.element(screen.getByText('· Variant of a reference', { exact: true })).toBeVisible();
+	}
+);
+
 test('rating an existing row retains preferences, and duplicate reference labels render independently', async () => {
 	const candidate: CandidateInfo = {
 		id: 'c',
@@ -51,7 +177,10 @@ test('rating an existing row retains preferences, and duplicate reference labels
 		.element(screen.getByText(/No trade-off ranking: at least one reference has insufficient overlap/))
 		.toBeVisible();
 	expect(screen.container.querySelectorAll('thead th[scope="col"]')).toHaveLength(12);
-	await screen.getByText('Rate this product', { exact: true }).click();
+	await screen.getByRole('button', { name: 'Dislike Fixture One', exact: true }).click();
+	expect(onrate).toHaveBeenCalledExactlyOnceWith({ ...existing, rating: 'dislike', strength: 1 });
+	onrate.mockClear();
+	await screen.getByText('More', { exact: false }).click();
 	await screen.getByRole('button', { name: 'Save rating', exact: true }).click();
 	expect(onrate).toHaveBeenCalledExactlyOnceWith(existing);
 });
@@ -76,7 +205,7 @@ test('an unsaved rating survives fresh objects for the same candidate but resets
 		onshow: vi.fn(),
 		onrate
 	});
-	await screen.getByText('Rate this product', { exact: true }).click();
+	await screen.getByText('More', { exact: false }).click();
 	await screen.getByRole('radio', { name: 'Dislike', exact: true }).click();
 	await screen.getByRole('checkbox', { name: 'Other', exact: true }).click();
 	await screen.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true }).click();
@@ -129,6 +258,11 @@ test('keeps small reference and band headers readable with normal tracking and e
 		onshow: vi.fn()
 	});
 	const headers = screen.container.querySelectorAll('.data-table th');
+	for (const region of screen.container.querySelectorAll('.table-scroll')) {
+		expect(region.getAttribute('tabindex')).toBe('0');
+		expect(region.getAttribute('role')).toBe('region');
+		expect(region.getAttribute('aria-label')).toBeTruthy();
+	}
 	expect([...headers].map((header) => header.firstChild?.textContent)).toContain('Softears Volume S');
 	expect([...headers].map((header) => header.textContent)).toContain('sub-bass');
 	for (const header of headers) {
@@ -181,12 +315,14 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 		.element(screen.getByText('$129 reviewer-listed price (Reviewer, seen Nov 2026; listing date unknown)'))
 		.toBeVisible();
 	await expect
-		.element(screen.getByRole('link', { name: 'Compare', exact: true }))
+		.element(screen.getByRole('link', { name: 'Compare Brand Model', exact: true }))
 		.toHaveAttribute('href', '/compare?p=product-a&m=tuning-measurement');
-	await screen.getByRole('button', { name: 'Show on chart' }).click();
+	await screen.getByRole('button', { name: 'Show on chart: Brand Model', exact: true }).click();
 	expect(onshow).toHaveBeenCalledOnce();
 	await screen.rerender({ selected: true, limitReached: true });
-	await expect.element(screen.getByRole('button', { name: 'Remove from chart' })).not.toBeDisabled();
+	await expect
+		.element(screen.getByRole('button', { name: 'Remove from chart: Brand Model', exact: true }))
+		.not.toBeDisabled();
 	await screen.rerender({
 		candidate: { ...candidate, product: { ...candidate.product, form: 'headphone' } },
 		fit: {
@@ -206,10 +342,10 @@ test('preserves tuning/form actions, visible ranking score and source links thro
 		.toBeVisible();
 	await expect.element(screen.getByText('Measured by 1 reviewer', { exact: true })).toBeVisible();
 	await expect
-		.element(screen.getByRole('link', { name: 'Compare', exact: true }))
+		.element(screen.getByRole('link', { name: 'Compare Brand Model', exact: true }))
 		.toHaveAttribute('href', '/compare?form=headphones&p=product-a&m=tuning-measurement');
 	await expect
-		.element(screen.getByRole('link', { name: 'Product page', exact: true }))
+		.element(screen.getByRole('link', { name: 'Product page for Brand Model', exact: true }))
 		.toHaveAttribute('href', '/explore?product=product-b&form=headphones');
 	rpc.productDetail.mockRejectedValueOnce(new Error('Detail offline')).mockResolvedValueOnce({
 		ok: true,

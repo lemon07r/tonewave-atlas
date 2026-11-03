@@ -4,6 +4,14 @@ import type { CandidateInfo } from '#core/atlas/types.ts';
 import { priceListings } from '#lib/product/data.ts';
 
 const WORDING = { omit: 0.75, slight: 2, much: 4 } as const;
+/** Missing alternatives were not searched; an explicit empty list means none cover the set. */
+export function rigFailureMessage(partitions: readonly string[] | undefined): string {
+	if (partitions === undefined)
+		return 'This reference isn’t measured on the selected rig. Try automatic rig.';
+	return partitions.length
+		? 'This rig doesn’t cover every reference. Choose a rig below.'
+		: 'No rig covers every reference. Change a reference or variant.';
+}
 export const bandLabels: Record<Band, string> = {
 	'sub-bass': 'sub-bass',
 	bass: 'bass',
@@ -44,9 +52,14 @@ function roundedRange(range: readonly [number, number]): string {
 	return low === high ? low : `${low}–${high}`;
 }
 
-export function reviewerSummary(range: readonly [number, number] | null, count: number): string {
+export function reviewerSummary(
+	range: readonly [number, number] | null,
+	count: number,
+	rangeSourceCount = count
+): string {
 	const reviewers = `${count} ${count === 1 ? 'reviewer' : 'reviewers'}`;
-	return `Measured by ${reviewers}${range && count > 1 ? ` · ${roundedRange(range)} dB to the reference across reviewers` : ''}`;
+	const coverage = rangeSourceCount < count ? `${rangeSourceCount} of them` : 'reviewers';
+	return `Measured by ${reviewers}${range && count > 1 ? ` · ${roundedRange(range)} dB to the reference across ${coverage}` : ''}`;
 }
 
 export function priceLines(candidate: CandidateInfo, now = Date.now()): string[] {

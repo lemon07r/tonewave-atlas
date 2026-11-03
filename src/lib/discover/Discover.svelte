@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { Focus } from '#core/analysis/weights.ts';
@@ -8,6 +8,7 @@
 	import { resolve } from '$app/paths';
 	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { analysis, productList } from '#lib/atlas.ts';
+	import { analysisError, datasetUpdate } from '#lib/analysis/errors.svelte.ts';
 	import type { Form } from '#core/dataset/types.ts';
 	import type { AtlasError, AtlasSummary, ProductListItem, SourceMode } from '#core/atlas/types.ts';
 	import { BANDS, type Band } from '#core/analysis/common.ts';
@@ -36,7 +37,7 @@
 		takeMigration
 	} from '#lib/catalog/handoff.ts';
 	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
-	import { bandLabels } from './describe.ts';
+	import { bandLabels, rigFailureMessage } from './describe.ts';
 	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
 	import Toggle from '#lib/components/Toggle.svelte';
@@ -49,6 +50,8 @@
 	import ChartPanel from './ChartPanel.svelte';
 	import TasteSummary from './TasteSummary.svelte';
 	import ResultRow from './ResultRow.svelte';
+	import RankingMethod from './RankingMethod.svelte';
+	import { rankChanges, type RankChange } from './rank-changes.ts';
 	import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
 	import { compareEvidence, nearestLikedEvidence } from './evidence.ts';
 
@@ -76,6 +79,8 @@
 	let identityReady = $state(false);
 	let migratedHref = $state('');
 	let catalogError = $state('');
+	let retryCatalog = $state(() => {});
+	let queryAttempt = $state(0);
 	let ready = $state(false);
 	let query = $state('');
 	let profile = $state.raw<Profile>(emptyProfile());
@@ -84,9 +89,29 @@
 	let profileError = $state('');
 	let undoMessage = $state('');
 	let importInput: HTMLInputElement;
+	let discoverRoot = $state<HTMLDivElement>();
+	let resultsHeading = $state<HTMLHeadingElement>();
 	let result = $state.raw<DiscoveryResult>();
 	let resultItems = $state.raw<WorkspaceItem[]>([]);
 	let resultSort = $state<'mean' | 'minimax'>('mean');
+	const trackRanks = rankChanges();
+	let rankMarkers = $state.raw<ReadonlyMap<string, RankChange>>(new Map());
+	let rankSummary = $state('');
+	function recordRanks(spec: QuerySpec, next?: DiscoveryResult) {
+		const changes = trackRanks(
+			JSON.stringify([form, spec.items, spec.upload ?? null]),
+			next?.data.results.map((row) => row.candidate.product.id) ?? [],
+			JSON.stringify({
+				...spec.state,
+				items: undefined,
+				overlays: undefined,
+				issue: undefined,
+				topK: spec.topK
+			})
+		);
+		rankMarkers = changes.markers;
+		rankSummary = changes.summary;
+	}
 	let similarReferenceId = $derived(
 		result?.kind === 'similar' ? (result.data.reference.productId ?? '') : ''
 	);
@@ -146,22 +171,56 @@
 			? result.data.references.map((reference) => nameFor(reference.productId ?? ''))
 			: []
 	);
+	let referenceReviewers = $derived.by(() => {
+		const references =
+			result?.kind === 'similar'
+				? [result.data.reference]
+				: result?.kind === 'compare'
+					? result.data.references
+					: [];
+		return references.map((reference) => ({
+			name: reference.uploadId ? 'Your local measurement' : nameFor(reference.productId ?? ''),
+			count: reference.sources.length,
+			explicit:
+				Boolean(reference.uploadId) ||
+				resultItems.some((item) => item.productId === reference.productId && Boolean(item.measurementId))
+		}));
+	});
+	let referenceProducts = $derived.by(() => {
+		const ids =
+			result?.kind === 'similar'
+				? [result.data.reference.productId]
+				: result?.kind === 'compare'
+					? result.data.references.map((reference) => reference.productId)
+					: resultItems
+							.filter((item) => item.soundRelated && ['like', 'love'].includes(item.rating))
+							.map((item) => item.productId);
+		return ids.flatMap((id) => {
+			const product = id ? productFor(products, id, identity) : undefined;
+			return product ? [{ id: product.id, brand: product.brand, model: product.model, form }] : [];
+		});
+	});
 	let compareReferences = $derived(
 		resultItems
 			.filter((i) => i.soundRelated && ['like', 'love'].includes(i.rating))
 			.map(({ productId, measurementId }) => ({ productId, ...(measurementId ? { measurementId } : {}) }))
 	);
-	let modelKey = $derived(
-		JSON.stringify({
+	function keyFor(state: QuerySpec['state'], modelItems: WorkspaceItem[]) {
+		return JSON.stringify({
 			form,
-			rig: settings.rig,
-			sources: settings.sources,
-			sourceMode: settings.sourceMode,
-			items
-		})
-	);
-	let scopedEdits = $state<Record<string, NonNullable<QuerySpec['state']['corrections']>>>({});
-	let corrections = $derived(scopedEdits[modelKey] ?? settings.corrections);
+			rig: state.rig,
+			sources: state.sources,
+			sourceMode: state.sourceMode,
+			items: modelItems
+		});
+	}
+	let modelKey = $derived(keyFor(settings, items));
+	const scopedEdits: Record<string, QuerySpec['state']['corrections']> = {};
+	// Shared links and browser history are authoritative, never overwritten by a cached draft.
+	let corrections = $derived(settings.corrections);
+	function currentModel() {
+		return { key: modelKey, edits: corrections };
+	}
 	let queryKey = $derived(
 		JSON.stringify({
 			state: { ...settings, overlays: [], corrections },
@@ -171,8 +230,22 @@
 		} satisfies QuerySpec)
 	);
 	const controller = latestQuery<Awaited<ReturnType<typeof queryDiscovery>>>();
-	const errorText = (cause: unknown) =>
-		cause instanceof Error ? cause.message : 'Analysis unavailable. Please try again.';
+	const errorText = analysisError;
+	async function restoreResultFocus(focused: Element | null) {
+		const productId = focused?.closest<HTMLElement>('.result-row')?.dataset.productId;
+		if (!productId) return;
+		await tick();
+		if (
+			focused.isConnected ||
+			!discoverRoot?.isConnected ||
+			(document.activeElement && document.activeElement !== document.body)
+		)
+			return;
+		const referenceRating = discoverRoot.querySelector<HTMLInputElement>(
+			`.profile-row[data-product-id="${CSS.escape(productId)}"] input[type="radio"]:checked`
+		);
+		(referenceRating ?? resultsHeading)?.focus();
+	}
 	function nameFor(id: string): string {
 		const resolved = result?.data.resolvedIds?.find(
 			(entry) => entry.productId === id || entry.measurementId === id
@@ -223,7 +296,16 @@
 		migrationNote = [];
 		undoMessage = 'Pre-migration profile restored for this session.';
 	}
-	function navigate(params: URLSearchParams, replace = true) {
+	function navigate(params: URLSearchParams, replace = true, from = currentModel()) {
+		const nextState = parseDiscovery(params);
+		const nextKey = keyFor(nextState, nextState.items ?? profile.profiles[form]);
+		// Only an explicit workspace action can restore a model-scoped draft. Back/Forward never calls here.
+		if (nextKey !== from.key) {
+			scopedEdits[from.key] = from.edits;
+			const restored = scopedEdits[nextKey];
+			if (restored?.length) params.set('edits', JSON.stringify(restored));
+			else params.delete('edits');
+		}
 		locationVersion++;
 		void goto(resolve(`/?${params}` as PathnameWithSearchOrHash), { reset: false, replace });
 	}
@@ -235,12 +317,13 @@
 	}
 	function updateItems(next: WorkspaceItem[], message = 'Workspace updated.') {
 		if (!store) return;
+		const from = currentModel();
 		const before = { ...profile, profiles: { ...profile.profiles, [form]: items } };
 		store.change({ ...profile, profiles: { ...profile.profiles, [form]: next } }, before);
 		profile = store.value;
 		storageError = store.error;
 		undoMessage = message;
-		navigate(withItems(page.url.searchParams, next));
+		navigate(withItems(page.url.searchParams, next), true, from);
 	}
 	function choose(product: ProductListItem) {
 		if (items.length >= PROFILE_LIMIT) {
@@ -275,7 +358,6 @@
 			tasteId,
 			bands: { ...corrections.find((edit) => edit.tasteId === tasteId)?.bands, [band]: value }
 		});
-		scopedEdits = { ...scopedEdits, [modelKey]: next };
 		change({ edits: JSON.stringify(next) });
 	}
 	function exportProfile() {
@@ -311,14 +393,16 @@
 					url: `/?${withItems(page.url.searchParams, parsed.profiles[form])}`
 				});
 			// Ordinary Undo restores the visible workspace, which may come from a shared URL.
+			const from = currentModel();
 			store.change(next, { ...profile, profiles: { ...profile.profiles, [form]: items } });
 			profile = store.value;
 			storageError = store.error;
 			undoMessage = 'Profile imported.';
-			navigate(withItems(page.url.searchParams, next.profiles[form]));
+			navigate(withItems(page.url.searchParams, next.profiles[form]), true, from);
 			profileError = '';
 		} catch (cause) {
-			profileError = `Import failed: ${errorText(cause)}`;
+			const message = errorText(cause);
+			profileError = message ? `Import failed: ${message}` : '';
 		}
 		input.value = '';
 	}
@@ -378,34 +462,40 @@
 		const startup = new AbortController();
 		// A function, so narrowing after one check doesn't hide a later abort across awaits.
 		const cancelled = () => startup.signal.aborted;
-		void Promise.all([productList(form), analysis().then((service) => service.summary())])
-			.then(async ([list, info]) => {
-				if (cancelled()) return;
-				products = list;
-				summary = info;
-				catalogLoading = false;
-				const catalogs = await migrationCatalogs(form, info.version, new URL(page.url.href), profile);
-				if (!cancelled()) {
-					const before = profile;
-					const migrated = migrateProfile(profile, migrationUndone ? {} : catalogs);
-					migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
-					if (migrated.droppedRating && !migrationBefore)
-						keepMigration({ profile: before, url: page.url.href });
-					if (migrated.changed && store) {
-						store.change(migrated.profile);
-						profile = store.value;
-						storageError = store.error;
-					}
-					identity = catalogs[form];
-					identityReady = true;
-				}
-			})
-			.catch((cause: unknown) => {
-				if (!cancelled()) {
-					catalogError = errorText(cause);
+		retryCatalog = () => {
+			catalogLoading = true;
+			catalogError = '';
+			void Promise.resolve()
+				.then(() => Promise.all([productList(form), analysis().then((service) => service.summary())]))
+				.then(async ([list, info]) => {
+					if (cancelled()) return;
+					products = list;
+					summary = info;
 					catalogLoading = false;
-				}
-			});
+					const catalogs = await migrationCatalogs(form, info.version, new URL(page.url.href), profile);
+					if (!cancelled()) {
+						const before = profile;
+						const migrated = migrateProfile(profile, migrationUndone ? {} : catalogs);
+						migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
+						if (migrated.droppedRating && !migrationBefore)
+							keepMigration({ profile: before, url: page.url.href });
+						if (migrated.changed && store) {
+							store.change(migrated.profile);
+							profile = store.value;
+							storageError = store.error;
+						}
+						identity = catalogs[form];
+						identityReady = true;
+					}
+				})
+				.catch((cause: unknown) => {
+					if (!cancelled()) {
+						catalogError = errorText(cause);
+						catalogLoading = false;
+					}
+				});
+		};
+		retryCatalog();
 		return () => {
 			uploadGeneration++;
 			startup.abort();
@@ -428,19 +518,15 @@
 					const changed =
 						current && (await migrateLocation(href, current, catalogs[form === 'iem' ? 'headphone' : 'iem']));
 					if (!changed && !cancelled() && revision === locationVersion) migratedHref = href;
+				},
+				(cause: unknown) => {
+					if (!cancelled()) catalogError = errorText(cause);
 				}
 			);
 		});
 		return () => {
 			abort.abort();
 		};
-	});
-	$effect(() => {
-		const cached = scopedEdits[modelKey];
-		if (cached && JSON.stringify(cached) !== JSON.stringify(settings.corrections))
-			untrack(() => {
-				change({ edits: JSON.stringify(cached) });
-			});
 	});
 	// View-only URL changes such as charted products keep the approved query; only a changed,
 	// migrated query re-ranks.
@@ -449,11 +535,15 @@
 		const key = queryKey;
 		if (key === untrack(() => approvedQuery)) return;
 		// Clearing the approval cancels a superseded debounce or run and lets a return to it restart.
-		approvedQuery = ready && !catalogLoading && !catalogError && migratedHref === page.url.href ? key : '';
+		approvedQuery =
+			ready && !catalogLoading && !catalogError && !datasetUpdate.message && migratedHref === page.url.href
+				? key
+				: '';
 	});
 	$effect(() => {
 		if (!approvedQuery) return;
 		const spec = JSON.parse(approvedQuery) as QuerySpec;
+		const attempt = queryAttempt;
 		const currentIdentity = identity;
 		controller.invalidate();
 		queryError = undefined;
@@ -472,23 +562,28 @@
 		}
 		if (!spec.upload && discoveryRoute(spec.items, spec.state.view) === 'empty') {
 			result = undefined;
+			recordRanks(spec);
 			loading = false;
 			return;
 		}
 		loading = true;
 		const timer = window.setTimeout(() => {
+			if (attempt !== queryAttempt) return;
 			void controller.run(
 				async () => queryDiscovery(await analysis(), spec),
 				(next) => {
+					const focused = document.activeElement;
 					if (next && 'ok' in next) {
 						queryError = next;
 						result = undefined;
 					} else {
+						recordRanks(spec, next ?? undefined);
 						result = next ?? undefined;
 						resultItems = spec.items;
 						resultSort = spec.state.sort;
 					}
 					loading = false;
+					void restoreResultFocus(focused);
 				},
 				(cause) => {
 					networkError = errorText(cause);
@@ -504,15 +599,15 @@
 	});
 </script>
 
-<div class={['page discover', { starting }]}>
-	<div class="page-heading">
-		<h1>
-			{starting
-				? `Find ${form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.`
-				: 'Discover your next comparison.'}
-		</h1>
-		<p>Add products you know, then rate your experience. Start with one Like or build a set of references.</p>
-	</div>
+<div bind:this={discoverRoot} class={['page discover', { starting }]}>
+	{#if starting}<div class="page-heading">
+			<h1>
+				Find {form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.
+			</h1>
+			<p>
+				Add products you know, then rate your experience. Start with one Like or build a set of references.
+			</p>
+		</div>{:else}<h1 class="sr-only">Your discovery workspace</h1>{/if}
 	<MigrationNote
 		messages={migrationDisplay}
 		onundo={migrationBefore ? undoMigration : undefined}
@@ -535,7 +630,10 @@
 					onselect={choose}
 				/>
 			</div>
-			{#if catalogError}<Notice kind="caution">Catalog unavailable: {catalogError}</Notice>{/if}
+			{#if catalogError}<Notice kind="caution"
+					>Catalog unavailable: {catalogError}
+					<button type="button" class="button quiet" onclick={retryCatalog}>Retry catalog</button></Notice
+				>{/if}
 			{#if settings.issue}<Notice kind="caution">{settings.issue}</Notice>{/if}
 			{#if storageError}<Notice kind="caution">{storageError}</Notice>{/if}
 			{#if profileError}<Notice kind="caution">{profileError}</Notice>{/if}
@@ -590,176 +688,200 @@
 						change({ mode: undefined, view: value === 'taste' ? 'taste' : undefined });
 					}}
 				/>{/if}
-			<details class="refine">
-				<summary>Refine matches <span>Rig, budget &amp; reviewers</span></summary>
-				<div class="controls">
-					<label class="field-label"
-						>Measurement rig<select
-							value={upload?.rig ?? settings.rig}
-							disabled={Boolean(upload)}
-							onchange={(event) => {
-								change({
-									rig: event.currentTarget.value,
-									sources: undefined,
-									chart: undefined,
-									edits: undefined
-								});
+			<div class="workspace-options">
+				<details class="refine">
+					<summary>Refine matches <span>Rig, budget &amp; reviewers</span></summary>
+					<div class="controls">
+						<label class="field-label"
+							>Measurement rig<select
+								value={upload?.rig ?? settings.rig}
+								disabled={Boolean(upload)}
+								onchange={(event) => {
+									change({
+										rig: event.currentTarget.value,
+										sources: undefined,
+										chart: undefined,
+										edits: undefined
+									});
+								}}
+								><option value=""
+									>Automatic{result ? ` · ${rigLabel(result.data.partition, summary?.sources)}` : ''}</option
+								>{#each summary?.partitions.filter((p) => p.form === form) ?? [] as partition (partition.id)}<option
+										value={partition.id}>{rigLabel(partition.id, summary?.sources)}</option
+									>{/each}</select
+							></label
+						>
+						{#if upload}<p class="small muted">
+								Rig is locked to your upload: {rigLabel(upload.rig, summary?.sources)}. Remove the local
+								reference to change rigs.
+							</p>{/if}
+						{#if route !== 'taste'}<SegmentedControl
+								label="Matching focus"
+								options={[
+									{ value: 'balanced', label: 'Balanced' },
+									{ value: 'bass', label: 'Bass' },
+									{ value: 'vocals', label: 'Vocals' },
+									{ value: 'treble', label: 'Treble' }
+								]}
+								value={settings.focus}
+								onchange={(value: Focus) => {
+									change({ focus: value === 'balanced' ? undefined : value });
+								}}
+							/>{/if}
+						<label class="field-label budget"
+							>Maximum reviewer-listed price (USD)<input
+								class="text-input"
+								type="number"
+								min="0"
+								step="1"
+								placeholder="No limit"
+								value={settings.max ?? ''}
+								onchange={(event) => {
+									change({
+										max:
+											event.currentTarget.value &&
+											Number.isFinite(event.currentTarget.valueAsNumber) &&
+											event.currentTarget.valueAsNumber >= 0
+												? String(event.currentTarget.valueAsNumber)
+												: undefined
+									});
+								}}
+							/></label
+						>
+						<p class="small muted">
+							Listed prices are historical reviewer entries, not current deals. A budget excludes products
+							without a USD price.
+						</p>
+						<div class="candidate-toggles">
+							<Toggle
+								label="Include separate tunings"
+								checked={settings.tunings}
+								onchange={(checked) => {
+									change({ tunings: checked ? '1' : undefined });
+								}}
+							/>
+							<label class="modified-toggle"
+								><input
+									type="checkbox"
+									checked={settings.modified}
+									onchange={(event) => {
+										change({ modified: event.currentTarget.checked ? '1' : undefined });
+									}}
+								/>Include mods &amp; prototypes</label
+							>
+						</div>
+						<label class="field-label"
+							>At least N reviewers<select
+								value={settings.minReviewers}
+								onchange={(event) => {
+									change({
+										minReviewers: event.currentTarget.value === '1' ? undefined : event.currentTarget.value
+									});
+								}}
+								>{#each [1, 2, 3, 5] as count (count)}<option value={count}>{count}</option>{/each}</select
+							></label
+						>
+						{#if route !== 'taste'}<Toggle
+								label="Treble-sensitive matching"
+								checked={settings.alpha !== undefined}
+								onchange={(checked) => {
+									change({ alpha: checked ? '2' : undefined });
+								}}
+							/>
+							<p class="small muted">Adds a directional penalty for extra energy from 2–10 kHz.</p>
+							{#if settings.alpha !== undefined}<Slider
+									label="Extra-treble penalty α"
+									min={1}
+									max={4}
+									step={0.25}
+									value={settings.alpha}
+									onchange={(value) => {
+										change({ alpha: String(value) });
+									}}
+								/>{/if}{/if}
+						<SourceFilter
+							sources={summary?.sources.filter(
+								(s) => sourceInForm(s, form) && (!activePartition || sourceOnPartition(s, activePartition))
+							) ?? []}
+							partition={activePartition}
+							partitions={summary?.partitions.filter((p) => p.form === form).map((p) => p.id) ?? []}
+							selected={settings.sources}
+							mode={settings.sourceMode}
+							onmodechange={(mode: SourceMode) => {
+								change({ sourceMode: mode === 'only' ? 'only' : undefined });
 							}}
-							><option value=""
-								>Automatic{result ? ` · ${rigLabel(result.data.partition, summary?.sources)}` : ''}</option
+							onchange={(ids: string[]) => {
+								change({ sources: ids.join(',') });
+							}}
+						/>
+						{#if result?.kind === 'taste'}<details>
+								<summary>Adjust derived taste centres</summary>
+								<p class="small muted">
+									Corrections shift centres in dB, not learned statements or confidence.
+								</p>
+								{#each result.data.model.tastes as target (target.id)}<fieldset class="corrections">
+										<legend>Taste {target.id + 1} corrections</legend>{#each BANDS as band (band.id)}<Slider
+												label={`Taste ${target.id + 1} ${bandLabels[band.id]}`}
+												min={-4}
+												max={4}
+												step={0.5}
+												unit="dB"
+												value={corrections.find((edit) => edit.tasteId === target.id)?.bands[band.id] ?? 0}
+												onchange={(value: number) => {
+													correct(target.id, band.id, value);
+												}}
+											/>{/each}
+									</fieldset>{/each}
+							</details>{/if}
+					</div>
+				</details>
+				<details class="workspace-tools">
+					<summary>Profile files &amp; local measurement</summary>
+					<div class="profile-actions">
+						<button type="button" onclick={exportProfile}>Export profile JSON</button><button
+							type="button"
+							onclick={() => {
+								importInput.click();
+							}}>Import profile JSON</button
+						><input
+							class="sr-only"
+							type="file"
+							accept="application/json,.json"
+							bind:this={importInput}
+							onchange={(event) => void importProfile(event)}
+							aria-label="Import profile file"
+						/>
+					</div>
+					<p class="small muted">
+						Ratings are saved in this browser, separately for IEMs and headphones, and included in shared
+						workspace URLs.
+					</p>
+					<h3>Use your own measurement</h3>
+					<p class="small muted">
+						Choose the measurement rig before adding a file. The file stays in this browser session: never
+						uploaded, saved in your profile or included in a URL.
+					</p>
+					<label class="field-label"
+						>Upload measurement rig<select bind:value={uploadRig}
+							><option value="">Choose the rig used to measure this file</option
 							>{#each summary?.partitions.filter((p) => p.form === form) ?? [] as partition (partition.id)}<option
 									value={partition.id}>{rigLabel(partition.id, summary?.sources)}</option
 								>{/each}</select
 						></label
-					>
-					{#if upload}<p class="small muted">
-							Rig is locked to your upload: {rigLabel(upload.rig, summary?.sources)}. Remove the local
-							reference to change rigs.
-						</p>{/if}
-					{#if route !== 'taste'}<SegmentedControl
-							label="Matching focus"
-							options={[
-								{ value: 'balanced', label: 'Balanced' },
-								{ value: 'bass', label: 'Bass' },
-								{ value: 'vocals', label: 'Vocals' },
-								{ value: 'treble', label: 'Treble' }
-							]}
-							value={settings.focus}
-							onchange={(value: Focus) => {
-								change({ focus: value === 'balanced' ? undefined : value });
-							}}
-						/>{/if}
-					<label class="field-label budget"
-						>Maximum reviewer-listed price (USD)<input
-							class="text-input"
-							type="number"
-							min="0"
-							step="1"
-							placeholder="No limit"
-							value={settings.max ?? ''}
-							onchange={(event) => {
-								change({
-									max:
-										event.currentTarget.value &&
-										Number.isFinite(event.currentTarget.valueAsNumber) &&
-										event.currentTarget.valueAsNumber >= 0
-											? String(event.currentTarget.valueAsNumber)
-											: undefined
-								});
-							}}
+					><label class="field-label"
+						>Local reference measurement<input
+							type="file"
+							accept=".txt,.csv,.frd"
+							disabled={!uploadRig || uploadLoading}
+							onchange={(event) => void addUpload(event)}
 						/></label
-					>
-					<p class="small muted">
-						Listed prices are historical reviewer entries, not current deals. A budget excludes products
-						without a USD price.
-					</p>
-					<Toggle
-						label="Include separate tunings"
-						checked={settings.tunings}
-						onchange={(checked) => {
-							change({ tunings: checked ? '1' : undefined });
-						}}
-					/>
-					{#if route !== 'taste'}<Toggle
-							label="Treble-sensitive matching"
-							checked={settings.alpha !== undefined}
-							onchange={(checked) => {
-								change({ alpha: checked ? '2' : undefined });
-							}}
-						/>
-						<p class="small muted">Adds a directional penalty for extra energy from 2–10 kHz.</p>
-						{#if settings.alpha !== undefined}<Slider
-								label="Extra-treble penalty α"
-								min={1}
-								max={4}
-								step={0.25}
-								value={settings.alpha}
-								onchange={(value) => {
-									change({ alpha: String(value) });
-								}}
-							/>{/if}{/if}
-					<SourceFilter
-						sources={summary?.sources.filter(
-							(s) => sourceInForm(s, form) && (!activePartition || sourceOnPartition(s, activePartition))
-						) ?? []}
-						partition={activePartition}
-						partitions={summary?.partitions.filter((p) => p.form === form).map((p) => p.id) ?? []}
-						selected={settings.sources}
-						mode={settings.sourceMode}
-						onmodechange={(mode: SourceMode) => {
-							change({ sourceMode: mode === 'only' ? 'only' : undefined });
-						}}
-						onchange={(ids: string[]) => {
-							change({ sources: ids.join(',') });
-						}}
-					/>
-					{#if result?.kind === 'taste'}<details>
-							<summary>Adjust derived taste centres</summary>
-							<p class="small muted">
-								Corrections shift centres in dB, not learned statements or confidence.
-							</p>
-							{#each result.data.model.tastes as target (target.id)}<fieldset class="corrections">
-									<legend>Taste {target.id + 1} corrections</legend>{#each BANDS as band (band.id)}<Slider
-											label={`Taste ${target.id + 1} ${bandLabels[band.id]}`}
-											min={-4}
-											max={4}
-											step={0.5}
-											unit="dB"
-											value={corrections.find((edit) => edit.tasteId === target.id)?.bands[band.id] ?? 0}
-											onchange={(value: number) => {
-												correct(target.id, band.id, value);
-											}}
-										/>{/each}
-								</fieldset>{/each}
-						</details>{/if}
-				</div>
-			</details>
-			<details class="workspace-tools">
-				<summary>Profile files &amp; local measurement</summary>
-				<div class="profile-actions">
-					<button type="button" onclick={exportProfile}>Export profile JSON</button><button
-						type="button"
-						onclick={() => {
-							importInput.click();
-						}}>Import profile JSON</button
-					><input
-						class="sr-only"
-						type="file"
-						accept="application/json,.json"
-						bind:this={importInput}
-						onchange={(event) => void importProfile(event)}
-						aria-label="Import profile file"
-					/>
-				</div>
-				<p class="small muted">
-					Ratings are saved in this browser, separately for IEMs and headphones, and included in shared
-					workspace URLs.
-				</p>
-				<h3>Use your own measurement</h3>
-				<p class="small muted">
-					Choose the measurement rig before adding a file. The file stays in this browser session: never
-					uploaded, saved in your profile or included in a URL.
-				</p>
-				<label class="field-label"
-					>Upload measurement rig<select bind:value={uploadRig}
-						><option value="">Choose the rig used to measure this file</option
-						>{#each summary?.partitions.filter((p) => p.form === form) ?? [] as partition (partition.id)}<option
-								value={partition.id}>{rigLabel(partition.id, summary?.sources)}</option
-							>{/each}</select
-					></label
-				><label class="field-label"
-					>Local reference measurement<input
-						type="file"
-						accept=".txt,.csv,.frd"
-						disabled={!uploadRig || uploadLoading}
-						onchange={(event) => void addUpload(event)}
-					/></label
-				>{#if uploadError}<Notice kind="caution">{uploadError}</Notice>{/if}{#if uploadLoading}<p
-						role="status"
-					>
-						Reading local measurement…
-					</p>{/if}
-			</details>
+					>{#if uploadError}<Notice kind="caution">{uploadError}</Notice>{/if}{#if uploadLoading}<p
+							role="status"
+						>
+							Reading local measurement…
+						</p>{/if}
+				</details>
+			</div>
 		</section>
 		{#if starting}<aside class="starting-examples" aria-label="Example references">
 				<div class="examples-heading">
@@ -799,9 +921,7 @@
 					/>{:else}<div class="empty-state">
 						<h2>
 							{#if queryError?.error === 'not-measured-on-rig'}
-								{queryError.partitions?.length
-									? 'This rig doesn’t cover every reference. Choose a rig below.'
-									: 'No rig covers every reference. Change a reference or variant.'}
+								{rigFailureMessage(queryError.partitions)}
 							{:else if queryError?.error === 'partition-required'}
 								Choose a rig below to draw your references.
 							{:else if queryError || networkError || catalogError}
@@ -817,7 +937,7 @@
 			</aside>
 			<section class="results" id="discover-results" aria-label="Measured matches" aria-busy={loading}>
 				<div class="section-heading">
-					<h2>
+					<h2 bind:this={resultsHeading} tabindex="-1">
 						{displayRoute === 'compare'
 							? 'Reference trade-offs'
 							: displayRoute === 'taste'
@@ -826,16 +946,49 @@
 					</h2>
 					<a class="chart-jump" href="#discover-chart">View chart</a>
 				</div>
+				{#if result}<RankingMethod
+						route={result.kind}
+						referenceName={upload?.name ?? nameFor(similarReferenceId)}
+						rig={rigLabel(result.data.partition, summary?.sources)}
+						likedCount={compareReferences.length}
+					>
+						<ReferenceDiagnostics
+							items={upload ? [] : resultItems}
+							{form}
+							version={summary?.version ?? ''}
+							{identity}
+							{products}
+							partition={result.data.partition}
+							sources={summary?.sources ?? []}
+							selected={settings.sources}
+							mode={result.data.sourceMode}
+							explain
+							unused={result.kind === 'taste' ? result.data.unusedItems : []}
+						/>
+						{#if upload}<p>
+								Your local measurement participates; saved ratings are inactive during this comparison.
+							</p>{/if}
+					</RankingMethod>{/if}
 				<p class="distance-note">
-					{result ? `${rigLabel(result.data.partition, summary?.sources)} · ` : ''}{displayRoute === 'taste'
+					{displayRoute === 'taste'
 						? 'Taste ranking score · lower is closer; includes dislike penalties, not a dB distance. Each row also shows ordinary response distance in dB.'
-						: 'Response distance in dB · lower is closer, not better.'}
+						: 'Distance in dB · lower is closer, not better'}{result
+						? result.data.sourceMode === 'only'
+							? ' · Selected reviewers only'
+							: ' · All eligible reviewers'
+						: ''}
 				</p>
-				{#if loading}<p role="status" class="updating">
-						{result ? 'Updating matches… previous results shown below.' : 'Finding measured matches…'}
-					</p>
-					{#if !result}<Skeleton rows={4} />{/if}{/if}
-				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
+				<div class="update-slot">
+					<span role="status">{rankSummary}</span>{#if loading}<p role="status" class="updating">
+							{result ? 'Updating matches…' : 'Finding measured matches…'}
+						</p>{/if}
+				</div>
+				{#if loading && !result}<Skeleton rows={4} />{/if}
+				{#if queryError}<Notice
+						kind="caution"
+						title={queryError.partitions === undefined
+							? 'Reference unavailable on this rig'
+							: 'References do not overlap on this rig'}
 						><ReferenceDiagnostics
 							{items}
 							{form}
@@ -846,7 +999,18 @@
 							sources={summary?.sources ?? []}
 							selected={settings.sources}
 							mode={settings.sourceMode}
-						/>{#if queryError.partitions?.length}<div class="compatible-rigs">
+						/>{#if queryError.error === 'not-measured-on-rig' && queryError.partitions === undefined}<p>
+								This reference isn’t measured on the selected rig. Automatic rig selection can look for a
+								compatible rig without substituting a measurement.
+							</p>
+							<button
+								type="button"
+								class="button quiet"
+								onclick={() => {
+									change({ rig: undefined, sources: undefined, chart: undefined });
+								}}>Use automatic rig</button
+							>
+						{:else if queryError.partitions?.length}<div class="compatible-rigs">
 								<span>All references, including selected variants, are measured on:</span>
 								{#each queryError.partitions as partition (partition)}<button
 										type="button"
@@ -858,7 +1022,16 @@
 								Choose a compatible rig or remove a reference; no variant or rig is substituted.
 							</p>{/if}</Notice
 					>{/if}
-				{#if networkError}<Notice kind="caution">{networkError}</Notice>{/if}
+				{#if networkError}<Notice kind="caution"
+						><span>{networkError}</span>
+						<button
+							type="button"
+							class="button quiet"
+							onclick={() => {
+								queryAttempt++;
+							}}>Retry matching</button
+						></Notice
+					>{/if}
 				{#if result?.kind === 'compare'}<div class="tradeoff-controls">
 						<label class="field-label"
 							>Trade-off sort<select
@@ -883,11 +1056,7 @@
 						level-aligns to its own reference.
 					</p>{/if}
 				{#if result?.kind === 'taste'}<TasteSummary taste={result.data} {form} {nameFor} />{/if}
-				{#if result}<p class="distance-note">
-						{result.data.sourceMode === 'only'
-							? 'Scored using selected reviewers’ measurements only.'
-							: 'Reviewer coverage filter · scored using all eligible sources.'}
-					</p>
+				{#if result}
 					{#if settings.sources.length && result.data.caveats.length}<aside
 							class="source-caveats"
 							aria-label="Reviewer selection caveats"
@@ -899,9 +1068,15 @@
 									candidate={match.candidate}
 									existing={items.find((item) => item.productId === match.candidate.product.id)}
 									rank={index + 1}
+									rankChange={rankMarkers.get(match.candidate.product.id)}
 									distance={match.distance}
 									bands={match.bands}
 									{match}
+									stability={match.stability}
+									relatedToReference={match.relatedToReference}
+									{referenceReviewers}
+									{referenceProducts}
+									{nameFor}
 									referenceProductId={similarReferenceId}
 									selected={overlays.includes(match.candidate.id)}
 									limitReached={overlays.length >= 5}
@@ -914,10 +1089,13 @@
 									candidate={row.candidate}
 									existing={items.find((item) => item.productId === row.candidate.product.id)}
 									rank={index + 1}
+									rankChange={rankMarkers.get(row.candidate.product.id)}
 									distance={row.fit.plainDistanceDb}
 									bands={row.fit.bands}
 									fit={row.fit}
+									relatedToReference={row.relatedToReference}
 									nearestLiked={nearestLikedEvidence(result.data, row)}
+									{referenceProducts}
 									{nameFor}
 									referenceProductId={resultItems.find(
 										(i) => (i.measurementId ?? i.productId) === row.nearestLiked?.id
@@ -934,12 +1112,18 @@
 									candidate={row.candidate}
 									existing={items.find((item) => item.productId === row.candidate.product.id)}
 									rank={index + 1}
+									rankChange={rankMarkers.get(row.candidate.product.id)}
 									distance={(resultSort === 'minimax' ? row.tradeoff.minimax : row.tradeoff.mean) ?? NaN}
 									bands={evidence[0]?.bands ?? []}
 									referenceEvidence={evidence}
 									{compareReferences}
 									tradeoff={row.tradeoff}
+									stability={row.stability}
+									relatedToReference={row.relatedToReference}
+									{referenceReviewers}
+									{nameFor}
 									{referenceNames}
+									{referenceProducts}
 									referenceProductId={resultItems.find(
 										(i) => i.soundRelated && ['like', 'love'].includes(i.rating)
 									)?.productId ?? ''}
@@ -978,10 +1162,11 @@
 	message={undoMessage}
 	onundo={() => {
 		if (!store) return;
+		const from = currentModel();
 		store.undo();
 		profile = store.value;
 		storageError = store.error;
-		navigate(withItems(page.url.searchParams, profile.profiles[form]));
+		navigate(withItems(page.url.searchParams, profile.profiles[form]), true, from);
 		undoMessage = '';
 	}}
 	ondismiss={() => {
@@ -991,6 +1176,32 @@
 />
 
 <style>
+	.candidate-toggles {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px 20px;
+	}
+	.modified-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 36px;
+		font-size: var(--text-sm);
+	}
+	.modified-toggle input {
+		min-width: 24px;
+		min-height: 24px;
+		accent-color: var(--accent);
+	}
+	.workspace-options {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+	}
+	.workspace-options details[open] {
+		grid-column: 1 / -1;
+	}
 	.discover-grid {
 		display: grid;
 		grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
@@ -1012,11 +1223,11 @@
 	.results {
 		grid-column: 1;
 		grid-row: 2;
-		margin-top: 32px;
+		margin-top: 20px;
 		min-width: 0;
 	}
 	.search {
-		margin: 0 0 24px;
+		margin: 0 0 16px;
 	}
 	.workspace-heading {
 		display: flex;
@@ -1061,12 +1272,12 @@
 	.refine,
 	.workspace-tools {
 		border-block: 1px solid var(--line);
-		margin-top: 16px;
+		margin-top: 8px;
 		font-size: var(--text-sm);
 	}
 	summary {
-		padding: 14px 0;
-		min-height: 44px;
+		padding: 8px 0;
+		min-height: 36px;
 		cursor: pointer;
 	}
 	summary span {
@@ -1112,7 +1323,7 @@
 	.analysis-caveats {
 		font-size: var(--text-xs);
 		color: var(--muted);
-		margin: 12px 0 20px;
+		margin: 8px 0;
 	}
 	.analysis-caveats p {
 		margin-top: 12px;
@@ -1128,12 +1339,23 @@
 		align-items: center;
 		font-size: var(--text-xs);
 	}
+	.update-slot {
+		position: relative;
+		min-height: 32px;
+		font-size: var(--text-xs);
+		color: var(--muted);
+		display: flex;
+		align-items: center;
+	}
 	.updating {
-		padding: 12px;
-		border-left: 3px solid var(--accent);
-		background: var(--accent-soft);
-		font-size: var(--text-sm);
-		margin-block: 16px;
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		background: var(--paper);
+		color: var(--accent);
+		font-size: var(--text-xs);
+		margin: 0;
 	}
 	.tradeoff-controls {
 		display: grid;
@@ -1161,6 +1383,12 @@
 		}
 		.chart-jump {
 			display: inline-flex;
+		}
+	}
+	@media (max-width: 640px) {
+		.workspace-options {
+			grid-template-columns: 1fr;
+			gap: 0;
 		}
 	}
 </style>

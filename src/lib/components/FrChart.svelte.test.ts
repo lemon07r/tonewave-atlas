@@ -68,6 +68,44 @@ test('subtracts the selected baseline and toggles series without removing table 
 	await expect.element(screen.getByRole('columnheader', { name: 'Curve A' })).toBeVisible();
 });
 
+test('keeps the canvas through legend, data, regions, mode and theme updates; rebuilds for a new series identity', async () => {
+	const screen = await render(FrChart, { series });
+	const canvas = screen.container.querySelector('canvas');
+	if (!canvas) throw new Error('Plot canvas missing');
+	const original = canvas.toDataURL();
+	await screen.getByRole('button', { name: /^1\s*Curve A$/ }).click();
+	expect(screen.container.querySelector('canvas')).toBe(canvas);
+	expect(canvas.toDataURL()).not.toBe(original);
+	const hidden = canvas.toDataURL();
+	await screen.rerender({
+		series: series.map((curve) =>
+			curve.id === 'b' ? { ...curve, values: new Float64Array(GRID_SIZE).fill(4) } : curve
+		)
+	});
+	expect(screen.container.querySelector('canvas')).toBe(canvas);
+	expect(canvas.toDataURL()).not.toBe(hidden);
+	await screen.getByText('View chart data', { exact: true }).click();
+	expect(screen.container.querySelector('tbody tr')?.textContent).toBe('20 Hz7.04.02.0');
+	await screen.getByRole('switch', { name: 'Regions', exact: true }).click();
+	expect(screen.container.querySelector('canvas')).toBe(canvas);
+	await screen.getByRole('radio', { name: 'Difference', exact: true }).click();
+	expect(screen.container.querySelector('canvas')).toBe(canvas);
+	const light = canvas.toDataURL();
+	const previousTheme = document.documentElement.dataset.theme;
+	try {
+		document.documentElement.dataset.theme = 'dark';
+		await expect.poll(() => canvas.toDataURL()).not.toBe(light);
+		expect(screen.container.querySelector('canvas')).toBe(canvas);
+	} finally {
+		if (previousTheme) document.documentElement.dataset.theme = previousTheme;
+		else delete document.documentElement.dataset.theme;
+	}
+	await screen.rerender({
+		series: [{ id: 'new', label: 'New identity', values: new Float64Array(GRID_SIZE) }]
+	});
+	expect(screen.container.querySelector('canvas')).not.toBe(canvas);
+});
+
 test('supports keyboard frequency inspection and focusable region descriptions', async () => {
 	const screen = await render(FrChart, { series, regions: true });
 	const scrubber = screen.getByRole('slider', { name: 'Inspect frequency' });

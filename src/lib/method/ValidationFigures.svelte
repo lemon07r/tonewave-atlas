@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import { resolve } from '$app/paths';
 	import type { AtlasSummary } from '#core/atlas/types.ts';
 	import type { Form } from '#core/dataset/types.ts';
@@ -19,8 +20,7 @@
 					if (!abort.signal.aborted) figures = data;
 				},
 				(cause: unknown) => {
-					if (!abort.signal.aborted)
-						error = cause instanceof Error ? cause.message : 'Validation metadata could not be loaded.';
+					if (!abort.signal.aborted) error = analysisError(cause, 'Validation metadata could not be loaded.');
 				}
 			)
 			.finally(() => {

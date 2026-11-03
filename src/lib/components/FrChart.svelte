@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import uPlot from 'uplot';
 	import { GRID } from '#core/grid.ts';
@@ -47,6 +47,10 @@
 	let host: HTMLDivElement;
 	let plot: uPlot | undefined;
 	let themeStyle = $state<CSSStyleDeclaration | null>(null);
+	let mounted = $state(false);
+	let compact = $state(false);
+	let plottedCurves: typeof curves | undefined;
+	let plottedFrequencies: Float64Array | undefined;
 	let hidden = $state<string[]>([]);
 	let inspectedHz = $state(1000);
 	let activeRegion = $state<number | null>(null);
@@ -91,6 +95,24 @@
 	let octaveIndices = $derived(
 		Array.from({ length: Math.min(10, size) }, (_, i) => Math.floor((i * size) / Math.min(10, size)))
 	);
+	let structure = $derived(valid ? JSON.stringify([series.map((item) => item.id), compact]) : '');
+	let drawing = $derived.by(() => {
+		const style = themeStyle;
+		if (!style) return undefined;
+		return {
+			current: curves,
+			invisible: hidden,
+			showRegions: regions,
+			ink: style.getPropertyValue('--muted').trim(),
+			line: style.getPropertyValue('--line').trim(),
+			colours: curves.map((curve) => style.getPropertyValue(`--curve-${(curve.styleIndex % 7) + 1}`).trim()),
+			range: chartRange(
+				curves
+					.filter((curve) => !hidden.includes(curve.id))
+					.flatMap((curve) => [curve.data, ...(curve.low && curve.high ? [curve.low, curve.high] : [])])
+			)
+		};
+	});
 	const compactRegionLabels = ['Sub', 'Bass', 'Low', 'Vocal', 'Upper', 'Treb.', 'Air'];
 	function colour(index: number) {
 		return `var(--curve-${(index % 7) + 1})`;
@@ -109,6 +131,13 @@
 	}
 	onMount(() => {
 		themeStyle = getComputedStyle(host);
+		mounted = true;
+		const media = matchMedia('(max-width: 640px)');
+		compact = media.matches;
+		const resizeMode = () => {
+			compact = media.matches;
+		};
+		media.addEventListener('change', resizeMode);
 		void document.fonts.ready.then(() => {
 			plot?.redraw(true, true);
 		});
@@ -118,153 +147,183 @@
 		observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 		return () => {
 			observer.disconnect();
+			media.removeEventListener('change', resizeMode);
 		};
 	});
 	$effect(() => {
-		if (!themeStyle || !valid) return;
-		const current = curves;
-		const invisible = hidden;
-		const showRegions = regions;
-		const style = themeStyle;
-		const ink = style.getPropertyValue('--muted').trim();
-		const line = style.getPropertyValue('--line').trim();
-		const colours = current.map((curve) =>
-			style.getPropertyValue(`--curve-${(curve.styleIndex % 7) + 1}`).trim()
-		);
-		const range = chartRange(
-			current
-				.filter((curve) => !invisible.includes(curve.id))
-				.flatMap((curve) => [curve.data, ...(curve.low && curve.high ? [curve.low, curve.high] : [])])
-		);
-		function decorations(chart: uPlot) {
-			const ctx = chart.ctx;
-			ctx.save();
-			ctx.beginPath();
-			ctx.rect(chart.bbox.left, chart.bbox.top, chart.bbox.width, chart.bbox.height);
-			ctx.clip();
-			if (showRegions)
-				REGIONS.forEach((region, index) => {
-					if (index % 2 === 0) {
-						const x = chart.valToPos(region.lo, 'x', true);
-						const end = chart.valToPos(region.hi, 'x', true);
-						ctx.fillStyle = line;
-						ctx.globalAlpha = 0.16;
-						ctx.fillRect(x, chart.bbox.top, end - x, chart.bbox.height);
+		const identity = structure;
+		if (!mounted || !identity) return;
+		// Canvas lifetime depends only on series identity/count, validity and size mode.
+		return untrack(() => {
+			const initial = drawing;
+			if (!initial) return;
+			const { current, invisible, ink } = initial;
+			function decorations(chart: uPlot) {
+				const state = untrack(() => drawing);
+				if (!state) return;
+				const { current, invisible, showRegions, line, colours, ink } = state;
+				const ctx = chart.ctx;
+				ctx.save();
+				ctx.beginPath();
+				ctx.rect(chart.bbox.left, chart.bbox.top, chart.bbox.width, chart.bbox.height);
+				ctx.clip();
+				if (showRegions)
+					REGIONS.forEach((region, index) => {
+						if (index % 2 === 0) {
+							const x = chart.valToPos(region.lo, 'x', true);
+							const end = chart.valToPos(region.hi, 'x', true);
+							ctx.fillStyle = line;
+							ctx.globalAlpha = 0.16;
+							ctx.fillRect(x, chart.bbox.top, end - x, chart.bbox.height);
+						}
+					});
+				ctx.globalAlpha = 1;
+				current.forEach((curve, index) => {
+					if (!curve.low || !curve.high || invisible.includes(curve.id)) return;
+					const low = curve.low,
+						high = curve.high;
+					ctx.fillStyle = colours[index] ?? ink;
+					ctx.globalAlpha = 0.13;
+					let start = 0;
+					while (start < size) {
+						while (start < size && (low[start] == null || high[start] == null)) start++;
+						let end = start;
+						while (end < size && low[end] != null && high[end] != null) end++;
+						if (end - start > 1) {
+							ctx.beginPath();
+							for (let i = start; i < end; i++) {
+								const hz = frequencies[i],
+									value = high[i];
+								if (hz !== undefined && value != null) {
+									const x = chart.valToPos(hz, 'x', true),
+										y = chart.valToPos(value, 'y', true);
+									if (i === start) ctx.moveTo(x, y);
+									else ctx.lineTo(x, y);
+								}
+							}
+							for (let i = end - 1; i >= start; i--) {
+								const hz = frequencies[i],
+									value = low[i];
+								if (hz !== undefined && value != null)
+									ctx.lineTo(chart.valToPos(hz, 'x', true), chart.valToPos(value, 'y', true));
+							}
+							ctx.closePath();
+							ctx.fill();
+						}
+						start = end + 1;
 					}
 				});
-			ctx.globalAlpha = 1;
-			current.forEach((curve, index) => {
-				if (!curve.low || !curve.high || invisible.includes(curve.id)) return;
-				const low = curve.low,
-					high = curve.high;
-				ctx.fillStyle = colours[index] ?? ink;
-				ctx.globalAlpha = 0.13;
-				let start = 0;
-				while (start < size) {
-					while (start < size && (low[start] == null || high[start] == null)) start++;
-					let end = start;
-					while (end < size && low[end] != null && high[end] != null) end++;
-					if (end - start > 1) {
-						ctx.beginPath();
-						for (let i = start; i < end; i++) {
-							const hz = frequencies[i],
-								value = high[i];
-							if (hz !== undefined && value != null) {
-								const x = chart.valToPos(hz, 'x', true),
-									y = chart.valToPos(value, 'y', true);
-								if (i === start) ctx.moveTo(x, y);
-								else ctx.lineTo(x, y);
-							}
-						}
-						for (let i = end - 1; i >= start; i--) {
-							const hz = frequencies[i],
-								value = low[i];
-							if (hz !== undefined && value != null)
-								ctx.lineTo(chart.valToPos(hz, 'x', true), chart.valToPos(value, 'y', true));
-						}
-						ctx.closePath();
-						ctx.fill();
-					}
-					start = end + 1;
-				}
-			});
-			ctx.restore();
-		}
-		const chart = new uPlot(
-			{
-				width: Math.max(240, host.clientWidth),
-				height: host.clientHeight,
-				padding: [16, 18, 4, 0],
-				legend: { show: false },
-				select: { show: false, left: 0, top: 0, width: 0, height: 0 },
-				cursor: { drag: { x: false, y: false }, points: { size: 6, width: 1 }, focus: { prox: -1 } },
-				focus: { alpha: 0.18 },
-				scales: {
-					// uPlot's ambient const enum is type-only under verbatimModuleSyntax; 3 = logarithmic.
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment -- uPlot's documented numeric API.
-					x: { time: false, distr: 3, log: 10, range: () => [20, 20000] },
-					y: { range: () => range }
-				},
-				axes: [
-					{
-						stroke: ink,
-						grid: { show: true, stroke: line, width: 0.5 },
-						ticks: { stroke: line, width: 1, size: 5 },
-						splits: () => FREQUENCY_TICKS,
-						// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
-						filter: (_, splits) => splits,
-						values: (_, splits) => splits.map(frequencyLabel),
-						font: '11px "IBM Plex Mono"',
-						gap: 8,
-						size: 36,
-						space: 30
+				ctx.restore();
+			}
+			const chart = new uPlot(
+				{
+					width: Math.max(240, host.clientWidth),
+					height: host.clientHeight,
+					padding: [16, 18, 4, 0],
+					legend: { show: false },
+					select: { show: false, left: 0, top: 0, width: 0, height: 0 },
+					cursor: { drag: { x: false, y: false }, points: { size: 6, width: 1 }, focus: { prox: -1 } },
+					focus: { alpha: 0.18 },
+					scales: {
+						// uPlot's ambient const enum is type-only under verbatimModuleSyntax; 3 = logarithmic.
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment -- uPlot's documented numeric API.
+						x: { time: false, distr: 3, log: 10, range: () => [20, 20000] },
+						y: { range: () => untrack(() => drawing.range) }
 					},
-					{
-						stroke: ink,
-						grid: { stroke: line, width: 1, dash: [2, 4] },
-						ticks: { show: false },
-						values: (_, splits) => splits.map((value) => `${value}`),
-						font: '11px "IBM Plex Mono"',
-						size: 42,
-						gap: 10,
-						space: 44
-					}
-				],
-				series: [
-					{},
-					...current.map((curve, index) => ({
-						label: curve.label,
-						stroke: colours[index] ?? ink,
-						width: curve.reference ? 2 : 2.4,
-						dash: dash(curve.styleIndex),
-						show: !invisible.includes(curve.id),
-						spanGaps: false,
-						points: { show: false }
-					}))
-				],
-				hooks: {
-					drawAxes: [decorations],
-					setCursor: [
-						(chart) => {
-							if (chart.cursor.idx != null && (chart.cursor.left ?? -1) >= 0)
-								inspectedHz = frequencies[chart.cursor.idx] ?? inspectedHz;
+					axes: [
+						{
+							stroke: () => untrack(() => drawing.ink),
+							grid: { show: true, stroke: () => untrack(() => drawing.line), width: 0.5 },
+							ticks: { stroke: () => untrack(() => drawing.line), width: 1, size: 5 },
+							splits: () => FREQUENCY_TICKS,
+							// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
+							filter: (_, splits) => splits,
+							values: (_, splits) =>
+								splits.map((hz) =>
+									host.clientWidth < 400 && [50, 200, 2000, 10000].includes(hz) ? '' : frequencyLabel(hz)
+								),
+							font: `${getComputedStyle(host).fontSize} "IBM Plex Mono"`,
+							gap: 8,
+							size: 36,
+							space: 30
+						},
+						{
+							stroke: () => untrack(() => drawing.ink),
+							grid: { stroke: () => untrack(() => drawing.line), width: 1, dash: [2, 4] },
+							ticks: { show: false },
+							values: (_, splits) => splits.map((value) => `${value}`),
+							font: `${getComputedStyle(host).fontSize} "IBM Plex Mono"`,
+							size: 42,
+							gap: 10,
+							space: 44
 						}
-					]
-				}
-			},
-			[Array.from(frequencies), ...current.map((curve) => curve.data)],
-			host
-		);
-		plot = chart;
-		const resize = new ResizeObserver(() => {
-			if (host.clientWidth > 0) chart.setSize({ width: host.clientWidth, height: host.clientHeight });
+					],
+					series: [
+						{},
+						...current.map((curve, index) => ({
+							label: curve.label,
+							stroke: () => untrack(() => drawing.colours[index] ?? ink),
+							width: curve.reference ? 2 : 2.4,
+							dash: dash(curve.styleIndex),
+							show: !invisible.includes(curve.id),
+							spanGaps: false,
+							points: { show: false }
+						}))
+					],
+					hooks: {
+						drawAxes: [decorations],
+						setCursor: [
+							(chart) => {
+								if (chart.cursor.idx != null && (chart.cursor.left ?? -1) >= 0)
+									inspectedHz = frequencies[chart.cursor.idx] ?? inspectedHz;
+							}
+						]
+					}
+				},
+				[Array.from(frequencies), ...current.map((curve) => curve.data)],
+				host
+			);
+			plot = chart;
+			plottedCurves = current;
+			plottedFrequencies = frequencies;
+			const resize = new ResizeObserver(() => {
+				if (host.clientWidth > 0) chart.setSize({ width: host.clientWidth, height: host.clientHeight });
+			});
+			resize.observe(host);
+			return () => {
+				resize.disconnect();
+				chart.destroy();
+				if (plot === chart) plot = undefined;
+			};
 		});
-		resize.observe(host);
-		return () => {
-			resize.disconnect();
-			chart.destroy();
-			if (plot === chart) plot = undefined;
-		};
+	});
+	$effect(() => {
+		const state = drawing;
+		const grid = frequencies;
+		const identity = structure;
+		if (!mounted || !identity || !state) return;
+		untrack(() => {
+			const chart = plot;
+			if (!chart) return;
+			chart.batch(() => {
+				if (plottedCurves !== state.current || plottedFrequencies !== grid) {
+					chart.setData([Array.from(grid), ...state.current.map((curve) => curve.data)]);
+					plottedCurves = state.current;
+					plottedFrequencies = grid;
+				}
+				state.current.forEach((curve, index) => {
+					const series = chart.series[index + 1];
+					if (!series) return;
+					series.label = curve.label;
+					series.width = curve.reference ? 2 : 2.4;
+					series.dash = dash(curve.styleIndex);
+					const show = !state.invisible.includes(curve.id);
+					if (series.show !== show) chart.setSeries(index + 1, { show });
+				});
+				chart.setScale('y', { min: state.range[0], max: state.range[1] });
+				chart.redraw(true, true);
+			});
+		});
 	});
 	async function exportPng() {
 		if (!plot) return;
@@ -556,7 +615,7 @@
 		margin-bottom: 16px;
 	}
 	.chart-heading .eyebrow {
-		font-size: 10px;
+		font-size: var(--text-xs);
 		margin-bottom: 6px;
 	}
 	.chart-heading h2 {
@@ -576,7 +635,7 @@
 	.axis-label,
 	.x-label {
 		color: var(--muted);
-		font-size: 11px;
+		font-size: var(--text-xs);
 	}
 	.axis-label {
 		margin: 0 0 4px 4px;
@@ -589,6 +648,7 @@
 		position: relative;
 	}
 	.plot {
+		font-size: var(--text-xs);
 		height: 280px;
 		width: 100%;
 	}
@@ -619,8 +679,9 @@
 		border-color: var(--strong-line);
 	}
 	.regions {
-		display: flex;
-		padding: 0 18px 0 42px;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+		gap: 4px;
 		margin-top: 12px;
 	}
 	.regions button {
@@ -630,7 +691,7 @@
 		border: 0;
 		background: none;
 		color: var(--muted);
-		font-size: 9px;
+		font-size: var(--text-xs);
 		letter-spacing: -0.02em;
 	}
 	.regions button.active {
@@ -673,6 +734,9 @@
 		min-height: 36px;
 	}
 	.legend-row button {
+		min-width: 0;
+		flex: 1;
+		overflow-wrap: anywhere;
 		display: flex;
 		gap: 8px;
 		align-items: center;
@@ -685,11 +749,12 @@
 		min-height: 36px;
 	}
 	.legend-number {
-		font: 10px var(--mono);
+		font: var(--text-xs) var(--mono);
 		color: var(--muted);
 	}
 	.legend-value {
-		font: 11px var(--mono);
+		font: var(--text-xs) var(--mono);
+		flex-shrink: 0;
 		white-space: nowrap;
 		margin-left: auto;
 	}
@@ -708,12 +773,15 @@
 	}
 	figcaption {
 		color: var(--muted);
-		font-size: 10px;
+		font-size: var(--text-xs);
 		line-height: 1.6;
 		margin-top: 16px;
 	}
 	figcaption a {
 		color: var(--muted);
+		display: inline-flex;
+		align-items: center;
+		min-height: 28px;
 	}
 	@media (min-width: 1200px) {
 		.plot {
@@ -738,7 +806,7 @@
 		}
 		.regions button {
 			min-height: 44px;
-			font-size: 9px;
+			font-size: var(--text-xs);
 			padding: 6px 2px;
 		}
 		.region-label-wide {
@@ -748,10 +816,10 @@
 			display: inline;
 		}
 		.legend-value {
-			font-size: 10px;
+			font-size: var(--text-xs);
 		}
 		.legend-row button {
-			font-size: 11px;
+			font-size: var(--text-xs);
 			gap: 6px;
 		}
 	}

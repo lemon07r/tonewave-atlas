@@ -1,7 +1,21 @@
 import { expect, test } from 'vitest';
 import type { BandDistance } from '#core/analysis/distance.ts';
 import type { CandidateInfo } from '#core/atlas/types.ts';
-import { describeBands, distanceExtremes, priceLines, reviewerSummary } from './describe.ts';
+import {
+	describeBands,
+	distanceExtremes,
+	priceLines,
+	reviewerSummary,
+	rigFailureMessage
+} from './describe.ts';
+
+test('missing rig alternatives do not claim that every possible rig was checked', () => {
+	expect(rigFailureMessage(undefined)).toBe(
+		'This reference isn’t measured on the selected rig. Try automatic rig.'
+	);
+	expect(rigFailureMessage([])).toBe('No rig covers every reference. Change a reference or variant.');
+	expect(rigFailureMessage(['iem-711'])).toBe('This rig doesn’t cover every reference. Choose a rig below.');
+});
 
 function band(meanDb: number | null, name: BandDistance['band'] = 'bass'): BandDistance {
 	return { band: name, meanDb, rmsDb: null, contribution: 0, coverage: 1 };
@@ -58,6 +72,19 @@ test('never converts raw prices or prints an unattributed amount', () => {
 	listing.usd = 129;
 	listing.sourceId = 'missing';
 	expect(priceLines(candidate)).toEqual([]);
+});
+
+test('distinguishes consensus contributors from reviewers covered by the reference distance range', () => {
+	expect(reviewerSummary([0.4, 0.9], 5, 3)).toBe(
+		'Measured by 5 reviewers · 0.4–0.9 dB to the reference across 3 of them'
+	);
+	expect(reviewerSummary([0.4, 0.9], 3, 3)).toBe(
+		'Measured by 3 reviewers · 0.4–0.9 dB to the reference across reviewers'
+	);
+	expect(reviewerSummary(null, 5, 1)).toBe('Measured by 5 reviewers');
+	expect(reviewerSummary([0.66, 0.74], 5, 2)).toBe(
+		'Measured by 5 reviewers · 0.7 dB to the reference across 2 of them'
+	);
 });
 
 test('labels closest and furthest references without making quality judgements', () => {

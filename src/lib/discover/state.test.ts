@@ -12,6 +12,25 @@ import { profileStore } from '#lib/profile/store.ts';
 import { latestQuery } from './query.ts';
 
 const like: WorkspaceItem = { productId: 'a', rating: 'like', strength: 0.6, soundRelated: true };
+test('modified products and minimum reviewers round-trip with defaults omitted', () => {
+	expect(parseDiscovery(new URLSearchParams())).toMatchObject({ modified: false, minReviewers: 1 });
+	for (const count of [1, 2, 3, 5]) {
+		const params = withDiscoveryChanges(new URLSearchParams('unknown=keep'), {
+			modified: '1',
+			minReviewers: String(count)
+		});
+		expect(parseDiscovery(params)).toMatchObject({ modified: true, minReviewers: count });
+		expect(params.has('minReviewers')).toBe(count !== 1);
+		expect(params.get('unknown')).toBe('keep');
+	}
+	for (const count of ['0', '-1', '4', 'NaN', '2.5'])
+		expect(parseDiscovery(new URLSearchParams({ minReviewers: count })).minReviewers).toBe(1);
+	const reset = withDiscoveryChanges(new URLSearchParams('modified=1&minReviewers=3'), {
+		modified: undefined,
+		minReviewers: '1'
+	});
+	expect(reset.toString()).toBe('');
+});
 test('migrates an explicit old reference and all advanced share settings without guessing a new reference', () => {
 	const state = parseDiscovery(
 		new URLSearchParams(

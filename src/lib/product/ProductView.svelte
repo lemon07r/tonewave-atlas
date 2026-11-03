@@ -5,6 +5,7 @@
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
 	import Equalizer from './Equalizer.svelte';
 	import { analysis } from '#lib/atlas.ts';
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import { channelSpread, dateLabel, mainPartition, priceListings } from './data.ts';
 	import { rigLabel } from '#lib/rigs.ts';
 	import type { AtlasSummary, ProductDetail, ProductListItem } from '#core/atlas/types.ts';
@@ -84,7 +85,7 @@
 			}
 		})()
 			.catch((e: unknown) => {
-				if (!abort.signal.aborted) error = String(e);
+				if (!abort.signal.aborted) error = analysisError(e);
 			})
 			.finally(() => {
 				if (!abort.signal.aborted) busy = false;

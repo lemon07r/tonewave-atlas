@@ -38,3 +38,20 @@ test('Not rated and Dislike have different symbols as well as text labels', asyn
 	expect(unratedSymbol).not.toBe(dislikeSymbol);
 	await expect.element(screen.getByRole('group', { name: 'Your impression' })).toBeVisible();
 });
+
+test('compact segments fit one row at 350px with legible labels and native radio targets', async () => {
+	const screen = await render(Rating, { compact: true, value: 'unrated', label: 'Reference rating' });
+	screen.container.style.width = '350px';
+	const radios = [...screen.container.querySelectorAll('input')];
+	const boxes = radios.map((radio) => radio.getBoundingClientRect());
+	expect(boxes).toHaveLength(5);
+	expect(new Set(boxes.map((box) => box.top)).size).toBe(1);
+	for (const box of boxes) {
+		expect(box.width).toBeGreaterThanOrEqual(24);
+		expect(box.height).toBeGreaterThanOrEqual(24);
+	}
+	expect(screen.container.scrollWidth).toBe(350);
+	await screen.getByRole('radio', { name: 'Love', exact: true }).click();
+	await userEvent.keyboard('{ArrowRight}');
+	await expect.element(screen.getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
+});

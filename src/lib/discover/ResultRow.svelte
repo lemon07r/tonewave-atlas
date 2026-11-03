@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { CandidateInfo, SimilarMatch } from '#core/atlas/types.ts';
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
+	import type { CandidateInfo, RankStability, SimilarMatch } from '#core/atlas/types.ts';
 	import type { BandDistance } from '#core/analysis/distance.ts';
 	import type { TasteFit } from '#core/analysis/taste.ts';
 	import type { MultiReferenceResult } from '#core/analysis/multi-reference.ts';
+	import { relatedToReference as isRelatedToReference } from '#core/atlas/ranking.ts';
 	import { dbLabel } from '#lib/chart.ts';
 	import { bandLabels, describeBands, distanceExtremes, priceLines, reviewerSummary } from './describe.ts';
-	import { reasonLabels } from '#lib/profile/profile.ts';
+	import { reasonLabels, strength } from '#lib/profile/profile.ts';
+	import type { RankChange } from './rank-changes.ts';
+	import RankMarker from './RankMarker.svelte';
 	import type { WorkspaceItem } from '#lib/profile/profile.ts';
 	import PreferenceFields from '#lib/profile/PreferenceFields.svelte';
 	import { detail, curveSources, type CurveSource } from './display.ts';
@@ -16,6 +20,11 @@
 		candidate,
 		existing,
 		rank,
+		rankChange,
+		stability,
+		relatedToReference = false,
+		referenceReviewers,
+		referenceProducts = [],
 		distance,
 		bands,
 		match,
@@ -35,6 +44,11 @@
 		candidate: CandidateInfo;
 		existing?: WorkspaceItem | undefined;
 		rank: number;
+		rankChange?: RankChange | undefined;
+		stability?: RankStability | undefined;
+		relatedToReference?: boolean | undefined;
+		referenceReviewers?: { name: string; count: number; explicit: boolean }[];
+		referenceProducts?: CandidateInfo['product'][];
 		distance: number;
 		bands: BandDistance[];
 		match?: SimilarMatch;
@@ -51,6 +65,14 @@
 		compareReferences?: { productId: string; measurementId?: string }[];
 		nameFor?: (id: string) => string;
 	} = $props();
+	const id = $props.id();
+	let productName = $derived(`${candidate.product.brand} ${candidate.product.model}`);
+	let relatedReferenceName = $derived.by(() => {
+		if (candidate.product.baseProductId) return nameFor(candidate.product.baseProductId);
+		const reference = referenceProducts.find((product) => isRelatedToReference(candidate.product, [product]));
+		return reference ? `${reference.brand} ${reference.model}` : 'a reference';
+	});
+	let ratingOpen = $state(false);
 	let open = $state<boolean>(false);
 	// Worker responses replace candidate objects even for chart-only updates. Only a new
 	// candidate identity or saved preference should reset an in-progress rating.
@@ -73,7 +95,7 @@
 				}
 			},
 			(cause: unknown) => {
-				if (current) error = cause instanceof Error ? cause.message : 'Could not load measurement sources.';
+				if (current) error = analysisError(cause, 'Could not load measurement sources.');
 			}
 		);
 		return () => {
@@ -89,11 +111,22 @@
 	let matched = $derived(
 		bands.filter((b) => b.meanDb !== null && Math.abs(b.meanDb) < 0.75).map((b) => bandLabels[b.band])
 	);
+	function quickRate(rating: 'like' | 'dislike') {
+		const next = existing?.rating === rating ? 'unrated' : rating;
+		onrate?.({
+			...(existing ?? { productId: candidate.product.id, soundRelated: true }),
+			rating: next,
+			strength: strength(next),
+			...(candidate.kind === 'tuning' && candidate.measurementIds[0] && !existing?.measurementId
+				? { measurementId: candidate.measurementIds[0] }
+				: {})
+		});
+	}
 </script>
 
-<li class="result-row">
+<li class="result-row" data-product-id={candidate.product.id}>
 	<div class="row-heading">
-		<span class="rank mono">{rank.toString().padStart(2, '0')}</span>
+		<span class="rank mono">{rank.toString().padStart(2, '0')}<RankMarker change={rankChange} /></span>
 		<h3>
 			<span class="result-brand">{candidate.product.brand}</span>
 			<span class="result-model">{candidate.product.model}</span>{#if candidate.variantLabel}<span
@@ -110,13 +143,21 @@
 				>{/if}</span
 		>
 	</div>
-	{#if match}<p class="reviewers">
-			{reviewerSummary(match.perSourceRange, match.sourceCount)}
-		</p>{/if}
-	{#if !match}<p class="reviewers">
-			{reviewerSummary(null, candidate.sources.length)}
-		</p>{/if}
-	{#if tradeoff}<div class="tradeoff table-scroll">
+	<p class="reviewers">
+		{reviewerSummary(
+			match?.perSourceRange ?? null,
+			match?.sourceCount ?? candidate.sources.length,
+			match?.rangeSourceCount
+		)}
+		{#if stability && (stability.referenceSide || stability.candidateSide)}<span class="rank-range">
+				· {stability.rankRange[0] === stability.rankRange[1]
+					? 'Rank holds if one reviewer is left out'
+					: `Rank ${stability.rankRange[0]}–${stability.rankRange[1]} if one reviewer is left out`}
+			</span>{/if}
+		{#if relatedToReference}<span class="related-reference"> · Variant of {relatedReferenceName}</span>{/if}
+	</p>
+	{#if tradeoff}<!-- svelte-ignore a11y_no_noninteractive_tabindex (Overflowing tables need keyboard scrolling.) -->
+		<div class="tradeoff table-scroll" tabindex="0" role="region" aria-label="Reference distance table">
 			<table class="data-table">
 				<caption>Distance to each reference (dB)</caption><thead
 					><tr
@@ -145,17 +186,64 @@
 			Reviewer-listed USD price unavailable
 		</p>{/if}
 	<div class="actions">
-		<button type="button" aria-pressed={selected} disabled={!selected && limitReached} onclick={onshow}
-			>{selected ? 'Remove from chart' : 'Show on chart'}</button
-		>{#if selected}<a class="chart-jump" href="#discover-chart">View chart</a>{/if}{#if referenceProductId}<a
-				href={resolve(`/compare?${compareQuery(candidate, compareReferences ?? referenceProductId)}`)}
-				>Compare</a
-			>{/if}<a href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}${formQuery}`)}
-			>Product page</a
+		<button
+			type="button"
+			aria-label={`${selected ? 'Remove from chart' : 'Show on chart'}: ${productName}`}
+			aria-pressed={selected}
+			disabled={!selected && limitReached}
+			onclick={onshow}>{selected ? 'Remove from chart' : 'Show on chart'}</button
 		>
+		{#if onrate}<div class="quick-rating" role="group" aria-label={`Quick rating for ${productName}`}>
+				<button
+					type="button"
+					aria-pressed={existing?.rating === 'like'}
+					aria-label={`Like ${productName}`}
+					onclick={() => {
+						quickRate('like');
+					}}>Like</button
+				>
+				<button
+					type="button"
+					aria-pressed={existing?.rating === 'dislike'}
+					aria-label={`Dislike ${productName}`}
+					onclick={() => {
+						quickRate('dislike');
+					}}>Dislike</button
+				>
+				{#if existing && (existing.rating === 'love' || existing.rating === 'neutral' || !existing.soundRelated)}<span
+						class="saved-rating"
+						>{existing.rating === 'love'
+							? 'Love'
+							: existing.rating === 'neutral'
+								? 'Neutral'
+								: ''}{!existing.soundRelated ? ' · comfort only' : ''}</span
+					>{/if}
+			</div>
+			<button
+				type="button"
+				class="more-rating"
+				aria-expanded={ratingOpen}
+				aria-controls={`${id}-rating`}
+				aria-label={`More rating options for ${productName}`}
+				onclick={() => {
+					ratingOpen = !ratingOpen;
+				}}>More <span aria-hidden="true">{ratingOpen ? '▴' : '▾'}</span></button
+			>
+		{/if}
+		<span class="action-links"
+			>{#if referenceProductId}<a
+					href={resolve(`/compare?${compareQuery(candidate, compareReferences ?? referenceProductId)}`)}
+					aria-label={`Compare ${productName}`}>Compare</a
+				><span aria-hidden="true">·</span>{/if}<a
+				href={resolve(`/explore?product=${encodeURIComponent(candidate.product.id)}${formQuery}`)}
+				aria-label={`Product page for ${productName}`}>Product page</a
+			></span
+		>
+		{#if selected}<a class="chart-jump" href="#discover-chart" aria-label={`View ${productName} on chart`}
+				>View chart</a
+			>{/if}
 	</div>
-	{#if onrate}<details class="rate-row">
-			<summary>Rate this product</summary>
+	{#if onrate}<div class="rate-row" id={`${id}-rating`} hidden={!ratingOpen}>
 			<div class="rating-fields">
 				<PreferenceFields
 					item={draft}
@@ -178,9 +266,27 @@
 					}}>Save rating</button
 				>
 			</div>
-		</details>{/if}
+		</div>{/if}
 	<details bind:open>
 		<summary>Measured differences &amp; sources</summary>
+		{#if referenceReviewers}
+			{#if !stability?.candidateSide}<p class="stability-note">
+					{candidate.sources.length < 3
+						? `This product has ${candidate.sources.length} ${candidate.sources.length === 1 ? 'reviewer' : 'reviewers'}, so its own variation isn't assessed.`
+						: "This product's own reviewer variation isn't assessed for this measurement selection."}
+				</p>{/if}
+			{#each referenceReviewers as reference, index (index)}
+				{#if reference.count < 3 || reference.explicit || !(stability?.referenceSides?.[index] ?? stability?.referenceSide)}<p
+						class="stability-note"
+					>
+						{reference.explicit
+							? `${reference.name} uses an exact measurement, so its reference-side reviewer variation isn't assessed.`
+							: reference.count < 3
+								? `${reference.name} has ${reference.count} ${reference.count === 1 ? 'reviewer' : 'reviewers'}, so its reference-side variation isn't assessed.`
+								: `${reference.name}: reference-side reviewer variation isn't assessed for this comparison.`}
+					</p>{/if}
+			{/each}
+		{/if}
 		{#if fit}<div class="fit">
 				<p>
 					Taste {fit.taste + 1}: ordinary response distance {fit.plainDistanceDb.toFixed(1)} dB; tolerance-weighted
@@ -204,8 +310,12 @@
 				Tilt {dbLabel(match.tilt, true)} dB/oct · Coverage {(match.coverage * 100).toFixed(0)}% · {match.points}
 				rank samples
 			</p>{/if}
-		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence, index (index)}<div
+		{#each evidenceTables.filter((evidence) => evidence.bands.length) as evidence, index (index)}<!-- svelte-ignore a11y_no_noninteractive_tabindex (Overflowing tables need keyboard scrolling.) -->
+			<div
 				class="table-scroll"
+				tabindex="0"
+				role="region"
+				aria-label={`Band differences versus ${evidence.label}`}
 			>
 				<table class="data-table">
 					<caption>Candidate minus {evidence.label}, after independent level alignment</caption><thead
@@ -276,7 +386,7 @@
 		line-height: 1.4;
 	}
 	.rank {
-		font-size: 11px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 	}
 	.variant {
@@ -287,12 +397,13 @@
 		text-align: right;
 	}
 	.distance span {
-		font-size: 12px;
+		font-size: var(--text-xs);
 	}
 	.description,
 	.reviewers,
 	.price,
 	.metrics,
+	.stability-note,
 	.fit p {
 		font-size: var(--text-xs);
 		margin: 8px 0 0 34px;
@@ -303,7 +414,7 @@
 	}
 	.actions {
 		display: flex;
-		gap: 16px;
+		gap: 8px;
 		flex-wrap: wrap;
 		align-items: center;
 		margin: 8px 0 0 34px;
@@ -320,6 +431,7 @@
 		cursor: pointer;
 	}
 	.actions > a,
+	.action-links a,
 	.actions > button {
 		display: inline-flex;
 		align-items: center;
@@ -333,6 +445,24 @@
 	}
 	.actions > .chart-jump {
 		display: none;
+	}
+	.action-links {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		white-space: nowrap;
+	}
+	.actions .more-rating {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding-inline: 0;
+		border: 0;
+		color: var(--muted);
+		text-decoration: none;
+	}
+	.rate-row {
+		margin-left: 34px;
 	}
 	details {
 		margin-left: 34px;
@@ -375,6 +505,7 @@
 		min-height: 1.5em;
 	}
 	.metrics,
+	.stability-note,
 	.fit p {
 		margin-left: 0;
 	}
@@ -387,6 +518,28 @@
 		align-items: center;
 		min-block-size: 28px;
 		min-inline-size: 24px;
+	}
+	.quick-rating {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: var(--text-xs);
+	}
+	.quick-rating button {
+		min-height: 36px;
+		padding: 4px 12px;
+		border: 1px solid var(--strong-line);
+		border-radius: var(--radius);
+		background: transparent;
+	}
+	.quick-rating button[aria-pressed='true'] {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--accent);
+		box-shadow: inset 0 -2px var(--accent);
+	}
+	.saved-rating {
+		color: var(--muted);
 	}
 	@media (max-width: 900px) {
 		.actions > .chart-jump {
@@ -402,6 +555,7 @@
 		.reviewers,
 		.price,
 		.actions,
+		.rate-row,
 		details {
 			margin-left: 28px;
 		}

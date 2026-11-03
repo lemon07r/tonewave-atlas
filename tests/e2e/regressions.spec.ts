@@ -19,12 +19,12 @@ test('upload requests keep the declared rig and lock the independent discovery r
 	const uploadReference = productOnRigs(['iem-711', 'iem-5128']);
 	await page.goto(`/?ref=${uploadReference.id}&rig=iem-5128`);
 	await expect(page.locator('.result-row')).toHaveCount(20);
-	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
+	await expect(page.locator('.method-sentence')).toContainText('B&K 5128');
 	await page.locator('.workspace-tools > summary').click();
 	await page.getByRole('combobox', { name: 'Upload measurement rig' }).selectOption('iem-711');
 	await page.getByLabel('Local reference measurement', { exact: true }).setInputFiles(fixture);
 	await expect(page.getByText(`Local reference: ${fixture.name}`, { exact: true })).toBeVisible();
-	await expect(page.locator('.results > .distance-note').first()).toContainText('711-family coupler');
+	await expect(page.locator('.method-sentence')).toContainText('711-family coupler');
 	await expect(page.getByRole('region', { name: 'Measured matches', exact: true })).toHaveAttribute(
 		'aria-busy',
 		'false'
@@ -33,7 +33,7 @@ test('upload requests keep the declared rig and lock the independent discovery r
 	await page.locator('.refine > summary').click();
 	const rig = page.getByRole('combobox', { name: 'Measurement rig', exact: true });
 	if (await rig.isEnabled()) await rig.selectOption('iem-5128');
-	await expect(page.locator('.results > .distance-note').first()).toContainText('711-family coupler');
+	await expect(page.locator('.method-sentence')).toContainText('711-family coupler');
 	await expect(rig).toBeDisabled();
 	await expect(rig).toHaveValue('iem-711');
 	await expect(page.getByText(/Rig is locked to your upload/)).toBeVisible();
@@ -41,7 +41,7 @@ test('upload requests keep the declared rig and lock the independent discovery r
 	await page.getByRole('button', { name: 'Remove local reference', exact: true }).click();
 	await expect(rig).toHaveValue('iem-5128');
 	await expect(rig).toBeEnabled();
-	await expect(page.locator('.results > .distance-note').first()).toContainText('B&K 5128');
+	await expect(page.locator('.method-sentence')).toContainText('B&K 5128');
 });
 
 for (const stage of ['file', 'worker'] as const) {
@@ -194,7 +194,7 @@ test('a chart selection below the first page survives reload and sharing', async
 	await page
 		.locator('.result-row')
 		.nth(25)
-		.getByRole('button', { name: 'Show on chart', exact: true })
+		.getByRole('button', { name: /^Show on chart: .+/ })
 		.click();
 	await expect(page).toHaveURL(/chart=/);
 	const url = page.url();
@@ -202,7 +202,10 @@ test('a chart selection below the first page survives reload and sharing', async
 		await target.goto(url);
 		await expect(target.locator('.result-row')).toHaveCount(40);
 		await expect(
-			target.locator('.result-row').nth(25).getByRole('button', { name: 'Remove from chart', exact: true })
+			target
+				.locator('.result-row')
+				.nth(25)
+				.getByRole('button', { name: /^Remove from chart: .+/ })
 		).toBeVisible();
 		await expect(target.locator('.legend-row')).toHaveCount(2);
 	}
@@ -334,10 +337,7 @@ test('pending results retain their returned reference headings, evidence and Com
 	await expect(results).toHaveAttribute('aria-busy', 'true');
 	const first = page.locator('.result-row').first();
 	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toBeVisible();
-	await expect(first.getByRole('link', { name: 'Compare', exact: true })).toHaveAttribute(
-		'href',
-		new RegExp(volume)
-	);
+	await expect(first.getByRole('link', { name: /^Compare .+/ })).toHaveAttribute('href', new RegExp(volume));
 	await first.locator('details:not(.rate-row) > summary').click();
 	await expect(
 		first.getByRole('table', {

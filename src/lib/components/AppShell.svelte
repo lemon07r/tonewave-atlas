@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import Button from './Button.svelte';
+	import DatasetUpdate from './DatasetUpdate.svelte';
 	import SegmentedControl from './SegmentedControl.svelte';
 	import { withForm } from '#lib/discover/state.ts';
 	let { children }: { children: Snippet } = $props();
@@ -132,7 +133,7 @@
 		/>
 	</div>
 </header>
-<main id="main" tabindex="-1">{@render children()}</main>
+<main id="main" tabindex="-1"><DatasetUpdate />{@render children()}</main>
 <footer class="site-footer">
 	<a href={href('/')} class="footer-brand">Tonewave Atlas</a>
 	<p>Measured response. Personal preference.</p>

@@ -8,6 +8,8 @@ export interface DiscoveryState {
 	alpha?: number;
 	max?: number;
 	tunings: boolean;
+	modified: boolean;
+	minReviewers: number;
 	sources: string[];
 	sourceMode: SourceMode;
 	overlays: string[];
@@ -113,6 +115,10 @@ export function parseDiscovery(params: Pick<URLSearchParams, 'get' | 'has'>): Di
 		...(params.has('alpha') && Number.isFinite(alpha) && alpha >= 1 && alpha <= 4 ? { alpha } : {}),
 		...(params.has('max') && Number.isFinite(max) && max >= 0 ? { max } : {}),
 		tunings: params.get('tunings') === '1',
+		modified: params.get('modified') === '1',
+		minReviewers: [2, 3, 5].includes(Number(params.get('minReviewers')))
+			? Number(params.get('minReviewers'))
+			: 1,
 		sources: ids(params.get('sources')),
 		sourceMode:
 			params.get('sourceMode') === 'only' && ids(params.get('sources')).length ? 'only' : 'coverage',
@@ -144,6 +150,8 @@ export function withDiscoveryChanges(
 		else next.delete(key);
 	}
 	if (!ids(next.get('sources')).length) next.delete('sourceMode');
+	if (next.get('modified') !== '1') next.delete('modified');
+	if (![2, 3, 5].includes(Number(next.get('minReviewers')))) next.delete('minReviewers');
 	if (modelChanged) next.delete('edits');
 	return next;
 }

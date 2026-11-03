@@ -22,7 +22,7 @@ import * as ranking from './ranking.ts';
 import { AtlasService } from './service.ts';
 import type { CompareRequest, SimilarRequest } from './types.ts';
 import { spreadFor } from './spread.ts';
-import { reviewerVariants } from './stability.ts';
+import { rankingStability, reviewerVariants } from './stability.ts';
 import { DatasetUpdatedError } from './errors.ts';
 
 interface ExtraMeasurement {
@@ -420,9 +420,39 @@ describe('leave-one-reviewer-out rank sensitivity', () => {
 		const result = await service.similar({ productId: 'a', ...settings });
 		if (!result.ok) throw new Error(result.message);
 		expect(result.results.map((r) => [r.candidate.product.id, r.distance, r.stability])).toEqual([
-			['b', 1.5, { scoreRange: [0.5, 2.5], rankRange: [1, 2], referenceSide: true, candidateSide: false }],
-			['c', 3, { scoreRange: [2, 4], rankRange: [1, 2], referenceSide: true, candidateSide: true }],
-			['d', 8, { scoreRange: [7, 9], rankRange: [3, 3], referenceSide: true, candidateSide: false }]
+			[
+				'b',
+				1.5,
+				{
+					scoreRange: [0.5, 2.5],
+					rankRange: [1, 2],
+					referenceSide: true,
+					referenceSides: [true],
+					candidateSide: false
+				}
+			],
+			[
+				'c',
+				3,
+				{
+					scoreRange: [2, 4],
+					rankRange: [1, 2],
+					referenceSide: true,
+					referenceSides: [true],
+					candidateSide: true
+				}
+			],
+			[
+				'd',
+				8,
+				{
+					scoreRange: [7, 9],
+					rankRange: [3, 3],
+					referenceSide: true,
+					referenceSides: [true],
+					candidateSide: false
+				}
+			]
 		]);
 		const cut = await service.similar({ productId: 'a', ...settings, topK: 1 });
 		expect(cut.ok && cut.results).toEqual(result.results.slice(0, 1));
@@ -435,6 +465,59 @@ describe('leave-one-reviewer-out rank sensitivity', () => {
 			candidateSide: true
 		});
 	});
+	it.each([false, true])(
+		'keeps per-reference assessment when three-reviewer omissions lack overlap; reversed = %s',
+		(reversed) => {
+			const { catalog, packs } = sensitivityFixture();
+			const partition = catalog.partitions[0],
+				pack = packs[0];
+			if (!partition || !pack) throw new Error('fixture');
+			// All C reviewers share 60% of bins and each alone supplies one third of the remaining 40%.
+			// The full consensus covers every bin, but every omission loses >10%, failing a 90% query.
+			const common = Math.floor(RANK_SIZE * 0.6);
+			for (const [source, id] of ['c1', 'c2', 'c3'].entries()) {
+				const curve = pack.curves.find((row) => row.measurementId === id);
+				if (!curve) throw new Error('fixture curve');
+				curve.values = Float64Array.from(curve.values, (value, i) =>
+					i < common || (i - common) % 3 === source ? value : NaN
+				);
+			}
+			const index = buildPartitionIndex(catalog, partition, pack);
+			const a = index.products.get('a'),
+				c = index.products.get('c'),
+				candidate = index.products.get('b');
+			if (!a || !c || !candidate) throw new Error('fixture candidates');
+			expect(a.info.sources).toHaveLength(3);
+			expect(c.info.sources).toHaveLength(3);
+			const options = { frequencies: RANK_GRID, minCoverage: 0.9 };
+			const omitted = reviewerVariants(c);
+			expect(omitted).toHaveLength(3);
+			expect(
+				omitted.every((curve) => distanceEngine.distanceSummary(candidate.values, curve, options) === null)
+			).toBe(true);
+			const references = reversed ? [c, a] : [a, c];
+			const distances = references.map((reference) => {
+				const result = distanceEngine.distanceSummary(candidate.values, reference.values, options);
+				if (!result) throw new Error('baseline must have adequate overlap');
+				return result.distance;
+			});
+			const [stability] = rankingStability(
+				[
+					{
+						candidate,
+						values: candidate.values,
+						score: (distances[0] ?? NaN) / 2 + (distances[1] ?? NaN) / 2,
+						distances
+					}
+				],
+				references.map((reference) => ({ candidate: reference, values: reference.values })),
+				options
+			);
+			expect(stability?.referenceSide).toBe(true);
+			expect(stability?.referenceSides).toEqual(reversed ? [false, true] : [true, false]);
+			expect(stability?.candidateSide).toBe(false);
+		}
+	);
 	it.each(['mean', 'minimax'] as const)(
 		'uses the actual compare %s objective under one-at-a-time omissions',
 		async (sort) => {

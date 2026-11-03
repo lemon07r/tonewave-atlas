@@ -26,7 +26,7 @@
 	--curve-6: #006c94;
 	--curve-7: #6c4ca6;
 	--mono: 'IBM Plex Mono', monospace;
-	--text-xs: 0.75rem;
+	--text-xs: 0.8125rem;
 	--text-sm: 0.875rem;
 	--text-base: 1rem;
 	--text-lg: 1.125rem;
@@ -181,7 +181,7 @@ hr {
 	border: 0;
 }
 .eyebrow {
-	font: 400 11px/1.5 var(--mono);
+	font: 400 var(--text-xs)/1.5 var(--mono);
 	text-transform: uppercase;
 	letter-spacing: 0.1em;
 	color: var(--muted);
@@ -371,6 +371,9 @@ select {
 	}
 }
 @media (max-width: 640px) {
+	:root {
+		--text-xs: 0.875rem;
+	}
 	.page {
 		padding: var(--space-7) var(--space-5) var(--space-10);
 	}

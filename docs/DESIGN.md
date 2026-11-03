@@ -9,7 +9,8 @@ it does not promise a listening experience or turn a measurement into a verdict.
 
 Self-hosted **Newsreader Variable** carries page titles and product names. **DM Sans Variable** is the
 interface and reading face; **IBM Plex Mono** is reserved for values, axes and technical labels.
-Product brands are supporting text, not slogans. Body text is 16px; controls 14px; metadata 12px.
+Product brands are supporting text, not slogans. Body text is 16px; primary controls 14px. Secondary text and compact row
+actions use the 13px minimum token, raised to 14px at mobile widths (640px and below), including chart labels.
 Display titles scale with viewport width. Tabular figures keep changing results steady.
 
 `src/lib/styles/app.css` owns base mechanics and fallback theme tokens; `direction.css` owns the
@@ -39,7 +40,9 @@ numbered legends and dash patterns; colour is never the only means of identifica
 
 Pages stop at 1440px, with 48px desktop gutters, 32px intermediate gutters and 20px mobile gutters.
 Discover uses two near-equal columns: references/results on the left and a sticky chart on the right.
-At 900px it stacks in DOM order and exposes chart/results jump links. Compare has a selection rail;
+The populated workspace hides the introductory hero (retaining its accessible heading) and places
+the closed workspace disclosures side by side above 640px. At 900px it stacks in DOM order and
+exposes chart/results jump links. Compare has a selection rail;
 Explore and Method use narrower rails, stacking on small screens. Method prose stays readable at
 720px. Chart plots are 292px high on desktop and 244px on mobile.
 
@@ -56,9 +59,14 @@ reference automatically. Examples are deterministic, ordered by source/measureme
 the active form and default rig, not popularity or quality. Search normalises punctuation, accents
 and joined model numbers and tolerates bounded typing errors without an added dependency.
 
-References use compact name/rating rows. A single per-item Details disclosure contains aspects,
+References use a one-line five-state segmented native radio group, including at 390px. A single per-item Details disclosure contains aspects,
 dislike reasons, comfort and measurement selection; the first explicit Like/Love/Dislike opens it.
 Loaded references remain collapsed, with native keyboard-operable rating groups and disclosures.
+Comfort-only items explain: “Recorded, but not used to model sound”. Measurement selection defaults
+to “Consensus of all reviewers (recommended)”. To select an exact measurement, choose a reviewer
+(labelled with measurement count and rigs), then a measurement in a second native select. Choosing
+a reviewer alone does not change the evidence. A selected measurement remains available on another rig;
+it is never silently substituted.
 
 - One sound-related Like/Love uses similar-response ranking.
 - Two to four likes use independent reference trade-offs, with mean/minimax sorts, Pareto counts and
@@ -66,23 +74,62 @@ Loaded references remain collapsed, with native keyboard-operable rating groups 
 - A sound-related dislike or five rated sound-related items uses the taste model. Neutral/unrated
   and fit/comfort-only items never enter the sound model.
 
-Rig, budget, reviewer coverage, tunings, focus and treble controls live behind Refine matches.
+Rig, budget, reviewer coverage, tunings, modified products, minimum reviewers, focus and treble controls live behind Refine matches.
+Mods and prototypes are excluded by default. The native minimum-reviewer select offers 1, 2, 3 or 5
+contributing reviewers; both filters re-rank and round-trip through the URL, omitting their defaults.
 Reviewer scoring offers coverage (products measured by selected reviewers, scoring all sources) or
 selected-reviewer-only reference/candidate consensus. Engine caveats disclose lost source support;
 no selected measurements means a reference is unavailable, not silently replaced. Settings auto-apply
-with an updating notice; generation guards reject
-older successes and errors. Charting a match or other view-only URL changes redraw without
+with an updating notice in a reserved-height slot, so existing results do not move; generation guards
+reject older successes and errors. Charting a match or other view-only URL changes redraw without
 re-ranking. Show more increases the engine topK beyond 20.
 Source-only mode requires at least one reviewer; emptying the selection resets coverage atomically.
-Changing rig or reviewers clears serialised corrections for the previous model. Pending results keep
+URL corrections remain authoritative, including Back/Forward. Explicit rig, reviewer or reference
+switches save outgoing corrections and restore a draft only when returning to that same model;
+models without a draft start without corrections. Pending results keep
 the references and sort of their response until the replacement arrives.
+
+Each results heading has a route-specific method sentence that names the rig once. A separate
+metadata line explains the distance or taste score and reviewer scoring pool, without repeating the
+rig. “How this ranking works” explains the method and lists participating and excluded
+references using the existing measurement diagnostics and engine taste exclusions. After a workspace
+preference edit, accepted results are compared by product with the previous displayed list: “New”,
+“↑N” and “↓N” markers accompany one polite count summary. First loads have no markers. Sort, filters,
+pagination and chart/view changes never create markers. Accepted responses track workspace and
+ranking context separately: a preference edit produces markers only if filters, sort, rig and other
+ranking settings match the preceding accepted response, even when actions coalesce. A changed
+ranking context clears old markers; chart-only changes preserve them.
+
+Similar and trade-off rows add leave-one-reviewer-out rank ranges to the reviewer line when assessed,
+or “Rank holds” for an assessed unchanged rank. This is sensitivity among the returned matches plus
+up to ten more, not a probability or a claim about audibility. Sides with fewer than three contributing
+reviewers are unassessed; expanded evidence explains missing assessment, and the method disclosure
+explains the evaluated pool and excludes unit variation and perceptual claims.
+Reference-side assessment is tracked independently for each reference: three or more reviewers do
+not imply assessment if every omitted-reviewer comparison lacks sufficient overlap. Included related
+mods/prototypes have a quiet “Variant of [reference]” text label.
+Legacy products without a base-product ID use the engine's brand/model relationship rule to name
+the matching reference, independent of reference order; unresolved names say “Variant of a reference”.
+The reviewer count describes contributors to the candidate consensus. If the per-reviewer distance
+range covers fewer of those reviewers, the line explicitly says “across N of them”; it does not imply
+that every contributing reviewer has sufficient overlap with the reference.
 
 Rows lead with rank, product and dB distance, or an explicitly labelled taste ranking score (not dB
 or percent). The summary keeps at most two important band differences. One historical USD listing
 stays visible with its reviewer and observation date, explicitly not a listing date; observations
 older than twelve months are flagged as potentially out of date. Additional listings and band evidence are expandable. Unknown
-prices are explicit. Rate this product permits a rating, optional reasons and comfort-only flag
-before saving, without navigation. Remove, clear and rating changes offer keyboard-reachable Undo.
+prices are explicit. Like and Dislike toggle buttons immediately add or update a workspace product,
+preserving existing reasons, comfort and exact measurement. Desktop and tablet rows put Show on
+chart, Like, Dislike and More on one action line, followed by Compare · Product page. Mobile wraps
+naturally, keeping the two text links together. Action names include the product for assistive
+technology, while their visible labels remain short. “More” is a native button with expanded state
+and a controlled inline panel; it holds all five ratings, optional
+reasons and comfort-only evidence before saving, without navigation. Selected controls reflect saved
+ratings; Love, Neutral and comfort-only status also remain explicit. Remove, clear and rating changes
+offer keyboard-reachable Undo. Scrollable band/reference tables are named keyboard-focusable regions.
+When accepted results remove the focused row action, focus moves to that product's workspace rating
+control, or the results heading if it is not a reference. Retained controls and focus moved elsewhere
+while matching keep their focus; accepting a response does not otherwise move it.
 
 ## Chart and evidence
 
@@ -94,20 +141,28 @@ reference in its own panel. Null-aligned candidates are omitted from both ranked
 views with a note; no new level alignment is applied. Each objective's distance independently fits
 its own offset. Expandable band tables explain each reference separately.
 Distance headers use “closest” / “furthest” at the displayed one-decimal precision, with no labels
-when the distances round to a tie. Reference and band headers use 12px text with normal tracking and
+when the distances round to a tie. Reference and band headers use the secondary text token with normal tracking and
 explicit kerning. Empty charts distinguish missing rig coverage from references still awaiting a rating.
 
 Detail measurements are an explicit alternate view, labelled uncorrected and display-aligned.
 Compare, product charts and EQ use their own uncorrected detail measurements. Missing bins remain
 gaps. The chart has a log-frequency axis, keyboard frequency inspection, response/difference views,
-visibility controls, an accessible sampled data table and attributed PNG export. Difference mode
+visibility controls, an accessible sampled data table and attributed PNG export. Region controls wrap
+in a labelled grid rather than shrinking their text or touch targets. Narrow charts thin frequency
+labels, not grid ticks or inspectable values. Difference mode
 subtracts the selected baseline without another alignment.
+Ordinary data, legend visibility, regions, theme and response/difference updates reuse the uPlot
+canvas through `setData`, `setSeries` and redraw. Series identity/count, invalid-data transitions
+or mobile/desktop size-mode changes rebuild the plot; container resizes use `setSize`.
 Inspection starts at the nearest 1 kHz bin and retains the selected frequency across series/grid changes.
 Blue, orange and teal lead the shared series palette, paired with distinct dash patterns (primary
 reference solid). The plot, SVG legend and PNG export share those identities; colour is not the only cue.
 
 Missing-rig diagnostics identify each reference's default or explicitly selected measurement support,
 then offer engine-provided common partitions. They never substitute a variant or silently mix rigs.
+When alternatives were not supplied (the single-reference failure path), the message only states
+that the selected rig lacks the reference and offers automatic rig selection. Only an explicitly
+empty alternatives list says no rig covers all references.
 A local reference requires an explicit rig choice; file data stays in the browser session and is
 excluded from URLs and saved profiles.
 Its declared rig is retained with the session-local reference and locks the independent rig control.
@@ -125,6 +180,14 @@ Canonical edits write a JSON `ratings` parameter; an explicit empty list overrid
 Malformed shared evidence is reported without overwriting the saved profile. Form switching removes
 form-specific URL evidence and restores the appropriate local profile. Uploads are never serialised.
 
+A dataset update reported by any analysis operation produces one persistent, polite shell message:
+“The dataset was updated. Reload to continue.” A Reload button opens a fresh session; the same failure
+does not also produce a generic catalog, ranking or detail error. Comlink errors are reconstructed
+from their transported name and message.
+Worker load/message failures reject pending initialization, release the failed worker and allow a
+fresh worker on retry. Discover offers explicit catalog and matching retry actions rather than
+leaving the workspace loading indefinitely.
+
 ## Review
 
 Method validation figures are read from the active form’s published catalog metadata, labelled with
@@ -133,12 +196,18 @@ figures from an older build. Source support, held-out pair/fold counts, pooled m
 available median and fold improvements remain distinct.
 
 Unit/component checks cover search, migration, query races, chart values and controls, diagnostics,
-band/price wording and contrast. Browser journeys and axe cover the real dataset. Visual review uses
+band/price wording, segmented ratings, immediate ratings and Undo, two-step measurement selection,
+method sentences, rank sensitivity, partial reviewer-range coverage, rank markers, worker recovery,
+canvas preservation and contrast. Browser journeys and axe cover the real dataset, including
+similar-to-compare quick ratings, Hexa measurement selection, stable updating positions, compact
+action geometry, authoritative correction history, rig recovery and dataset-update reload guidance. Visual review uses
 1440×900, 834×1112 and 390×844, in both themes, including expanded evidence and EQ. Automated checks
 do not replace real assistive-technology testing.
 
 `tests/e2e/visual.spec.ts` captures empty/unrated/single/multi-reference workspaces, per-reference
-tables, reviewer-only scoring, taste constraints, missing variants and current validation figures.
+tables, quick-rating rank changes, measurement selection, method participation, reviewer-only scoring,
+taste constraints, missing variants and current validation figures. Populated review captures also
+include leave-one-reviewer-out rank ranges and included mods/prototypes with their reference label.
 The page journeys capture Compare, catalog/product, EQ and Method/source tables. Captures use CSS
 pixel dimensions (including mobile), check document overflow and keep exports outside the repo.
 Visual review also checks clear series identities, readable wrapped evidence, native control text

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { GRID } from '#core/grid.ts';
+	import { analysisError } from '#lib/analysis/errors.svelte.ts';
 	import type { FrSeries } from '#lib/chart.ts';
 	import FrChart from '#lib/components/FrChart.svelte';
 	import Notice from '#lib/components/Notice.svelte';
@@ -66,8 +67,7 @@
 					curves.push((await candidateCurve(row.candidate, current.data.partition)).series);
 				if (!abort.signal.aborted) detailSeries = curves;
 			} catch (cause) {
-				if (!abort.signal.aborted)
-					error = cause instanceof Error ? cause.message : 'Detail measurements could not be loaded.';
+				if (!abort.signal.aborted) error = analysisError(cause, 'Detail measurements could not be loaded.');
 			} finally {
 				if (!abort.signal.aborted) loading = false;
 			}

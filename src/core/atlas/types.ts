@@ -120,6 +120,8 @@ export interface RankStability {
 	scoreRange: [number, number];
 	rankRange: [number, number];
 	referenceSide: boolean;
+	/** Assessment per reference in request order; referenceSide remains true if any side is assessed. */
+	referenceSides?: boolean[];
 	candidateSide: boolean;
 }
 interface SimilarSettings {
