@@ -123,6 +123,9 @@ and a controlled inline panel; it holds all five ratings, optional
 reasons and comfort-only evidence before saving, without navigation. Selected controls reflect saved
 ratings; Love, Neutral and comfort-only status also remain explicit. Remove, clear and rating changes
 offer keyboard-reachable Undo. Scrollable band/reference tables are named keyboard-focusable regions.
+When accepted results remove the focused row action, focus moves to that product's workspace rating
+control, or the results heading if it is not a reference. Retained controls and focus moved elsewhere
+while matching keep their focus; accepting a response does not otherwise move it.
 
 ## Chart and evidence
 

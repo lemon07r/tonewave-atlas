@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { browser } from '$app/env';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { Focus } from '#core/analysis/weights.ts';
@@ -89,6 +89,8 @@
 	let profileError = $state('');
 	let undoMessage = $state('');
 	let importInput: HTMLInputElement;
+	let discoverRoot = $state<HTMLDivElement>();
+	let resultsHeading = $state<HTMLHeadingElement>();
 	let result = $state.raw<DiscoveryResult>();
 	let resultItems = $state.raw<WorkspaceItem[]>([]);
 	let resultSort = $state<'mean' | 'minimax'>('mean');
@@ -215,6 +217,21 @@
 	);
 	const controller = latestQuery<Awaited<ReturnType<typeof queryDiscovery>>>();
 	const errorText = analysisError;
+	async function restoreResultFocus(focused: Element | null) {
+		const productId = focused?.closest<HTMLElement>('.result-row')?.dataset.productId;
+		if (!productId) return;
+		await tick();
+		if (
+			focused.isConnected ||
+			!discoverRoot?.isConnected ||
+			(document.activeElement && document.activeElement !== document.body)
+		)
+			return;
+		const referenceRating = discoverRoot.querySelector<HTMLInputElement>(
+			`.profile-row[data-product-id="${CSS.escape(productId)}"] input[type="radio"]:checked`
+		);
+		(referenceRating ?? resultsHeading)?.focus();
+	}
 	function nameFor(id: string): string {
 		const resolved = result?.data.resolvedIds?.find(
 			(entry) => entry.productId === id || entry.measurementId === id
@@ -541,6 +558,7 @@
 			void controller.run(
 				async () => queryDiscovery(await analysis(), spec),
 				(next) => {
+					const focused = document.activeElement;
 					if (next && 'ok' in next) {
 						queryError = next;
 						result = undefined;
@@ -551,6 +569,7 @@
 						resultSort = spec.state.sort;
 					}
 					loading = false;
+					void restoreResultFocus(focused);
 				},
 				(cause) => {
 					networkError = errorText(cause);
@@ -566,7 +585,7 @@
 	});
 </script>
 
-<div class={['page discover', { starting }]}>
+<div bind:this={discoverRoot} class={['page discover', { starting }]}>
 	{#if starting}<div class="page-heading">
 			<h1>
 				Find {form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.
@@ -904,7 +923,7 @@
 			</aside>
 			<section class="results" id="discover-results" aria-label="Measured matches" aria-busy={loading}>
 				<div class="section-heading">
-					<h2>
+					<h2 bind:this={resultsHeading} tabindex="-1">
 						{displayRoute === 'compare'
 							? 'Reference trade-offs'
 							: displayRoute === 'taste'

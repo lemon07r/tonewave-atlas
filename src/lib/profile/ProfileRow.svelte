@@ -23,7 +23,7 @@
 	let picked = $state(false);
 </script>
 
-<section class="profile-row" aria-label={name}>
+<section class="profile-row" data-product-id={item.productId} aria-label={name}>
 	<div class="compact-row">
 		<div class="heading">
 			<h3 class="product-name">{name}</h3>

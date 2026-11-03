@@ -410,38 +410,42 @@ test('quick Like moves similar matches to compare, explains deterministic rank c
 	).toHaveAttribute('aria-pressed', 'false');
 });
 
+async function installRankingGate(page: Page) {
+	await page.addInitScript(() => {
+		const pending: (() => void)[] = [];
+		Object.assign(window, {
+			rankingGate: {
+				pending,
+				release: () => {
+					document.documentElement.dataset.holdRanking = 'false';
+					for (const send of pending.splice(0)) send();
+				}
+			}
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- called with the original port receiver.
+		const post = MessagePort.prototype.postMessage;
+		MessagePort.prototype.postMessage = function (
+			message: unknown,
+			transfer?: Transferable[] | StructuredSerializeOptions
+		) {
+			const options = Array.isArray(transfer) ? { transfer } : transfer;
+			const path = message && typeof message === 'object' && 'path' in message ? message.path : [];
+			if (
+				document.documentElement.dataset.holdRanking === 'true' &&
+				Array.isArray(path) &&
+				['similar', 'compare', 'taste'].includes(String(path[0]))
+			)
+				pending.push(() => {
+					post.call(this, message, options);
+				});
+			else post.call(this, message, options);
+		};
+	});
+}
+
 for (const order of ['filter then rating', 'rating then filter']) {
 	test(`coalesced ${order} does not attribute ranking-context movement to quick Like`, async ({ page }) => {
-		await page.addInitScript(() => {
-			const pending: (() => void)[] = [];
-			Object.assign(window, {
-				rankingGate: {
-					pending,
-					release: () => {
-						document.documentElement.dataset.holdRanking = 'false';
-						for (const send of pending.splice(0)) send();
-					}
-				}
-			});
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- called with the original port receiver.
-			const post = MessagePort.prototype.postMessage;
-			MessagePort.prototype.postMessage = function (
-				message: unknown,
-				transfer?: Transferable[] | StructuredSerializeOptions
-			) {
-				const options = Array.isArray(transfer) ? { transfer } : transfer;
-				const path = message && typeof message === 'object' && 'path' in message ? message.path : [];
-				if (
-					document.documentElement.dataset.holdRanking === 'true' &&
-					Array.isArray(path) &&
-					['similar', 'compare', 'taste'].includes(String(path[0]))
-				)
-					pending.push(() => {
-						post.call(this, message, options);
-					});
-				else post.call(this, message, options);
-			};
-		});
+		await installRankingGate(page);
 		await page.goto(shared([reference]));
 		await expect(page.locator('.result-row')).toHaveCount(20);
 		await settled(page);
@@ -474,6 +478,48 @@ for (const order of ['filter then rating', 'rating then filter']) {
 		await expect(page.locator('.profile-row')).toHaveCount(2);
 		await expect(page.locator('.rank-change')).toHaveCount(0);
 		await expect(page.locator('.update-slot > [role="status"]')).toHaveText('');
+	});
+}
+
+for (const moveElsewhere of [false, true]) {
+	test(`keyboard quick Like ${moveElsewhere ? 'keeps focus moved elsewhere while matching' : 'moves removed action focus to the new workspace reference'}`, async ({
+		page
+	}) => {
+		await installRankingGate(page);
+		await page.goto(shared([reference]));
+		await expect(page.locator('.result-row')).toHaveCount(20);
+		await settled(page);
+		const row = page.locator('.result-row').first();
+		const productId = await row.getAttribute('data-product-id');
+		const name = (await row.getByRole('heading').innerText()).replace(/\s+/g, ' ').trim();
+		const button = row.getByRole('button', { name: `Like ${name}`, exact: true });
+		await page.evaluate(() => {
+			document.documentElement.dataset.holdRanking = 'true';
+		});
+		await button.focus();
+		await expect(button).toBeFocused();
+		await button.press('Enter');
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() => (window as unknown as { rankingGate: { pending: unknown[] } }).rankingGate.pending.length
+				)
+			)
+			.toBe(1);
+		const search = page.getByRole('combobox', { name: 'Add an IEM', exact: true });
+		if (moveElsewhere) await search.focus();
+		else await expect(button).toBeFocused();
+		await page.evaluate(() => {
+			(window as unknown as { rankingGate: { release: () => void } }).rankingGate.release();
+		});
+		await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
+		await settled(page);
+		await expect(page.locator(`.result-row[data-product-id="${productId}"]`)).toHaveCount(0);
+		if (moveElsewhere) await expect(search).toBeFocused();
+		else
+			await expect(
+				page.getByRole('region', { name, exact: true }).getByRole('radio', { name: 'Like', exact: true })
+			).toBeFocused();
 	});
 }
 
