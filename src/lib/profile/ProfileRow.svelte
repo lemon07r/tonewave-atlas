@@ -44,7 +44,7 @@
 	</div>
 	{#if item.rating === 'unrated' || item.rating === 'neutral' || !item.soundRelated}<p class="inactive">
 			{!item.soundRelated
-				? 'Fit or comfort only · not used for sound matching.'
+				? 'Recorded, but not used to model sound'
 				: item.rating === 'neutral'
 					? 'Neutral · not used for sound matching.'
 					: 'Not used for matching until you give it a sound-related rating.'}
@@ -76,10 +76,8 @@
 		border-top: 1px solid var(--line);
 	}
 	.compact-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px 16px;
-		align-items: center;
+		display: grid;
+		gap: 8px;
 	}
 	.heading {
 		display: flex;

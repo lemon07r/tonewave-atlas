@@ -60,6 +60,7 @@
 		}}
 	/>Fit or comfort, not sound</label
 >
+{#if !item.soundRelated}<p class="comfort-note">Recorded, but not used to model sound</p>{/if}
 
 <style>
 	.comfort {
@@ -71,5 +72,9 @@
 	}
 	input {
 		accent-color: var(--accent);
+	}
+	.comfort-note {
+		font-size: var(--text-xs);
+		color: var(--muted);
 	}
 </style>

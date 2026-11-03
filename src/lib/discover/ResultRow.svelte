@@ -6,7 +6,9 @@
 	import type { MultiReferenceResult } from '#core/analysis/multi-reference.ts';
 	import { dbLabel } from '#lib/chart.ts';
 	import { bandLabels, describeBands, distanceExtremes, priceLines, reviewerSummary } from './describe.ts';
-	import { reasonLabels } from '#lib/profile/profile.ts';
+	import { reasonLabels, strength } from '#lib/profile/profile.ts';
+	import type { RankChange } from './rank-changes.ts';
+	import RankMarker from './RankMarker.svelte';
 	import type { WorkspaceItem } from '#lib/profile/profile.ts';
 	import PreferenceFields from '#lib/profile/PreferenceFields.svelte';
 	import { detail, curveSources, type CurveSource } from './display.ts';
@@ -16,6 +18,7 @@
 		candidate,
 		existing,
 		rank,
+		rankChange,
 		distance,
 		bands,
 		match,
@@ -35,6 +38,7 @@
 		candidate: CandidateInfo;
 		existing?: WorkspaceItem | undefined;
 		rank: number;
+		rankChange?: RankChange | undefined;
 		distance: number;
 		bands: BandDistance[];
 		match?: SimilarMatch;
@@ -89,11 +93,22 @@
 	let matched = $derived(
 		bands.filter((b) => b.meanDb !== null && Math.abs(b.meanDb) < 0.75).map((b) => bandLabels[b.band])
 	);
+	function quickRate(rating: 'like' | 'dislike') {
+		const next = existing?.rating === rating ? 'unrated' : rating;
+		onrate?.({
+			...(existing ?? { productId: candidate.product.id, soundRelated: true }),
+			rating: next,
+			strength: strength(next),
+			...(candidate.kind === 'tuning' && candidate.measurementIds[0] && !existing?.measurementId
+				? { measurementId: candidate.measurementIds[0] }
+				: {})
+		});
+	}
 </script>
 
 <li class="result-row">
 	<div class="row-heading">
-		<span class="rank mono">{rank.toString().padStart(2, '0')}</span>
+		<span class="rank mono">{rank.toString().padStart(2, '0')}<RankMarker change={rankChange} /></span>
 		<h3>
 			<span class="result-brand">{candidate.product.brand}</span>
 			<span class="result-model">{candidate.product.model}</span>{#if candidate.variantLabel}<span
@@ -154,8 +169,32 @@
 			>Product page</a
 		>
 	</div>
-	{#if onrate}<details class="rate-row">
-			<summary>Rate this product</summary>
+	{#if onrate}<div
+			class="quick-rating"
+			role="group"
+			aria-label={`Quick rating for ${candidate.product.brand} ${candidate.product.model}`}
+		>
+			<button type="button" aria-pressed={existing?.rating === 'like'} onclick={() => quickRate('like')}
+				>Like</button
+			>
+			<button type="button" aria-pressed={existing?.rating === 'dislike'} onclick={() => quickRate('dislike')}
+				>Dislike</button
+			>
+			{#if existing && (existing.rating === 'love' || existing.rating === 'neutral' || !existing.soundRelated)}<span
+					class="saved-rating"
+					>{existing.rating === 'love'
+						? 'Love'
+						: existing.rating === 'neutral'
+							? 'Neutral'
+							: ''}{!existing.soundRelated ? ' · comfort only' : ''}</span
+				>{/if}
+		</div>
+		<details class="rate-row">
+			<summary
+				>More<span class="sr-only">
+					rating options for {candidate.product.brand} {candidate.product.model}</span
+				></summary
+			>
 			<div class="rating-fields">
 				<PreferenceFields
 					item={draft}
@@ -276,7 +315,7 @@
 		line-height: 1.4;
 	}
 	.rank {
-		font-size: 11px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 	}
 	.variant {
@@ -287,7 +326,7 @@
 		text-align: right;
 	}
 	.distance span {
-		font-size: 12px;
+		font-size: var(--text-xs);
 	}
 	.description,
 	.reviewers,
@@ -388,6 +427,30 @@
 		min-block-size: 28px;
 		min-inline-size: 24px;
 	}
+	.quick-rating {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: 8px 0 0 34px;
+		font-size: var(--text-xs);
+	}
+	.quick-rating button {
+		min-height: 36px;
+		padding: 4px 12px;
+		border: 1px solid var(--strong-line);
+		border-radius: var(--radius);
+		background: transparent;
+	}
+	.quick-rating button[aria-pressed='true'] {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--accent);
+		box-shadow: inset 0 -2px var(--accent);
+	}
+	.saved-rating {
+		color: var(--muted);
+	}
 	@media (max-width: 900px) {
 		.actions > .chart-jump {
 			display: inline-flex;
@@ -402,6 +465,7 @@
 		.reviewers,
 		.price,
 		.actions,
+		.quick-rating,
 		details {
 			margin-left: 28px;
 		}

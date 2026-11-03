@@ -51,7 +51,7 @@ test('rating an existing row retains preferences, and duplicate reference labels
 		.element(screen.getByText(/No trade-off ranking: at least one reference has insufficient overlap/))
 		.toBeVisible();
 	expect(screen.container.querySelectorAll('thead th[scope="col"]')).toHaveLength(12);
-	await screen.getByText('Rate this product', { exact: true }).click();
+	await screen.getByText('More', { exact: false }).click();
 	await screen.getByRole('button', { name: 'Save rating', exact: true }).click();
 	expect(onrate).toHaveBeenCalledExactlyOnceWith(existing);
 });
@@ -76,7 +76,7 @@ test('an unsaved rating survives fresh objects for the same candidate but resets
 		onshow: vi.fn(),
 		onrate
 	});
-	await screen.getByText('Rate this product', { exact: true }).click();
+	await screen.getByText('More', { exact: false }).click();
 	await screen.getByRole('radio', { name: 'Dislike', exact: true }).click();
 	await screen.getByRole('checkbox', { name: 'Other', exact: true }).click();
 	await screen.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true }).click();

@@ -17,7 +17,7 @@ test('collapsed neutral and fit-only references explain why they do not affect s
 		.toBeVisible();
 	await screen.rerender({ item: { productId: 'a', rating: 'like', strength: 0.6, soundRelated: false } });
 	await expect
-		.element(screen.getByText('Fit or comfort only · not used for sound matching.', { exact: true }))
+		.element(screen.getByText('Recorded, but not used to model sound', { exact: true }))
 		.toBeVisible();
 });
 

@@ -214,7 +214,7 @@
 						// Keep the explicit audio ticks; uPlot's default log filter only labels decades.
 						filter: (_, splits) => splits,
 						values: (_, splits) => splits.map(frequencyLabel),
-						font: '11px "IBM Plex Mono"',
+						font: `${getComputedStyle(host).fontSize} "IBM Plex Mono"`,
 						gap: 8,
 						size: 36,
 						space: 30
@@ -224,7 +224,7 @@
 						grid: { stroke: line, width: 1, dash: [2, 4] },
 						ticks: { show: false },
 						values: (_, splits) => splits.map((value) => `${value}`),
-						font: '11px "IBM Plex Mono"',
+						font: `${getComputedStyle(host).fontSize} "IBM Plex Mono"`,
 						size: 42,
 						gap: 10,
 						space: 44
@@ -556,7 +556,7 @@
 		margin-bottom: 16px;
 	}
 	.chart-heading .eyebrow {
-		font-size: 10px;
+		font-size: var(--text-xs);
 		margin-bottom: 6px;
 	}
 	.chart-heading h2 {
@@ -576,7 +576,7 @@
 	.axis-label,
 	.x-label {
 		color: var(--muted);
-		font-size: 11px;
+		font-size: var(--text-xs);
 	}
 	.axis-label {
 		margin: 0 0 4px 4px;
@@ -589,6 +589,7 @@
 		position: relative;
 	}
 	.plot {
+		font-size: var(--text-xs);
 		height: 280px;
 		width: 100%;
 	}
@@ -619,8 +620,9 @@
 		border-color: var(--strong-line);
 	}
 	.regions {
-		display: flex;
-		padding: 0 18px 0 42px;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+		gap: 4px;
 		margin-top: 12px;
 	}
 	.regions button {
@@ -630,7 +632,7 @@
 		border: 0;
 		background: none;
 		color: var(--muted);
-		font-size: 9px;
+		font-size: var(--text-xs);
 		letter-spacing: -0.02em;
 	}
 	.regions button.active {
@@ -673,6 +675,9 @@
 		min-height: 36px;
 	}
 	.legend-row button {
+		min-width: 0;
+		flex: 1;
+		overflow-wrap: anywhere;
 		display: flex;
 		gap: 8px;
 		align-items: center;
@@ -685,11 +690,12 @@
 		min-height: 36px;
 	}
 	.legend-number {
-		font: 10px var(--mono);
+		font: var(--text-xs) var(--mono);
 		color: var(--muted);
 	}
 	.legend-value {
-		font: 11px var(--mono);
+		font: var(--text-xs) var(--mono);
+		flex-shrink: 0;
 		white-space: nowrap;
 		margin-left: auto;
 	}
@@ -708,12 +714,15 @@
 	}
 	figcaption {
 		color: var(--muted);
-		font-size: 10px;
+		font-size: var(--text-xs);
 		line-height: 1.6;
 		margin-top: 16px;
 	}
 	figcaption a {
 		color: var(--muted);
+		display: inline-flex;
+		align-items: center;
+		min-height: 28px;
 	}
 	@media (min-width: 1200px) {
 		.plot {
@@ -738,7 +747,7 @@
 		}
 		.regions button {
 			min-height: 44px;
-			font-size: 9px;
+			font-size: var(--text-xs);
 			padding: 6px 2px;
 		}
 		.region-label-wide {
@@ -748,10 +757,10 @@
 			display: inline;
 		}
 		.legend-value {
-			font-size: 10px;
+			font-size: var(--text-xs);
 		}
 		.legend-row button {
-			font-size: 11px;
+			font-size: var(--text-xs);
 			gap: 6px;
 		}
 	}

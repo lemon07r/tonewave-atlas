@@ -49,6 +49,8 @@
 	import ChartPanel from './ChartPanel.svelte';
 	import TasteSummary from './TasteSummary.svelte';
 	import ResultRow from './ResultRow.svelte';
+	import RankingMethod from './RankingMethod.svelte';
+	import { rankChanges, type RankChange } from './rank-changes.ts';
 	import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
 	import { compareEvidence, nearestLikedEvidence } from './evidence.ts';
 
@@ -87,6 +89,17 @@
 	let result = $state.raw<DiscoveryResult>();
 	let resultItems = $state.raw<WorkspaceItem[]>([]);
 	let resultSort = $state<'mean' | 'minimax'>('mean');
+	const trackRanks = rankChanges();
+	let rankMarkers = $state.raw<ReadonlyMap<string, RankChange>>(new Map());
+	let rankSummary = $state('');
+	function recordRanks(spec: QuerySpec, next?: DiscoveryResult) {
+		const changes = trackRanks(
+			JSON.stringify([form, spec.items, spec.upload ?? null]),
+			next?.data.results.map((row) => row.candidate.product.id) ?? []
+		);
+		rankMarkers = changes.markers;
+		rankSummary = changes.summary;
+	}
 	let similarReferenceId = $derived(
 		result?.kind === 'similar' ? (result.data.reference.productId ?? '') : ''
 	);
@@ -472,6 +485,7 @@
 		}
 		if (!spec.upload && discoveryRoute(spec.items, spec.state.view) === 'empty') {
 			result = undefined;
+			recordRanks(spec);
 			loading = false;
 			return;
 		}
@@ -484,6 +498,7 @@
 						queryError = next;
 						result = undefined;
 					} else {
+						recordRanks(spec, next ?? undefined);
 						result = next ?? undefined;
 						resultItems = spec.items;
 						resultSort = spec.state.sort;
@@ -505,14 +520,16 @@
 </script>
 
 <div class={['page discover', { starting }]}>
-	<div class="page-heading">
-		<h1>
-			{starting
-				? `Find ${form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.`
-				: 'Discover your next comparison.'}
-		</h1>
-		<p>Add products you know, then rate your experience. Start with one Like or build a set of references.</p>
-	</div>
+	{#if starting}<div class="page-heading">
+			<h1>
+				{starting
+					? `Find ${form === 'iem' ? 'IEMs' : 'headphones'} with a familiar measured shape.`
+					: 'Your discovery workspace'}
+			</h1>
+			{#if starting}<p>
+					Add products you know, then rate your experience. Start with one Like or build a set of references.
+				</p>{/if}
+		</div>{:else}<h1 class="sr-only">Your discovery workspace</h1>{/if}
 	<MigrationNote
 		messages={migrationDisplay}
 		onundo={migrationBefore ? undoMigration : undefined}
@@ -590,176 +607,178 @@
 						change({ mode: undefined, view: value === 'taste' ? 'taste' : undefined });
 					}}
 				/>{/if}
-			<details class="refine">
-				<summary>Refine matches <span>Rig, budget &amp; reviewers</span></summary>
-				<div class="controls">
-					<label class="field-label"
-						>Measurement rig<select
-							value={upload?.rig ?? settings.rig}
-							disabled={Boolean(upload)}
-							onchange={(event) => {
-								change({
-									rig: event.currentTarget.value,
-									sources: undefined,
-									chart: undefined,
-									edits: undefined
-								});
+			<div class="workspace-options">
+				<details class="refine">
+					<summary>Refine matches <span>Rig, budget &amp; reviewers</span></summary>
+					<div class="controls">
+						<label class="field-label"
+							>Measurement rig<select
+								value={upload?.rig ?? settings.rig}
+								disabled={Boolean(upload)}
+								onchange={(event) => {
+									change({
+										rig: event.currentTarget.value,
+										sources: undefined,
+										chart: undefined,
+										edits: undefined
+									});
+								}}
+								><option value=""
+									>Automatic{result ? ` · ${rigLabel(result.data.partition, summary?.sources)}` : ''}</option
+								>{#each summary?.partitions.filter((p) => p.form === form) ?? [] as partition (partition.id)}<option
+										value={partition.id}>{rigLabel(partition.id, summary?.sources)}</option
+									>{/each}</select
+							></label
+						>
+						{#if upload}<p class="small muted">
+								Rig is locked to your upload: {rigLabel(upload.rig, summary?.sources)}. Remove the local
+								reference to change rigs.
+							</p>{/if}
+						{#if route !== 'taste'}<SegmentedControl
+								label="Matching focus"
+								options={[
+									{ value: 'balanced', label: 'Balanced' },
+									{ value: 'bass', label: 'Bass' },
+									{ value: 'vocals', label: 'Vocals' },
+									{ value: 'treble', label: 'Treble' }
+								]}
+								value={settings.focus}
+								onchange={(value: Focus) => {
+									change({ focus: value === 'balanced' ? undefined : value });
+								}}
+							/>{/if}
+						<label class="field-label budget"
+							>Maximum reviewer-listed price (USD)<input
+								class="text-input"
+								type="number"
+								min="0"
+								step="1"
+								placeholder="No limit"
+								value={settings.max ?? ''}
+								onchange={(event) => {
+									change({
+										max:
+											event.currentTarget.value &&
+											Number.isFinite(event.currentTarget.valueAsNumber) &&
+											event.currentTarget.valueAsNumber >= 0
+												? String(event.currentTarget.valueAsNumber)
+												: undefined
+									});
+								}}
+							/></label
+						>
+						<p class="small muted">
+							Listed prices are historical reviewer entries, not current deals. A budget excludes products
+							without a USD price.
+						</p>
+						<Toggle
+							label="Include separate tunings"
+							checked={settings.tunings}
+							onchange={(checked) => {
+								change({ tunings: checked ? '1' : undefined });
 							}}
-							><option value=""
-								>Automatic{result ? ` · ${rigLabel(result.data.partition, summary?.sources)}` : ''}</option
+						/>
+						{#if route !== 'taste'}<Toggle
+								label="Treble-sensitive matching"
+								checked={settings.alpha !== undefined}
+								onchange={(checked) => {
+									change({ alpha: checked ? '2' : undefined });
+								}}
+							/>
+							<p class="small muted">Adds a directional penalty for extra energy from 2–10 kHz.</p>
+							{#if settings.alpha !== undefined}<Slider
+									label="Extra-treble penalty α"
+									min={1}
+									max={4}
+									step={0.25}
+									value={settings.alpha}
+									onchange={(value) => {
+										change({ alpha: String(value) });
+									}}
+								/>{/if}{/if}
+						<SourceFilter
+							sources={summary?.sources.filter(
+								(s) => sourceInForm(s, form) && (!activePartition || sourceOnPartition(s, activePartition))
+							) ?? []}
+							partition={activePartition}
+							partitions={summary?.partitions.filter((p) => p.form === form).map((p) => p.id) ?? []}
+							selected={settings.sources}
+							mode={settings.sourceMode}
+							onmodechange={(mode: SourceMode) => {
+								change({ sourceMode: mode === 'only' ? 'only' : undefined });
+							}}
+							onchange={(ids: string[]) => {
+								change({ sources: ids.join(',') });
+							}}
+						/>
+						{#if result?.kind === 'taste'}<details>
+								<summary>Adjust derived taste centres</summary>
+								<p class="small muted">
+									Corrections shift centres in dB, not learned statements or confidence.
+								</p>
+								{#each result.data.model.tastes as target (target.id)}<fieldset class="corrections">
+										<legend>Taste {target.id + 1} corrections</legend>{#each BANDS as band (band.id)}<Slider
+												label={`Taste ${target.id + 1} ${bandLabels[band.id]}`}
+												min={-4}
+												max={4}
+												step={0.5}
+												unit="dB"
+												value={corrections.find((edit) => edit.tasteId === target.id)?.bands[band.id] ?? 0}
+												onchange={(value: number) => {
+													correct(target.id, band.id, value);
+												}}
+											/>{/each}
+									</fieldset>{/each}
+							</details>{/if}
+					</div>
+				</details>
+				<details class="workspace-tools">
+					<summary>Profile files &amp; local measurement</summary>
+					<div class="profile-actions">
+						<button type="button" onclick={exportProfile}>Export profile JSON</button><button
+							type="button"
+							onclick={() => {
+								importInput.click();
+							}}>Import profile JSON</button
+						><input
+							class="sr-only"
+							type="file"
+							accept="application/json,.json"
+							bind:this={importInput}
+							onchange={(event) => void importProfile(event)}
+							aria-label="Import profile file"
+						/>
+					</div>
+					<p class="small muted">
+						Ratings are saved in this browser, separately for IEMs and headphones, and included in shared
+						workspace URLs.
+					</p>
+					<h3>Use your own measurement</h3>
+					<p class="small muted">
+						Choose the measurement rig before adding a file. The file stays in this browser session: never
+						uploaded, saved in your profile or included in a URL.
+					</p>
+					<label class="field-label"
+						>Upload measurement rig<select bind:value={uploadRig}
+							><option value="">Choose the rig used to measure this file</option
 							>{#each summary?.partitions.filter((p) => p.form === form) ?? [] as partition (partition.id)}<option
 									value={partition.id}>{rigLabel(partition.id, summary?.sources)}</option
 								>{/each}</select
 						></label
-					>
-					{#if upload}<p class="small muted">
-							Rig is locked to your upload: {rigLabel(upload.rig, summary?.sources)}. Remove the local
-							reference to change rigs.
-						</p>{/if}
-					{#if route !== 'taste'}<SegmentedControl
-							label="Matching focus"
-							options={[
-								{ value: 'balanced', label: 'Balanced' },
-								{ value: 'bass', label: 'Bass' },
-								{ value: 'vocals', label: 'Vocals' },
-								{ value: 'treble', label: 'Treble' }
-							]}
-							value={settings.focus}
-							onchange={(value: Focus) => {
-								change({ focus: value === 'balanced' ? undefined : value });
-							}}
-						/>{/if}
-					<label class="field-label budget"
-						>Maximum reviewer-listed price (USD)<input
-							class="text-input"
-							type="number"
-							min="0"
-							step="1"
-							placeholder="No limit"
-							value={settings.max ?? ''}
-							onchange={(event) => {
-								change({
-									max:
-										event.currentTarget.value &&
-										Number.isFinite(event.currentTarget.valueAsNumber) &&
-										event.currentTarget.valueAsNumber >= 0
-											? String(event.currentTarget.valueAsNumber)
-											: undefined
-								});
-							}}
+					><label class="field-label"
+						>Local reference measurement<input
+							type="file"
+							accept=".txt,.csv,.frd"
+							disabled={!uploadRig || uploadLoading}
+							onchange={(event) => void addUpload(event)}
 						/></label
-					>
-					<p class="small muted">
-						Listed prices are historical reviewer entries, not current deals. A budget excludes products
-						without a USD price.
-					</p>
-					<Toggle
-						label="Include separate tunings"
-						checked={settings.tunings}
-						onchange={(checked) => {
-							change({ tunings: checked ? '1' : undefined });
-						}}
-					/>
-					{#if route !== 'taste'}<Toggle
-							label="Treble-sensitive matching"
-							checked={settings.alpha !== undefined}
-							onchange={(checked) => {
-								change({ alpha: checked ? '2' : undefined });
-							}}
-						/>
-						<p class="small muted">Adds a directional penalty for extra energy from 2–10 kHz.</p>
-						{#if settings.alpha !== undefined}<Slider
-								label="Extra-treble penalty α"
-								min={1}
-								max={4}
-								step={0.25}
-								value={settings.alpha}
-								onchange={(value) => {
-									change({ alpha: String(value) });
-								}}
-							/>{/if}{/if}
-					<SourceFilter
-						sources={summary?.sources.filter(
-							(s) => sourceInForm(s, form) && (!activePartition || sourceOnPartition(s, activePartition))
-						) ?? []}
-						partition={activePartition}
-						partitions={summary?.partitions.filter((p) => p.form === form).map((p) => p.id) ?? []}
-						selected={settings.sources}
-						mode={settings.sourceMode}
-						onmodechange={(mode: SourceMode) => {
-							change({ sourceMode: mode === 'only' ? 'only' : undefined });
-						}}
-						onchange={(ids: string[]) => {
-							change({ sources: ids.join(',') });
-						}}
-					/>
-					{#if result?.kind === 'taste'}<details>
-							<summary>Adjust derived taste centres</summary>
-							<p class="small muted">
-								Corrections shift centres in dB, not learned statements or confidence.
-							</p>
-							{#each result.data.model.tastes as target (target.id)}<fieldset class="corrections">
-									<legend>Taste {target.id + 1} corrections</legend>{#each BANDS as band (band.id)}<Slider
-											label={`Taste ${target.id + 1} ${bandLabels[band.id]}`}
-											min={-4}
-											max={4}
-											step={0.5}
-											unit="dB"
-											value={corrections.find((edit) => edit.tasteId === target.id)?.bands[band.id] ?? 0}
-											onchange={(value: number) => {
-												correct(target.id, band.id, value);
-											}}
-										/>{/each}
-								</fieldset>{/each}
-						</details>{/if}
-				</div>
-			</details>
-			<details class="workspace-tools">
-				<summary>Profile files &amp; local measurement</summary>
-				<div class="profile-actions">
-					<button type="button" onclick={exportProfile}>Export profile JSON</button><button
-						type="button"
-						onclick={() => {
-							importInput.click();
-						}}>Import profile JSON</button
-					><input
-						class="sr-only"
-						type="file"
-						accept="application/json,.json"
-						bind:this={importInput}
-						onchange={(event) => void importProfile(event)}
-						aria-label="Import profile file"
-					/>
-				</div>
-				<p class="small muted">
-					Ratings are saved in this browser, separately for IEMs and headphones, and included in shared
-					workspace URLs.
-				</p>
-				<h3>Use your own measurement</h3>
-				<p class="small muted">
-					Choose the measurement rig before adding a file. The file stays in this browser session: never
-					uploaded, saved in your profile or included in a URL.
-				</p>
-				<label class="field-label"
-					>Upload measurement rig<select bind:value={uploadRig}
-						><option value="">Choose the rig used to measure this file</option
-						>{#each summary?.partitions.filter((p) => p.form === form) ?? [] as partition (partition.id)}<option
-								value={partition.id}>{rigLabel(partition.id, summary?.sources)}</option
-							>{/each}</select
-					></label
-				><label class="field-label"
-					>Local reference measurement<input
-						type="file"
-						accept=".txt,.csv,.frd"
-						disabled={!uploadRig || uploadLoading}
-						onchange={(event) => void addUpload(event)}
-					/></label
-				>{#if uploadError}<Notice kind="caution">{uploadError}</Notice>{/if}{#if uploadLoading}<p
-						role="status"
-					>
-						Reading local measurement…
-					</p>{/if}
-			</details>
+					>{#if uploadError}<Notice kind="caution">{uploadError}</Notice>{/if}{#if uploadLoading}<p
+							role="status"
+						>
+							Reading local measurement…
+						</p>{/if}
+				</details>
+			</div>
 		</section>
 		{#if starting}<aside class="starting-examples" aria-label="Example references">
 				<div class="examples-heading">
@@ -826,15 +845,44 @@
 					</h2>
 					<a class="chart-jump" href="#discover-chart">View chart</a>
 				</div>
+				{#if result}<RankingMethod
+						route={result.kind}
+						referenceName={upload?.name ?? nameFor(similarReferenceId)}
+						rig={rigLabel(result.data.partition, summary?.sources)}
+						likedCount={compareReferences.length}
+					>
+						<ReferenceDiagnostics
+							items={upload ? [] : resultItems}
+							{form}
+							version={summary?.version ?? ''}
+							{identity}
+							{products}
+							partition={result.data.partition}
+							sources={summary?.sources ?? []}
+							selected={settings.sources}
+							mode={result.data.sourceMode}
+							explain
+							unused={result.kind === 'taste' ? result.data.unusedItems : []}
+						/>
+						{#if upload}<p>
+								Your local measurement participates; saved ratings are inactive during this comparison.
+							</p>{/if}
+					</RankingMethod>{/if}
 				<p class="distance-note">
 					{result ? `${rigLabel(result.data.partition, summary?.sources)} · ` : ''}{displayRoute === 'taste'
 						? 'Taste ranking score · lower is closer; includes dislike penalties, not a dB distance. Each row also shows ordinary response distance in dB.'
-						: 'Response distance in dB · lower is closer, not better.'}
+						: 'Distance in dB · lower is closer, not better.'}{result
+						? result.data.sourceMode === 'only'
+							? ' · Selected reviewers only.'
+							: ' · All eligible reviewers.'
+						: ''}
 				</p>
-				{#if loading}<p role="status" class="updating">
-						{result ? 'Updating matches… previous results shown below.' : 'Finding measured matches…'}
-					</p>
-					{#if !result}<Skeleton rows={4} />{/if}{/if}
+				<div class="update-slot">
+					<span role="status">{rankSummary}</span>{#if loading}<p role="status" class="updating">
+							{result ? 'Updating matches… previous results shown below.' : 'Finding measured matches…'}
+						</p>{/if}
+				</div>
+				{#if loading && !result}<Skeleton rows={4} />{/if}
 				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
 						><ReferenceDiagnostics
 							{items}
@@ -883,11 +931,7 @@
 						level-aligns to its own reference.
 					</p>{/if}
 				{#if result?.kind === 'taste'}<TasteSummary taste={result.data} {form} {nameFor} />{/if}
-				{#if result}<p class="distance-note">
-						{result.data.sourceMode === 'only'
-							? 'Scored using selected reviewers’ measurements only.'
-							: 'Reviewer coverage filter · scored using all eligible sources.'}
-					</p>
+				{#if result}
 					{#if settings.sources.length && result.data.caveats.length}<aside
 							class="source-caveats"
 							aria-label="Reviewer selection caveats"
@@ -899,6 +943,7 @@
 									candidate={match.candidate}
 									existing={items.find((item) => item.productId === match.candidate.product.id)}
 									rank={index + 1}
+									rankChange={rankMarkers.get(match.candidate.product.id)}
 									distance={match.distance}
 									bands={match.bands}
 									{match}
@@ -914,6 +959,7 @@
 									candidate={row.candidate}
 									existing={items.find((item) => item.productId === row.candidate.product.id)}
 									rank={index + 1}
+									rankChange={rankMarkers.get(row.candidate.product.id)}
 									distance={row.fit.plainDistanceDb}
 									bands={row.fit.bands}
 									fit={row.fit}
@@ -934,6 +980,7 @@
 									candidate={row.candidate}
 									existing={items.find((item) => item.productId === row.candidate.product.id)}
 									rank={index + 1}
+									rankChange={rankMarkers.get(row.candidate.product.id)}
 									distance={(resultSort === 'minimax' ? row.tradeoff.minimax : row.tradeoff.mean) ?? NaN}
 									bands={evidence[0]?.bands ?? []}
 									referenceEvidence={evidence}
@@ -991,6 +1038,14 @@
 />
 
 <style>
+	.workspace-options {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+	}
+	.workspace-options details[open] {
+		grid-column: 1 / -1;
+	}
 	.discover-grid {
 		display: grid;
 		grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
@@ -1012,11 +1067,11 @@
 	.results {
 		grid-column: 1;
 		grid-row: 2;
-		margin-top: 32px;
+		margin-top: 20px;
 		min-width: 0;
 	}
 	.search {
-		margin: 0 0 24px;
+		margin: 0 0 16px;
 	}
 	.workspace-heading {
 		display: flex;
@@ -1061,12 +1116,12 @@
 	.refine,
 	.workspace-tools {
 		border-block: 1px solid var(--line);
-		margin-top: 16px;
+		margin-top: 8px;
 		font-size: var(--text-sm);
 	}
 	summary {
-		padding: 14px 0;
-		min-height: 44px;
+		padding: 8px 0;
+		min-height: 36px;
 		cursor: pointer;
 	}
 	summary span {
@@ -1112,7 +1167,7 @@
 	.analysis-caveats {
 		font-size: var(--text-xs);
 		color: var(--muted);
-		margin: 12px 0 20px;
+		margin: 8px 0;
 	}
 	.analysis-caveats p {
 		margin-top: 12px;
@@ -1128,12 +1183,23 @@
 		align-items: center;
 		font-size: var(--text-xs);
 	}
+	.update-slot {
+		position: relative;
+		min-height: 32px;
+		font-size: var(--text-xs);
+		color: var(--muted);
+		display: flex;
+		align-items: center;
+	}
 	.updating {
-		padding: 12px;
-		border-left: 3px solid var(--accent);
-		background: var(--accent-soft);
-		font-size: var(--text-sm);
-		margin-block: 16px;
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		background: var(--paper);
+		color: var(--accent);
+		font-size: var(--text-xs);
+		margin: 0;
 	}
 	.tradeoff-controls {
 		display: grid;
@@ -1161,6 +1227,12 @@
 		}
 		.chart-jump {
 			display: inline-flex;
+		}
+	}
+	@media (max-width: 640px) {
+		.workspace-options {
+			grid-template-columns: 1fr;
+			gap: 0;
 		}
 	}
 </style>

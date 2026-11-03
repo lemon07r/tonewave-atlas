@@ -249,7 +249,7 @@
 		opacity: 1;
 	}
 	kbd {
-		font: 12px var(--mono);
+		font: var(--text-xs) var(--mono);
 		color: var(--muted);
 		border: var(--hairline) solid var(--line);
 		border-radius: 2px;
@@ -279,7 +279,7 @@
 	}
 	.group-label {
 		padding: 12px 16px 8px;
-		font: 11px var(--mono);
+		font: var(--text-xs) var(--mono);
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--muted);

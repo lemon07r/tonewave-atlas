@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { expectTradeoffRows } from './tradeoffs.ts';
-import { reviewerForReference } from './catalog.ts';
+import { measurementReviewer, reviewerForReference } from './catalog.ts';
 
 const reference = 'p-437de4e3e3402077cdc3';
 const volume = 'p-9104c8bb39d66e906811';
@@ -223,6 +223,9 @@ test('two real references expose trade-offs, per-reference evidence, all compare
 	await page.getByRole('radio', { name: 'Reference trade-offs', exact: true }).check();
 	const item = page.getByRole('region', { name: 'Softears Volume S', exact: true });
 	await item.locator('summary').click();
+	await item
+		.getByRole('combobox', { name: 'Reviewer for Softears Volume S', exact: true })
+		.selectOption(measurementReviewer(tuning));
 	await item
 		.getByRole('combobox', { name: 'Measurement for Softears Volume S', exact: true })
 		.selectOption(tuning);

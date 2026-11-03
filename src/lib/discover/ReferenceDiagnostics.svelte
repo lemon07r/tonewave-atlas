@@ -1,5 +1,11 @@
 <script lang="ts">
-	import type { AtlasSummary, MeasurementInfo, ProductListItem, SourceMode } from '#core/atlas/types.ts';
+	import type {
+		AtlasSummary,
+		MeasurementInfo,
+		ProductListItem,
+		SourceMode,
+		TasteResult
+	} from '#core/atlas/types.ts';
 	import type { Form } from '#core/dataset/types.ts';
 	import { analysis } from '#lib/atlas.ts';
 	import type { WorkspaceItem } from '#lib/profile/profile.ts';
@@ -17,7 +23,9 @@
 		partition,
 		sources,
 		selected = [],
-		mode = 'coverage'
+		mode = 'coverage',
+		explain = false,
+		unused = []
 	}: {
 		items: WorkspaceItem[];
 		form: Form;
@@ -28,6 +36,8 @@
 		sources: AtlasSummary['sources'];
 		selected?: string[];
 		mode?: SourceMode;
+		explain?: boolean;
+		unused?: TasteResult['unusedItems'];
 	} = $props();
 	let measurements = $state.raw<MeasurementInfo[]>([]);
 	let loading = $state(true);
@@ -72,22 +82,39 @@
 </script>
 
 {#if loading}<p role="status">Checking reference measurements…</p>{:else}<ul class="diagnostics">
-		{#each items.filter((item) => item.soundRelated && !['unrated', 'neutral'].includes(item.rating)) as original (original.productId)}
+		{#each items.filter((item) => explain || (item.soundRelated && !['unrated', 'neutral'].includes(item.rating))) as original (original.productId)}
 			{@const item = identity ? canonicalItem(original, identity) : original}
 			{@const product = productFor(products, item.productId, identity)}
 			{@const diagnostic = referenceDiagnostic(item, product, measurements, partition, { selected, mode })}
+			{@const excluded = unused.find((entry) => entry.productId === item.productId)}
 			<li>
-				<strong>{product ? `${product.brand} ${product.model}` : 'Unavailable product'}</strong
-				>{diagnostic.variant ? ` · selected variant ${diagnostic.variant}` : ' · default measurements'}:
-				{#if diagnostic.status === 'unknown-measurement'}the selected measurement is not available for this
-					product.
-				{:else if diagnostic.status === 'unknown-product'}not in this form-factor catalog.
-				{:else if diagnostic.status === 'unavailable'}No eligible {item.measurementId
-						? 'selected'
-						: 'default'} measurements{mode === 'only' ? ' for these reviewers' : ''}.
-				{:else}{diagnostic.status === 'missing-rig'
-						? `not measured on ${rigLabel(partition, sources)}. `
-						: ''}Available on {diagnostic.partitions.map((id) => rigLabel(id, sources)).join(', ')}.{/if}
+				{#if explain}<strong>{product ? `${product.brand} ${product.model}` : 'Unavailable product'}</strong>:
+					{#if !item.soundRelated}excluded · comfort-only. Recorded, but not used to model sound.
+					{:else if item.rating === 'unrated'}excluded · unrated.
+					{:else if item.rating === 'neutral'}excluded · neutral.
+					{:else if excluded}excluded · {excluded.reason.replaceAll('-', ' ')}.
+					{:else if diagnostic.status === 'missing-rig'}excluded · incompatible rig ({rigLabel(
+							partition,
+							sources
+						)}).
+					{:else if diagnostic.status !== 'available'}excluded · {diagnostic.status === 'unknown-product'
+							? 'missing product'
+							: 'missing measurement'}{mode === 'only' ? ' for selected reviewers' : ''}.
+					{:else}participates · {item.rating}{item.rating === 'dislike' ? ' (sound-related)' : ''}.
+					{/if}
+				{:else}
+					<strong>{product ? `${product.brand} ${product.model}` : 'Unavailable product'}</strong
+					>{diagnostic.variant ? ` · selected variant ${diagnostic.variant}` : ' · default measurements'}:
+					{#if diagnostic.status === 'unknown-measurement'}the selected measurement is not available for this
+						product.
+					{:else if diagnostic.status === 'unknown-product'}not in this form-factor catalog.
+					{:else if diagnostic.status === 'unavailable'}No eligible {item.measurementId
+							? 'selected'
+							: 'default'} measurements{mode === 'only' ? ' for these reviewers' : ''}.
+					{:else}{diagnostic.status === 'missing-rig'
+							? `not measured on ${rigLabel(partition, sources)}. `
+							: ''}Available on {diagnostic.partitions.map((id) => rigLabel(id, sources)).join(', ')}.{/if}
+				{/if}
 			</li>
 		{/each}
 	</ul>{/if}
