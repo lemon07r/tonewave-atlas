@@ -184,6 +184,47 @@ eligible: the specified compatibility rule recognises `[modified:`, not every po
 No identity or classification fixes were made in this engine workstream. The marked modified
 CrinEar prototype is absent under the default candidate filter.
 
+### Full-score cache and dataset-update regressions
+
+Follow-up `pnpm verify` passed **1,190 tests in 81 files** (86.88 s), plus format, lint, types and knip.
+
+Follow-up service tests compare cached view changes against fresh uncached services, with spies on
+full scoring, scalar distances, Pareto computation and taste-model construction:
+
+- `reuses full compare scores and Pareto membership for sort, Pareto and topK changes` includes a
+  different minimax winner outside the previously displayed mean top one, actual Pareto exclusion,
+  larger K and zero K.
+- `invalidates compare scores for score-affecting settings and evicts the previous computation`
+  covers references/exact measurements, focus, treble, filters and source mode/selection; key tests
+  additionally cover partition, dataset version, harmonisation, custom bands, ratings and corrections.
+- `reuses full similar scores when topK grows rather than caching only displayed rows`,
+  `reuses taste scores and model for topK changes but invalidates corrections`,
+  `isolates cached score computations from mutation of returned results`, and
+  `refreshes stability over the new topK margin without rescoring similar candidates` cover the other
+  cache paths and changing bounded-set rank ranges. Cache tests cover concurrent sharing and failed
+  computation retries.
+- `raises a sticky typed update error for a removed versioned %s file without mixing versions`
+  covers catalog/detail/rank/targets. Further fake-fetch cases cover network/503, one shared no-store
+  refresh for concurrent failures, unchanged/offline refresh preserving the original error and retry,
+  and continued use of retained pinned-version files. `preserves the typed dataset-update signal
+through the existing Comlink error transport` verifies reconstruction from a real round trip.
+
+The randomised packed-taste/full-explanation oracle now checks **all** cached scalar scores and
+ordering, including corrections, every dislike reason, missing data and ties. A hand-derived distance
+case uses zero-mean alternating amplitudes `[2,2,0,1,NaN]`, expecting indices `[2,3,0,1]` and distances
+`[0,1,2,2]` at every K cutoff. This exposed an existing heap tie bug retaining row 1 over row 0 at
+K=3; equal-score heap ordering now consistently treats the later index as worse. Distances did not
+change. Both named live top-10 outputs above remain exactly identical to the pre-cache run, including
+ids, scores, intervals, ranks, source counts and assessed-side booleans.
+
+Sort-only timing uses the same four references (**57/32/5/10 reviewers**) and dataset/machine as above,
+topK=20, explicit iem-711, default correction/filters. Warm both mean/minimax twice; for five trials,
+call mean, then time only the change to minimax. Before/after median **69.20 / 8.28 ms**, maximum
+**74.31 / 10.21 ms**. This includes stability, result construction and copying; the index, scorer and
+reviewer variants are already warm. Local disk fetch harness; network/worker transport excluded.
+These are local observations, not latency guarantees or first-query timings. New scoring settings
+still require the full calculation; no reviewer omissions or candidates are subsampled.
+
 ### Single-reviewer investigation
 
 On iem-711 the engine builds **7,550** default consensuses; the new default candidate filter leaves

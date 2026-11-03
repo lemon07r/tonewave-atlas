@@ -185,7 +185,15 @@ canonical grids, and are zero for identical shapes. Positive means mean the cand
 
 `rankPacked` scans an N×120 float32 matrix using two passes per row and a size-K max-heap: O(N·120 +
 N log K), with no row objects/views allocated inside the scan. Only winners receive full band stats.
-It reports evaluated and insufficient row counts; equal scores have deterministic input-order handling.
+It reports evaluated and insufficient row counts; equal scores prefer earlier input rows, including
+at the top-K cutoff. `scorePacked` exposes the same scalar calculation for every adequate row, sorted
+by distance then input index, without band explanations. The service caches this full list rather
+than a previous top-K slice. Taste similarly caches `scoreTastePacked`'s full scalar ranking and
+prepared model, constructing full fits only for requested winners. Compare caches all objectives,
+offsets and actual Pareto membership, then applies the requested sort/filter/limit to that full list.
+Changing only these view controls does not change score definitions or candidate eligibility;
+similar/compare stability is still recomputed for the newly selected topK+10 set, so changing K can
+change its bounded-set rank ranges. Cache ownership and invalidation are defined in `ARCHITECTURE.md`.
 
 ## Focus, reliability and narrow peaks
 
