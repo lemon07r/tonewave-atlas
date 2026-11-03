@@ -296,3 +296,71 @@ test('migration Undo retains the earliest snapshot while import has its own ordi
 	).toBeChecked();
 	expect(await page.evaluate((key) => localStorage.getItem(key), PROFILE_KEY)).toBe(saved);
 });
+
+test('a pending migration Undo survives reloads and remounts until it is dismissed', async ({ page }) => {
+	const before = {
+		version: 2,
+		profiles: { iem: [like('legacy-product'), dislike(reference)], headphone: [] }
+	};
+	await page.addInitScript(
+		({ key, text }) => {
+			if (!localStorage.getItem(key)) localStorage.setItem(key, text);
+		},
+		{ key: PROFILE_KEY, text: JSON.stringify(before) }
+	);
+	await page.goto('/');
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	const undo = note.getByRole('button', { name: 'Undo', exact: true });
+	await expect(note).toContainText('a duplicate rating from an older link was dropped');
+	await expect(page.locator('.profile-row')).toHaveCount(1);
+	await page.reload();
+	await page.goto('/compare');
+	await page.goto('/');
+	await expect(page.locator('.profile-row')).toHaveCount(1);
+	await undo.click();
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await page.reload();
+	await expect(undo).toHaveCount(0);
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+});
+
+test('a dismissed migration note does not bring Undo back after a reload', async ({ page }) => {
+	const before = {
+		version: 2,
+		profiles: { iem: [like('legacy-product'), dislike(reference)], headphone: [] }
+	};
+	await page.addInitScript(
+		({ key, text }) => {
+			if (!localStorage.getItem(key)) localStorage.setItem(key, text);
+		},
+		{ key: PROFILE_KEY, text: JSON.stringify(before) }
+	);
+	await page.goto('/');
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	await expect(note).toContainText('a duplicate rating from an older link was dropped');
+	await note.getByRole('button', { name: 'Dismiss', exact: false }).click();
+	await page.reload();
+	await expect(page.locator('.profile-row')).toHaveCount(1);
+	await expect(note).toHaveCount(0);
+});
+
+test('import Undo restores the visible shared workspace, not the saved profile', async ({ page }) => {
+	const shared = [like(hexa)];
+	await page.goto(`/?${new URLSearchParams({ ratings: JSON.stringify(shared), rig: 'iem-711' })}`);
+	await expect(page.locator('.profile-row')).toHaveCount(1);
+	await page.getByLabel('Import profile file', { exact: true }).setInputFiles({
+		name: 'import.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(
+			JSON.stringify({ version: 2, profiles: { iem: [dislike(reference)], headphone: [] } })
+		)
+	});
+	await expect
+		.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
+		.toEqual([dislike(reference)]);
+	await page.locator('.toast').getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect
+		.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
+		.toEqual(shared);
+	await expect(page.locator('.profile-row')).toHaveCount(1);
+});

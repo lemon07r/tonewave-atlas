@@ -29,7 +29,12 @@
 	import type { CatalogIdentity } from '#lib/catalog/identity.ts';
 	import { canonicalItem, migrateProfile, migrateUrl } from '#lib/catalog/migrate.ts';
 	import { migrationMessages } from '#lib/catalog/notice.ts';
-	import { handoffMigration, takeMigration } from '#lib/catalog/handoff.ts';
+	import {
+		handoffMigration,
+		recallMigration,
+		rememberMigration,
+		takeMigration
+	} from '#lib/catalog/handoff.ts';
 	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
 	import { bandLabels } from './describe.ts';
 	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
@@ -60,6 +65,10 @@
 			: ['A catalog update changed your ratings. Undo restores the pre-migration profile for this session.']
 	);
 	let migrationUndone = false;
+	function keepMigration(before: { profile: Profile; url: string } | undefined) {
+		migrationBefore = before;
+		rememberMigration(() => sessionStorage, before);
+	}
 	let locationVersion = 0;
 	let catalogLoading = $state(true);
 	let identityReady = $state(false);
@@ -181,7 +190,7 @@
 		const migrated = migrateUrl(new URL(href), current, other);
 		const fresh = migrationMessages(migrated.messages);
 		if (fresh.length) migrationNote = [...migrationNote, ...fresh];
-		if (migrated.droppedRating && !migrationBefore) migrationBefore = { profile, url: href };
+		if (migrated.droppedRating && !migrationBefore) keepMigration({ profile, url: href });
 		if (migrated.changed) {
 			if ((migrated.url.searchParams.get('form') === 'headphones' ? 'headphone' : 'iem') !== form)
 				handoffMigration({ target: migrated.url.href, messages: migrationNote, before: migrationBefore });
@@ -208,7 +217,7 @@
 			replace: true,
 			reset: false
 		});
-		migrationBefore = undefined;
+		keepMigration(undefined);
 		migrationNote = [];
 		undoMessage = 'Pre-migration profile restored for this session.';
 	}
@@ -295,11 +304,12 @@
 			const next = migrated.profile;
 			migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
 			if (migrated.droppedRating && !migrationBefore)
-				migrationBefore = {
+				keepMigration({
 					profile: parsed,
 					url: `/?${withItems(page.url.searchParams, parsed.profiles[form])}`
-				};
-			store.change(next, profile);
+				});
+			// Ordinary Undo restores the visible workspace, which may come from a shared URL.
+			store.change(next, { ...profile, profiles: { ...profile.profiles, [form]: items } });
 			profile = store.value;
 			storageError = store.error;
 			undoMessage = 'Profile imported.';
@@ -357,8 +367,8 @@
 		);
 		const pending = takeMigration(page.url.href);
 		if (pending?.restored) store.restoreSession(pending.restored);
-		migrationBefore = pending?.before;
 		migrationUndone = store.restoredSession || (pending?.undone ?? false);
+		keepMigration(pending?.before ?? (migrationUndone ? undefined : recallMigration(() => sessionStorage)));
 		migrationNote = pending?.messages ?? [];
 		profile = store.value;
 		storageError = store.error;
@@ -378,7 +388,7 @@
 					const migrated = migrateProfile(profile, migrationUndone ? {} : catalogs);
 					migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
 					if (migrated.droppedRating && !migrationBefore)
-						migrationBefore = { profile: before, url: page.url.href };
+						keepMigration({ profile: before, url: page.url.href });
 					if (migrated.changed && store) {
 						store.change(migrated.profile);
 						profile = store.value;
@@ -497,7 +507,7 @@
 		onundo={migrationBefore ? undoMigration : undefined}
 		ondismiss={() => {
 			migrationNote = [];
-			migrationBefore = undefined;
+			keepMigration(undefined);
 		}}
 	/>
 	<div class="discover-grid">

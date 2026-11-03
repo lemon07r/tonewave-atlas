@@ -43,7 +43,7 @@ with a quiet, one-time note. Duplicate profile products merge: equal ratings com
 details, fit/comfort flag and explicit variant; an active rating beats Neutral or unrated. Conflicting
 active ratings prefer the already-current product entry and explain the dropped older rating by name.
 Migration Undo restores the earliest pre-migration profile for the tab session, retaining it and later edits across navigation in sessionStorage while leaving the saved canonical profile intact. Ordinary workspace Undo restores the visible references (including shared URL references); import has its own ordinary Undo.
-A destructive migration always shows its Undo until the note is dismissed, even when its message was already shown once.
+A destructive migration keeps its Undo for the tab session, across reloads and form or page changes, until Undo or Dismiss, even when its message was already shown once.
 Mixed reviewer databases remain available in each form and measurement rig they actually cover.
 Cross-form redirects check the other catalog: unambiguous links switch form and saved items move to that form’s profile; mixed or unresolved links remain intact with a quiet note.
 
