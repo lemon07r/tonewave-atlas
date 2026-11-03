@@ -122,7 +122,10 @@ for legacy stored reason ids; the narrow 5–9 kHz reason has a bounded total in
 
 ## Dataset files (`static/data/`)
 
-- `manifest.json` — dataset version, build time, per-file hashes and sizes, source list.
+- `manifest.json` — dataset version, build time, per-file hashes and sizes, source list with accepted
+  measurement counts, and per-partition form/product/measurement counts. `summary()` uses these counts
+  without fetching either catalog; older manifests without the optional counts fall back to catalogs
+  so a code deployment remains compatible with the previously published dataset.
 - `<version>/catalog-<form>.json.gz` — products, measurements, sources (metadata only).
 - `<version>/targets.json.gz` — rig-specific reference curves on GRID, attribution and source provenance.
 - `<version>/rank-<partition>.bin.gz` — 1/12-octave channel-averaged curves for ranking, plus

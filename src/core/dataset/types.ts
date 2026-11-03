@@ -29,6 +29,8 @@ export interface Source {
 	/** Actual accepted forms/partitions in a mixed database; primary fields remain compatible. */
 	forms?: Form[];
 	partitions?: string[];
+	/** Accepted measurements across both catalogs; optional on older datasets. */
+	measurementCount?: number;
 	permission: 'public, not explicitly licensed' | 'permission granted';
 	crawledAt: string;
 	calibration: string | null;
@@ -153,4 +155,6 @@ export interface Manifest {
 	builtAt: string;
 	files: DatasetFile[];
 	sources: Source[];
+	/** Catalog-free overview; optional while newer code can still serve an older dataset. */
+	partitions?: { id: string; form: Form; measurementCount: number; productCount: number }[];
 }
