@@ -73,18 +73,10 @@
 			if (abort.signal.aborted) return;
 			measurements = outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : []));
 			error = outcomes
-				.flatMap((outcome) =>
-					outcome.status === 'rejected'
-						? [
-								analysisError(
-									outcome.reason,
-									'Variant metadata could not be loaded. No measurement has been substituted.'
-								)
-							]
-						: []
-				)
-				.filter(Boolean)
-				.join(' ');
+				.flatMap((outcome) => (outcome.status === 'rejected' ? [analysisError(outcome.reason)] : []))
+				.some(Boolean)
+				? 'Variant metadata could not be loaded. No measurement has been substituted.'
+				: '';
 			loading = false;
 		});
 		return () => {

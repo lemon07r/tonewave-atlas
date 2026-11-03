@@ -1,6 +1,8 @@
-import { expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { MeasurementInfo, ProductListItem } from '#core/atlas/types.ts';
+import { DatasetUpdatedError } from '#core/atlas/errors.ts';
+import { datasetUpdate } from '#lib/analysis/errors.svelte.ts';
 import ReferenceDiagnostics from './ReferenceDiagnostics.svelte';
 
 const service = vi.hoisted(() => ({ measurements: vi.fn<(ids: string[]) => Promise<MeasurementInfo[]>>() }));
@@ -10,6 +12,14 @@ vi.mock('#lib/product/data.ts', async (original) => ({
 	...(await original<typeof import('#lib/product/data.ts')>()),
 	productMeasurements: metadata
 }));
+
+beforeEach(() => {
+	service.measurements.mockReset();
+	metadata.mockReset();
+});
+afterEach(() => {
+	datasetUpdate.message = '';
+});
 
 const product: ProductListItem = {
 	id: 'p',
@@ -169,4 +179,20 @@ test('ranking explanation reuses measurement diagnostics and engine exclusions a
 	await expect
 		.element(screen.getByText('Fixture unused: excluded · insufficient overlap.', { exact: true }))
 		.toBeVisible();
+});
+
+test('a transported dataset update uses shared Reload guidance without a generic metadata error', async () => {
+	const updated = new DatasetUpdatedError('old', 'new');
+	service.measurements.mockRejectedValueOnce({ name: updated.name, message: updated.message });
+	const screen = await render(ReferenceDiagnostics, {
+		items: [item],
+		form: 'iem',
+		version: 'fixture',
+		products: [product],
+		partition: 'iem-711',
+		sources: []
+	});
+	await expect.poll(() => datasetUpdate.message).toBe('The dataset was updated. Reload to continue.');
+	await expect.element(screen.getByText(/Variant metadata could not be loaded/)).not.toBeInTheDocument();
+	await expect.element(screen.getByText(/the selected measurement is not available/)).toBeVisible();
 });
