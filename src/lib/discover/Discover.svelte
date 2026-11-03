@@ -442,9 +442,18 @@
 				change({ edits: JSON.stringify(cached) });
 			});
 	});
+	// View-only URL changes such as charted products keep the approved query; only a changed,
+	// migrated query re-ranks.
+	let approvedQuery = $state('');
 	$effect(() => {
-		if (!ready || catalogLoading || catalogError || migratedHref !== page.url.href) return;
-		const spec = JSON.parse(queryKey) as QuerySpec;
+		const key = queryKey;
+		if (key === untrack(() => approvedQuery)) return;
+		// Clearing the approval cancels a superseded debounce or run and lets a return to it restart.
+		approvedQuery = ready && !catalogLoading && !catalogError && migratedHref === page.url.href ? key : '';
+	});
+	$effect(() => {
+		if (!approvedQuery) return;
+		const spec = JSON.parse(approvedQuery) as QuerySpec;
 		const currentIdentity = identity;
 		controller.invalidate();
 		queryError = undefined;
