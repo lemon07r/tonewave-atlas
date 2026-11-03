@@ -79,6 +79,8 @@
 	let identityReady = $state(false);
 	let migratedHref = $state('');
 	let catalogError = $state('');
+	let retryCatalog = () => {};
+	let queryAttempt = $state(0);
 	let ready = $state(false);
 	let query = $state('');
 	let profile = $state.raw<Profile>(emptyProfile());
@@ -407,34 +409,40 @@
 		const startup = new AbortController();
 		// A function, so narrowing after one check doesn't hide a later abort across awaits.
 		const cancelled = () => startup.signal.aborted;
-		void Promise.all([productList(form), analysis().then((service) => service.summary())])
-			.then(async ([list, info]) => {
-				if (cancelled()) return;
-				products = list;
-				summary = info;
-				catalogLoading = false;
-				const catalogs = await migrationCatalogs(form, info.version, new URL(page.url.href), profile);
-				if (!cancelled()) {
-					const before = profile;
-					const migrated = migrateProfile(profile, migrationUndone ? {} : catalogs);
-					migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
-					if (migrated.droppedRating && !migrationBefore)
-						keepMigration({ profile: before, url: page.url.href });
-					if (migrated.changed && store) {
-						store.change(migrated.profile);
-						profile = store.value;
-						storageError = store.error;
-					}
-					identity = catalogs[form];
-					identityReady = true;
-				}
-			})
-			.catch((cause: unknown) => {
-				if (!cancelled()) {
-					catalogError = errorText(cause);
+		retryCatalog = () => {
+			catalogLoading = true;
+			catalogError = '';
+			void Promise.resolve()
+				.then(() => Promise.all([productList(form), analysis().then((service) => service.summary())]))
+				.then(async ([list, info]) => {
+					if (cancelled()) return;
+					products = list;
+					summary = info;
 					catalogLoading = false;
-				}
-			});
+					const catalogs = await migrationCatalogs(form, info.version, new URL(page.url.href), profile);
+					if (!cancelled()) {
+						const before = profile;
+						const migrated = migrateProfile(profile, migrationUndone ? {} : catalogs);
+						migrationNote = [...migrationNote, ...migrationMessages(migrated.messages)];
+						if (migrated.droppedRating && !migrationBefore)
+							keepMigration({ profile: before, url: page.url.href });
+						if (migrated.changed && store) {
+							store.change(migrated.profile);
+							profile = store.value;
+							storageError = store.error;
+						}
+						identity = catalogs[form];
+						identityReady = true;
+					}
+				})
+				.catch((cause: unknown) => {
+					if (!cancelled()) {
+						catalogError = errorText(cause);
+						catalogLoading = false;
+					}
+				});
+		};
+		retryCatalog();
 		return () => {
 			uploadGeneration++;
 			startup.abort();
@@ -489,6 +497,7 @@
 	$effect(() => {
 		if (!approvedQuery) return;
 		const spec = JSON.parse(approvedQuery) as QuerySpec;
+		const attempt = queryAttempt;
 		const currentIdentity = identity;
 		controller.invalidate();
 		queryError = undefined;
@@ -513,6 +522,7 @@
 		}
 		loading = true;
 		const timer = window.setTimeout(() => {
+			if (attempt !== queryAttempt) return;
 			void controller.run(
 				async () => queryDiscovery(await analysis(), spec),
 				(next) => {
@@ -572,7 +582,10 @@
 					onselect={choose}
 				/>
 			</div>
-			{#if catalogError}<Notice kind="caution">Catalog unavailable: {catalogError}</Notice>{/if}
+			{#if catalogError}<Notice kind="caution"
+					>Catalog unavailable: {catalogError}
+					<button type="button" class="button quiet" onclick={retryCatalog}>Retry catalog</button></Notice
+				>{/if}
 			{#if settings.issue}<Notice kind="caution">{settings.issue}</Notice>{/if}
 			{#if storageError}<Notice kind="caution">{storageError}</Notice>{/if}
 			{#if profileError}<Notice kind="caution">{profileError}</Notice>{/if}
@@ -948,7 +961,16 @@
 								Choose a compatible rig or remove a reference; no variant or rig is substituted.
 							</p>{/if}</Notice
 					>{/if}
-				{#if networkError}<Notice kind="caution">{networkError}</Notice>{/if}
+				{#if networkError}<Notice kind="caution"
+						>{networkError}
+						<button
+							type="button"
+							class="button quiet"
+							onclick={() => {
+								queryAttempt++;
+							}}>Retry matching</button
+						></Notice
+					>{/if}
 				{#if result?.kind === 'compare'}<div class="tradeoff-controls">
 						<label class="field-label"
 							>Trade-off sort<select

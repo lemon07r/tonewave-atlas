@@ -7,6 +7,7 @@ const rpc = vi.hoisted(() => ({
 	terminate: vi.fn(),
 	childRelease: vi.fn(),
 	worker: vi.fn(),
+	instances: [] as EventTarget[],
 	events: [] as string[],
 	releaseProxy: Symbol('releaseProxy')
 }));
@@ -27,6 +28,7 @@ function deferred() {
 beforeEach(() => {
 	vi.clearAllMocks();
 	rpc.events.length = 0;
+	rpc.instances.length = 0;
 	rpc.release.mockImplementation(() => {
 		rpc.events.push('release-root');
 	});
@@ -35,9 +37,11 @@ beforeEach(() => {
 	});
 	vi.stubGlobal(
 		'Worker',
-		class {
+		class extends EventTarget {
 			constructor(...args: unknown[]) {
+				super();
 				rpc.worker(...args);
+				rpc.instances.push(this);
 			}
 			terminate = rpc.terminate;
 		}
@@ -51,6 +55,35 @@ afterEach(() => {
 });
 
 describe('analysis client lifecycle', () => {
+	it.each(['error', 'messageerror'])(
+		'rejects every pending caller on worker %s and retries with a fresh worker',
+		async (event) => {
+			const failed = deferred();
+			rpc.create.mockReturnValueOnce(failed.promise).mockResolvedValueOnce({});
+			const first = getAnalysis('/data/');
+			const second = getAnalysis('/data/');
+			const rejection = expect(first).rejects.toThrow('Analysis worker failed to load. Please try again.');
+			expect(second).toBe(first);
+			rpc.instances[0]?.dispatchEvent(new Event(event, { cancelable: true }));
+			await rejection;
+			expect(rpc.events).toEqual(['release-root', 'terminate']);
+			const next = getAnalysis('/data/');
+			expect(next).not.toBe(first);
+			await next;
+			// A late event/completion from the failed worker must not discard its replacement.
+			rpc.instances[0]?.dispatchEvent(new Event(event));
+			failed.resolve({});
+			await failed.promise;
+			expect(getAnalysis('/data/')).toBe(next);
+			expect(rpc.worker).toHaveBeenCalledTimes(2);
+		}
+	);
+	it('discards a rejected creation so a retry does not reuse a rejected singleton', async () => {
+		rpc.create.mockRejectedValueOnce(new Error('Initialization failed')).mockResolvedValueOnce({});
+		await expect(getAnalysis('/data/')).rejects.toThrow('Initialization failed');
+		await getAnalysis('/data/');
+		expect(rpc.worker).toHaveBeenCalledTimes(2);
+	});
 	it('rejects pending initialization and releases the root once before terminating', async () => {
 		const creation = deferred();
 		rpc.create.mockReturnValue(creation.promise);

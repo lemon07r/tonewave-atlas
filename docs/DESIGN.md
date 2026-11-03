@@ -158,6 +158,9 @@ A dataset update reported by any analysis operation produces one persistent, pol
 “The dataset was updated. Reload to continue.” A Reload button opens a fresh session; the same failure
 does not also produce a generic catalog, ranking or detail error. Comlink errors are reconstructed
 from their transported name and message.
+Worker load/message failures reject pending initialization, release the failed worker and allow a
+fresh worker on retry. Discover offers explicit catalog and matching retry actions rather than
+leaving the workspace loading indefinitely.
 
 ## Review
 

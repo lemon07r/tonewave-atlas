@@ -9,6 +9,7 @@ let singleton:
 			root: Comlink.Remote<AnalysisWorker>;
 			remote: Promise<Comlink.Remote<Analysis>>;
 			cancelInitialization: () => void;
+			cleanup: () => void;
 	  }
 	| undefined;
 
@@ -19,16 +20,46 @@ export function getAnalysis(baseUrl: string): Promise<Comlink.Remote<Analysis>> 
 			throw new Error('Dispose the current analysis worker before changing datasets.');
 		return singleton.remote;
 	}
-	const worker = new Worker(new URL('../../workers/analysis.ts', import.meta.url), { type: 'module' });
+	let worker: Worker;
+	try {
+		worker = new Worker(new URL('../../workers/analysis.ts', import.meta.url), { type: 'module' });
+	} catch (cause) {
+		return Promise.reject(new Error('Analysis worker failed to load. Please try again.', { cause }));
+	}
 	const root = Comlink.wrap<AnalysisWorker>(worker);
 	let cancelInitialization!: () => void;
+	let resolveInitialization!: (service: Comlink.Remote<Analysis>) => void;
+	let rejectInitialization!: (cause: unknown) => void;
 	const remote = new Promise<Comlink.Remote<Analysis>>((resolve, reject) => {
+		resolveInitialization = resolve;
+		rejectInitialization = reject;
 		cancelInitialization = () => {
 			reject(new Error('Analysis worker disposed before initialization completed.'));
 		};
-		void root.create(new URL(baseUrl, globalThis.location.href).href).then(resolve, reject);
 	});
-	singleton = { baseUrl, worker, root, remote, cancelInitialization };
+	const failed = (event: Event) => {
+		event.preventDefault();
+		fail(new Error('Analysis worker failed to load. Please try again.', { cause: event }));
+	};
+	const current = {
+		baseUrl,
+		worker,
+		root,
+		remote,
+		cancelInitialization,
+		cleanup: () => {
+			worker.removeEventListener('error', failed);
+			worker.removeEventListener('messageerror', failed);
+		}
+	};
+	function fail(cause: unknown) {
+		rejectInitialization(cause);
+		if (singleton === current) dispose();
+	}
+	worker.addEventListener('error', failed);
+	worker.addEventListener('messageerror', failed);
+	singleton = current;
+	void root.create(new URL(baseUrl, globalThis.location.href).href).then(resolveInitialization, fail);
 	return remote;
 }
 
@@ -36,6 +67,7 @@ export function dispose(): void {
 	const current = singleton;
 	if (!current) return;
 	singleton = undefined;
+	current.cleanup();
 	current.cancelInitialization();
 	current.root[Comlink.releaseProxy]();
 	current.worker.terminate();

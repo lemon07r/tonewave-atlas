@@ -572,6 +572,33 @@ test('mods and minimum reviewers re-rank, persist in the URL and expose reviewer
 	await accessible(page);
 });
 
+test('failed analysis worker initialization leaves a retryable catalog error, not endless loading', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		const NativeWorker = window.Worker;
+		let failed = false;
+		window.Worker = class extends NativeWorker {
+			constructor(url: string | URL, options?: WorkerOptions) {
+				super(url, options);
+				if (!failed) {
+					failed = true;
+					queueMicrotask(() => this.dispatchEvent(new Event('error', { cancelable: true })));
+				}
+			}
+		};
+	});
+	await page.goto(shared([reference]));
+	await expect(page.getByText(/Catalog unavailable: Analysis worker failed to load/)).toBeVisible();
+	await expect(page.getByRole('combobox', { name: 'Add an IEM', exact: true })).not.toHaveAttribute(
+		'aria-busy',
+		'true'
+	);
+	await page.getByRole('button', { name: 'Retry catalog', exact: true }).click();
+	await expect(page.locator('.result-row')).toHaveCount(20);
+	await expect(page.getByRole('button', { name: 'Retry catalog', exact: true })).toHaveCount(0);
+});
+
 test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {
 	await page.goto(shared([reference]));
 	await expect(page.locator('.result-row')).toHaveCount(20);
