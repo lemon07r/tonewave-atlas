@@ -174,7 +174,7 @@ normalization, so cross-table conflicts and brand-hidden product chains are reje
 duplicate, cyclic or chained mappings stop ingestion. Numeral, MEMS and collaboration-spelling aliases
 require explicit reviewed mappings, with evidence in the input notes; such descriptors are not stripped
 generically. Response distances corroborate identity evidence, never authorize automatic merges.
-Only the recognized sample/unit and switch/cable/tip rules below fold descriptors; revisions remain separate.
+Only the recognized sample/unit, fit/tip/pad and switch/cable rules below fold descriptors; revisions remain separate.
 `identityMerges.productsBefore` counts globally unique original keys; `productsAfter` is the final
 count and `merged` is their net difference. Separately, `groupwiseMerges` lists each many-to-one group's
 original keys and reduction plus their total; this can differ from net reduction when an original key
@@ -233,6 +233,36 @@ source/partition receives one default under final coverage, preferring the lowes
 previous `unit` kind remain recorded; default does not mean verified stock. Retired product IDs redirect
 to the base, and inherited product/measurement redirects continue to resolve.
 
+### Fit, tip and pad identities
+
+After the established sample and exact-parent switch/accessory folds, both catalogs remove only
+remaining positioned fit descriptors:
+terminal parentheses containing `Deep Insertion`/`Shallow Insertion`, `Foam`/`… foam`, `… pad(s)`/
+`… earpad(s)` (including `used pads` and `foam pads on`); a terminal standalone `deep`/`shallow`;
+`Stock [colour] Tip`; a named `Tip`/`Pads` suffix; and `pad-rolling`, `[Pads Collection]` or `- Pads`.
+Named multiword accessories require an already accepted exact parent; otherwise only one accessory
+word, or an alphanumeric accessory code followed by `PRO`, is removed. No fuzzy parent is inferred.
+Years, bare S1/S2 and ordinal unit qualifiers are retained; only the existing explicit sample rules
+run again to remove a sample marker exposed by fit folding. Existing exact-parent accessory decisions
+take precedence over synthesizing fit-only bases, so a model word before bare `tips` is not guessed
+away. Empty or unidentified `Sample N`/`Unit N` identities
+are not invented: `Sample | 1 Deep` remains a known limitation, as does the uninterpreted `2nd Unit`
+in `Sonata 2nd Unit`.
+
+Fit words inside real names remain identity: `Fit Open S50`, `Fit Pro`, `LinkBuds Fit`, `Deep Blue`,
+`Deep Bass` and `Deep Cup` do not match these positions, and `(S)` is not interpreted as shallow.
+Any `[modified: …]`, whole-word mod/modded/modification, DIY, prototype or reshell marker takes
+precedence over the fit rule, including Foam Mod products and modded builds ending in named tips.
+
+The shared sample-fold machinery resolves canonical IDs and reviewed aliases, synthesizes missing
+bases, preserves every accepted measurement/file/URL/curve and redirects retired IDs with history.
+The full source label and descriptor survive in variant labels and processing provenance. Curves
+start as `fit`, preserving an existing `tuning` kind. A folded fit cannot displace an existing base
+default from the same source/partition, even if it alone matches the preferred switch state.
+Without a base default, unchanged final coverage can select one fit/tuning curve as `default`, with
+its descriptor and previous kind retained; this is a usable source reference, not verified stock.
+The build report's `fitIdentity` lists each move and synthesized base.
+
 ### Switch and accessory folding
 
 Recognized terminal switch-state suffixes (high/low impedance, including “impedence”/“imp”, DU or
@@ -245,7 +275,8 @@ A source's sole cable option stays default; multiple split cable options retain 
 standard/stock/default first, then source order). Existing unit/fit/tuning meaning wins over generic
 cable metadata; DSP cables and bass/impedance plugs are not neutral cable defaults.
 
-Tip suffixes include Stock Tip, branded tips, foam, wide/narrow/standard bore, CP100/CP145 and named
+The established vocabulary-based tip suffixes include Stock Tip, branded tips,
+foam, wide/narrow/standard bore, CP100/CP145 and named
 tip families. They become `fit` only when every token is a recognized tip term; a source's sole neutral
 tip option stays default, while additional split tip defaults prefer stock/standard/default then source
 order. Other tokens (including `02`/`12` in Hisenior T4's foam labels) stay in the variant label and
