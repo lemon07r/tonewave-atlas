@@ -1,4 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Locator } from '@playwright/test';
+import type { Manifest } from '../../src/core/dataset/types.ts';
+
+// Older manifests make the summary read both catalogs before any UI metadata request.
+const manifest = JSON.parse(readFileSync('static/data/manifest.json', 'utf8')) as Manifest;
+const summaryRequests =
+	manifest.partitions && manifest.sources.every((source) => source.measurementCount !== undefined) ? 0 : 1;
 
 async function assertTruthearRows(rows: Locator, timeout = 5000) {
 	await expect(rows.first()).toContainText('Truthear', { timeout });
@@ -59,12 +66,12 @@ test('inactive identity metadata failure cannot disable the active Discover cata
 	let requests = 0;
 	await page.route('**/catalog-headphone.json.gz', async (route) => {
 		requests++;
-		if (requests > 1) await route.abort('failed');
+		if (requests > summaryRequests) await route.abort('failed');
 		else await route.continue();
 	});
 	await page.goto('/?ref=p-437de4e3e3402077cdc3&rig=iem-711');
 	await expect(page.locator('.result-row')).toHaveCount(20);
-	await expect.poll(() => requests).toBe(2);
+	await expect.poll(() => requests).toBe(summaryRequests + 1);
 	await expect(page.getByText(/Catalog unavailable:/)).toHaveCount(0);
 });
 
