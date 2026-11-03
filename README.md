@@ -57,8 +57,8 @@ limits.
   family; inferred evidence is labelled and does not certify hardware.
 - **Reviewers are combined, not cherry-picked.** A product's reference is the level-aligned median of
   every usable default measurement on that rig family. Tuning variants are separate candidates.
-- **Measured disagreement sets the weighting.** About 2,430 IEMs have been measured by more than one
-  reviewer. That overlap shows how much measurements disagree at each frequency, and the comparison
+- **Measured disagreement sets the weighting.** About 2,430 IEMs have been measured on 711-type rigs by
+  more than one reviewer. That overlap shows how much measurements disagree at each frequency, and the comparison
   trusts noisy regions less. Correction for each reviewer's systematic offset is switched on only
   where held-out validation shows it helps: in the current 711-group data it reduces the average
   difference between two reviewers' measurements of the same IEM from 1.76 to 1.58 dB.
