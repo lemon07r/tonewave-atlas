@@ -1,5 +1,6 @@
 <script lang="ts" generics="Item extends SearchItem">
 	import type { SearchItem } from '#lib/search.ts';
+	import { onMount } from 'svelte';
 	import Icon from './Icon.svelte';
 	let {
 		items,
@@ -42,6 +43,13 @@
 	let ordered = $derived(groups.flatMap((group) => group.items));
 	let active = $derived(ordered.findIndex((item) => item.id === activeId));
 	let expanded = $derived(open);
+	// Text typed into the prerendered input before hydration fires no input event.
+	onMount(() => {
+		if (document.activeElement !== input || !input.value) return;
+		query = input.value;
+		open = true;
+		onquery?.(query);
+	});
 	function choose(item: Item) {
 		query = item.label;
 		onquery?.(query);
