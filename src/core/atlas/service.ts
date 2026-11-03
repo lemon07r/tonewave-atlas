@@ -23,12 +23,14 @@ import {
 	consensus,
 	priceRange,
 	type IndexedCurve,
+	type AtlasCandidate,
 	type PartitionIndex
 } from './index.ts';
 import {
 	alignedCurve,
 	distanceOptions,
 	rankingCaveats,
+	relatedToReference,
 	scoredCurve,
 	selectedSources,
 	selection,
@@ -37,6 +39,7 @@ import {
 	treblePenalty
 } from './ranking.ts';
 import { tasteRanking } from './taste-ranking.ts';
+import { rankingStability, STABILITY_CAVEAT, STABILITY_MARGIN } from './stability.ts';
 import type {
 	AtlasOptions,
 	IdResolution,
@@ -67,6 +70,7 @@ interface ResolvedReference {
 	index: PartitionIndex;
 	values: Float64Array;
 	info: ReferenceInfo;
+	consensusCandidate?: AtlasCandidate;
 }
 interface LocatedProduct {
 	catalog: Catalog;
@@ -473,6 +477,7 @@ export class AtlasService {
 			catalog: found.catalog,
 			index,
 			values: scoredCurve(values),
+			...(!selected && candidate ? { consensusCandidate: candidate } : {}),
 			info: { productId: found.product.id, uploadId: null, measurementIds, sources }
 		};
 	}
@@ -607,7 +612,30 @@ export class AtlasService {
 			true,
 			request.measurementId
 		);
-		const ranked = rankPacked(selected.matrix, reference.values, k, options);
+		const ranked = rankPacked(selected.matrix, reference.values, k ? k + STABILITY_MARGIN : 0, options);
+		const stability = rankingStability(
+			ranked.matches.flatMap((match) => {
+				const candidate = selected.candidates[match.index];
+				return candidate
+					? [
+							{
+								candidate,
+								values: selected.matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE),
+								score: match.stats.distance,
+								distances: [match.stats.distance]
+							}
+						]
+					: [];
+			}),
+			[
+				{
+					values: reference.values,
+					...(reference.consensusCandidate ? { candidate: reference.consensusCandidate } : {})
+				}
+			],
+			options
+		);
+		const referenceProducts = reference.catalog.products.filter((p) => p.id === reference.info.productId);
 		return {
 			ok: true,
 			partition: index.partition.id,
@@ -617,7 +645,7 @@ export class AtlasService {
 			rankWeights: options.weights.slice(),
 			treblePenalty: options.treblePenalty,
 			reference: { ...reference.info, rankCurve: reference.values.slice() },
-			results: ranked.matches.flatMap((match) => {
+			results: ranked.matches.slice(0, k).flatMap((match, i) => {
 				const candidate = selected.candidates[match.index];
 				if (!candidate) return [];
 				const distances = candidate.perSource.flatMap((c) => {
@@ -627,6 +655,10 @@ export class AtlasService {
 				return [
 					{
 						candidate: candidate.info,
+						...(stability[i] ? { stability: stability[i] } : {}),
+						...(relatedToReference(candidate.info.product, referenceProducts)
+							? { relatedToReference: true as const }
+							: {}),
 						...match.stats,
 						rankCurve: alignedCurve(
 							selected.matrix.subarray(match.index * RANK_SIZE, (match.index + 1) * RANK_SIZE),
@@ -642,11 +674,14 @@ export class AtlasService {
 					}
 				];
 			}),
-			caveats: rankingCaveats(
-				index,
-				reference.info.productId ? [reference.info.productId] : [],
-				selected.candidates.map((c) => c.info.product.id)
-			)
+			caveats: [
+				...rankingCaveats(
+					index,
+					reference.info.productId ? [reference.info.productId] : [],
+					selected.candidates.map((c) => c.info.product.id)
+				),
+				STABILITY_CAVEAT
+			]
 		};
 	}
 
@@ -746,7 +781,14 @@ export class AtlasService {
 			const { productId, measurementId, ...rating } = item;
 			items.push({ ...rating, id: measurementId ?? productId, curve: reference.values });
 		}
-		return tasteRanking(index, items, unusedItems, request, found.catalog.form);
+		return tasteRanking(
+			index,
+			items,
+			unusedItems,
+			request,
+			found.catalog.form,
+			found.catalog.products.filter((p) => request.items.some((item) => item.productId === p.id))
+		);
 	}
 	async compare(request: CompareRequest): Promise<CompareResult | AtlasError> {
 		topK(request.topK);
@@ -864,7 +906,25 @@ export class AtlasService {
 			.map((tradeoff, i) => ({ tradeoff, i }))
 			.filter(({ tradeoff }) => !request.paretoOnly || tradeoff.pareto)
 			.sort((a, b) => (a.tradeoff[sort] ?? Infinity) - (b.tradeoff[sort] ?? Infinity) || a.i - b.i)
-			.slice(0, k);
+			.slice(0, k ? k + STABILITY_MARGIN : 0);
+		const evaluated = ordered.flatMap(({ tradeoff, i }) => {
+			const candidate = selected.candidates[i],
+				values = curves[i],
+				score = tradeoff[sort];
+			return candidate && values && score !== null && tradeoff.distances.every((d): d is number => d !== null)
+				? [{ candidate, values, score, distances: tradeoff.distances }]
+				: [];
+		});
+		const stability = rankingStability(
+			evaluated,
+			references.map((r) => ({
+				values: r.values,
+				...(r.consensusCandidate ? { candidate: r.consensusCandidate } : {})
+			})),
+			options,
+			sort
+		);
+		const byCandidate = new Map(evaluated.map((row, i) => [row.candidate, stability[i]]));
 		return {
 			ok: true,
 			partition: partitionId,
@@ -874,16 +934,24 @@ export class AtlasService {
 			rankWeights: options.weights.slice(),
 			treblePenalty: options.treblePenalty,
 			references: references.map((r) => ({ ...r.info, rankCurve: r.values.slice() })),
-			results: ordered.flatMap(({ tradeoff, i }) => {
+			results: ordered.slice(0, k).flatMap(({ tradeoff, i }) => {
 				const candidate = selected.candidates[i],
 					curve = curves[i];
 				if (!candidate || !curve) return [];
+				const rowStability = byCandidate.get(candidate);
 				const referenceIndex = tradeoff.offsets.findIndex((offset) => offset !== null);
 				const alignedTo = referenceIndex < 0 ? null : referenceIndex;
 				const offsetDb = tradeoff.offsets[referenceIndex] ?? 0;
 				return [
 					{
 						candidate: candidate.info,
+						...(rowStability ? { stability: rowStability } : {}),
+						...(relatedToReference(
+							candidate.info.product,
+							locatedReferences.map((r) => r.product)
+						)
+							? { relatedToReference: true as const }
+							: {}),
 						tradeoff,
 						rankCurve: alignedCurve(curve, offsetDb),
 						offsetDb,
@@ -892,11 +960,14 @@ export class AtlasService {
 				];
 			}),
 			counts: { candidates: comparisons.length, pareto: comparisons.filter((r) => r.pareto).length },
-			caveats: rankingCaveats(
-				index,
-				inputs.map((r) => r.productId),
-				selected.candidates.map((c) => c.info.product.id)
-			)
+			caveats: [
+				...rankingCaveats(
+					index,
+					inputs.map((r) => r.productId),
+					selected.candidates.map((c) => c.info.product.id)
+				),
+				STABILITY_CAVEAT
+			]
 		};
 	}
 	async productDetail(productId: string): Promise<ProductDetail | AtlasError> {

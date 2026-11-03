@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { encodePack, type CurvePack } from '../dataset/codec.ts';
+import { rankPacked } from '../analysis/distance.ts';
 import type {
 	Catalog,
 	Manifest,
@@ -18,6 +19,7 @@ import * as ranking from './ranking.ts';
 import { AtlasService } from './service.ts';
 import type { CompareRequest, SimilarRequest } from './types.ts';
 import { spreadFor } from './spread.ts';
+import { reviewerVariants } from './stability.ts';
 
 interface ExtraMeasurement {
 	id: string;
@@ -26,6 +28,7 @@ interface ExtraMeasurement {
 	partition: string;
 	offset?: number;
 	shape?: number;
+	sourceId?: string;
 }
 
 /** Independently accumulated weighted LS moments, including the documented directional residual term. */
@@ -182,7 +185,8 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 	add('c-fit', 'c', 's3', 0, 30, 'fit', 1);
 	add('d1', 'd', 's1', 0, 0, 'default', 20, 'iem-5128');
 	add('e-fit', 'e', 's1', 0, 0, 'fit', null);
-	for (const m of extra) add(m.id, m.productId, 's1', m.offset ?? 0, m.shape ?? 0, m.kind, 100, m.partition);
+	for (const m of extra)
+		add(m.id, m.productId, m.sourceId ?? 's1', m.offset ?? 0, m.shape ?? 0, m.kind, 100, m.partition);
 	const partitions: Partition[] = ['iem-711', 'iem-5128'].map((id) => ({
 		id,
 		form: 'iem',
@@ -275,6 +279,337 @@ function fixture(cacheSize = 8, extra: ExtraMeasurement[] = []) {
 	});
 	return { service, catalog, packs, files, calls, base, fetcher };
 }
+
+describe('candidate safeguards', () => {
+	function modifiedFixture(flag: boolean) {
+		const f = fixture();
+		const product = f.catalog.products.find((p) => p.id === 'b');
+		if (!product) throw new Error('fixture product');
+		product.model = flag ? 'Prototype' : 'A [modified: prototype]';
+		if (flag) {
+			product.modified = true;
+			product.baseProductId = 'a';
+		}
+		f.files.set('v1/catalog-iem.json.gz', new TextEncoder().encode(JSON.stringify(f.catalog)));
+		return f;
+	}
+	it.each([false, true])(
+		'excludes modified candidates by default and marks included variants (flag=%s)',
+		async (flag) => {
+			const { service } = modifiedFixture(flag);
+			const similar = await service.similar({ productId: 'a' });
+			const included = await service.similar({ productId: 'a', filters: { includeModified: true } });
+			const reference = await service.similar({ productId: 'b' });
+			expect(similar.ok && similar.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+			expect(included.ok && included.results.find((r) => r.candidate.product.id === 'b')).toMatchObject({
+				relatedToReference: true
+			});
+			expect(reference.ok && reference.reference.productId).toBe('b');
+			const compare = await service.compare({ productIds: ['a', 'c'] });
+			const compareIncluded = await service.compare({
+				productIds: ['a', 'c'],
+				filters: { includeModified: true }
+			});
+			expect(compare.ok && compare.results).toEqual([]);
+			expect(compareIncluded.ok && compareIncluded.results[0]).toMatchObject({ relatedToReference: true });
+			const items = [{ productId: 'a', rating: 'like' as const, strength: 1, soundRelated: true }];
+			const taste = await service.taste({ items });
+			const tasteIncluded = await service.taste({ items, filters: { includeModified: true } });
+			expect(taste.ok && taste.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+			expect(
+				tasteIncluded.ok && tasteIncluded.results.find((r) => r.candidate.product.id === 'b')
+			).toMatchObject({ relatedToReference: true });
+			expect(await service.compare({ productIds: ['b', 'c'] })).toMatchObject({ ok: true });
+			expect(
+				await service.taste({ items: [{ productId: 'b', rating: 'like', strength: 1, soundRelated: true }] })
+			).toMatchObject({
+				ok: true,
+				unusedItems: []
+			});
+		}
+	);
+	it('counts distinct contributing reviewers on the active rig, not measurements or fit variants', async () => {
+		const { service } = fixture(8, [
+			{ id: 'b-repeat', productId: 'b', kind: 'default', partition: 'iem-711' }
+		]);
+		const similar = await service.similar({ productId: 'a', filters: { minReviewers: 2 } });
+		expect(similar.ok && similar.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+		const only = await service.similar({
+			productId: 'a',
+			filters: { minReviewers: 2, sourceMode: 'only', sources: ['s1'] }
+		});
+		expect(only.ok && only.results).toEqual([]);
+		const selected = await service.similar({
+			productId: 'a',
+			filters: { minReviewers: 2, sourceMode: 'only', sources: ['s1', 's2', 's2'] }
+		});
+		expect(selected.ok && selected.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+		const coverage = await service.similar({ productId: 'a', filters: { minReviewers: 2, sources: ['s1'] } });
+		expect(coverage.ok && coverage.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+		const compare = await service.compare({ productIds: ['a', 'b'], filters: { minReviewers: 2 } });
+		expect(compare.ok && compare.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+		const compareOnly = await service.compare({
+			productIds: ['a', 'b'],
+			filters: { minReviewers: 2, sourceMode: 'only', sources: ['s1'] }
+		});
+		expect(compareOnly.ok && compareOnly.results).toEqual([]);
+		const items = [{ productId: 'a', rating: 'like' as const, strength: 1, soundRelated: true }];
+		const taste = await service.taste({ items, filters: { minReviewers: 2 } });
+		expect(taste.ok && taste.results.map((r) => r.candidate.product.id)).toEqual(['c']);
+		const tasteOnly = await service.taste({
+			items,
+			filters: { minReviewers: 2, sourceMode: 'only', sources: ['s1'] }
+		});
+		expect(tasteOnly.ok && tasteOnly.results).toEqual([]);
+	});
+	it.each([0, -1, 1.5, NaN, Infinity])('rejects invalid minimum reviewer counts %s', async (minReviewers) => {
+		await expect(fixture().service.similar({ productId: 'a', filters: { minReviewers } })).rejects.toThrow(
+			RangeError
+		);
+	});
+});
+
+describe('leave-one-reviewer-out rank sensitivity', () => {
+	function sensitivityFixture(extra: ExtraMeasurement[] = []) {
+		const f = fixture(8, [
+			{ id: 'a3', productId: 'a', kind: 'default', partition: 'iem-711', sourceId: 's3' },
+			{ id: 'c3', productId: 'c', kind: 'default', partition: 'iem-711', sourceId: 's3' },
+			{ id: 'd711', productId: 'd', kind: 'default', partition: 'iem-711' },
+			...extra
+		]);
+		const coefficients: Record<string, number> = {
+			a1: -2,
+			a2: 0,
+			a3: 2,
+			b1: 1.5,
+			c1: 1,
+			c2: 3,
+			c3: 5,
+			d711: 8,
+			'a-repeat': -4
+		};
+		const pack = f.packs.find((p) => p.partition === 'iem-711');
+		if (!pack) throw new Error('fixture pack');
+		for (const curve of pack.curves)
+			curve.values = Float64Array.from(
+				RANK_GRID,
+				(_, i) => (coefficients[curve.measurementId] ?? 0) * (i % 2 ? 1 : -1)
+			);
+		pack.statistics = {
+			spread: Array.from(RANK_GRID, () => 0),
+			populationMedian: Array.from(RANK_GRID, () => 0),
+			sourceOffsets: {}
+		};
+		f.files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+		return f;
+	}
+	// 20 equally weighted sub-bass bins alternate -a,+a: LS offset=0 and D(a,b)=|a-b|.
+	// Median coefficients: reference [-2,0,2] -> 0, LOO -1,0,1;
+	// candidate C [1,3,5] -> 3, LOO 2,3,4. B=1.5, D=8 have one reviewer.
+	const settings = {
+		partition: 'iem-711',
+		harmonise: false,
+		customBands: { bass: 0, 'low-mid': 0, mid: 0, presence: 0, treble: 0, air: 0 }
+	} as const;
+	it('matches hand-derived score intervals and non-chained rank ranges, including the cutoff margin', async () => {
+		const { service } = sensitivityFixture();
+		const result = await service.similar({ productId: 'a', ...settings });
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((r) => [r.candidate.product.id, r.distance, r.stability])).toEqual([
+			['b', 1.5, { scoreRange: [0.5, 2.5], rankRange: [1, 2], referenceSide: true, candidateSide: false }],
+			['c', 3, { scoreRange: [2, 4], rankRange: [1, 2], referenceSide: true, candidateSide: true }],
+			['d', 8, { scoreRange: [7, 9], rankRange: [3, 3], referenceSide: true, candidateSide: false }]
+		]);
+		const cut = await service.similar({ productId: 'a', ...settings, topK: 1 });
+		expect(cut.ok && cut.results).toEqual(result.results.slice(0, 1));
+		expect(await service.similar({ productId: 'a', ...settings })).toEqual(result);
+		const explicit = await service.similar({ productId: 'a', measurementId: 'a2', ...settings });
+		if (!explicit.ok) throw new Error(explicit.message);
+		expect(explicit.results.find((r) => r.candidate.product.id === 'b')?.stability).toBeUndefined();
+		expect(explicit.results.find((r) => r.candidate.product.id === 'c')?.stability).toMatchObject({
+			referenceSide: false,
+			candidateSide: true
+		});
+	});
+	it.each(['mean', 'minimax'] as const)(
+		'uses the actual compare %s objective under one-at-a-time omissions',
+		async (sort) => {
+			const { service } = sensitivityFixture();
+			const result = await service.compare({ productIds: ['a', 'd'], ...settings, sort });
+			if (!result.ok) throw new Error(result.message);
+			expect(
+				result.results.map((r) => [
+					r.candidate.product.id,
+					r.tradeoff[sort],
+					r.stability?.scoreRange,
+					r.stability?.rankRange
+				])
+			).toEqual(
+				sort === 'mean'
+					? [
+							['b', 4, [3.5, 4.5], [1, 2]],
+							['c', 4, [3.5, 4.5], [1, 2]]
+						]
+					: [
+							['c', 5, [4, 6], [1, 1]],
+							['b', 6.5, [6.5, 6.5], [2, 2]]
+						]
+			);
+		}
+	);
+	it('does not chain overlapping intervals and counts touching endpoints as overlap', async () => {
+		const { service, packs, files } = sensitivityFixture();
+		const pack = packs.find((p) => p.partition === 'iem-711');
+		const row = pack?.curves.find((c) => c.measurementId === 'd711');
+		if (!pack || !row) throw new Error('fixture');
+		row.values = Float64Array.from(RANK_GRID, (_, i) => 5 * (i % 2 ? 1 : -1));
+		files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+		const result = await service.similar({ productId: 'a', ...settings });
+		if (!result.ok) throw new Error(result.message);
+		expect(result.results.map((r) => r.stability?.rankRange)).toEqual([
+			[1, 2],
+			[1, 3],
+			[2, 3]
+		]);
+	});
+	it('preserves ordinary ranking scores and settings, including directional treble sensitivity', async () => {
+		const { service, catalog, packs } = sensitivityFixture();
+		const request = {
+			productId: 'a',
+			partition: 'iem-711',
+			harmonise: false,
+			focus: 'treble',
+			treblePenalty: 2,
+			customBands: { presence: 3 }
+		} as const;
+		const result = await service.similar(request);
+		if (!result.ok) throw new Error(result.message);
+		const partition = catalog.partitions[0],
+			pack = packs[0];
+		if (!partition || !pack) throw new Error('fixture');
+		const index = buildPartitionIndex(catalog, partition, pack);
+		const selected = ranking.selection(index, {}, new Set(['a']), true);
+		const packedBaseline = rankPacked(
+			selected.matrix,
+			result.reference.rankCurve,
+			20,
+			ranking.distanceOptions(index, request)
+		);
+		expect(result.results.map((r) => [r.candidate.id, r.distance])).toEqual(
+			packedBaseline.matches.map((m) => [selected.candidates[m.index]?.info.id, m.stats.distance])
+		);
+		const baseline = selected.candidates
+			.map((c, i) => ({
+				id: c.info.id,
+				distance: returnedDistance(
+					Float64Array.from(selected.matrix.subarray(i * RANK_SIZE, (i + 1) * RANK_SIZE)),
+					result.reference.rankCurve,
+					RANK_GRID,
+					result.rankWeights,
+					2
+				).distance
+			}))
+			.sort((a, b) => a.distance - b.distance);
+		expect(result.results.map((r) => r.candidate.id)).toEqual(baseline.map((r) => r.id));
+		result.results.forEach((r, i) => {
+			expect(r.distance).toBeCloseTo(baseline[i]?.distance ?? NaN, 12);
+		});
+		const curve = (a: number) => Float64Array.from(RANK_GRID, (_, i) => a * (i % 2 ? 1 : -1));
+		const expected = [
+			returnedDistance(curve(3), curve(0), RANK_GRID, result.rankWeights, 2).distance,
+			...[-1, 0, 1].map(
+				(a) => returnedDistance(curve(3), curve(a), RANK_GRID, result.rankWeights, 2).distance
+			),
+			...[2, 3, 4].map((a) => returnedDistance(curve(a), curve(0), RANK_GRID, result.rankWeights, 2).distance)
+		];
+		const stability = result.results.find((r) => r.candidate.product.id === 'c')?.stability;
+		expect(stability?.scoreRange[0]).toBeCloseTo(Math.min(...expected), 12);
+		expect(stability?.scoreRange[1]).toBeCloseTo(Math.max(...expected), 12);
+	});
+	it('uses only selected reviewers for source-only sensitivity', async () => {
+		const { service } = sensitivityFixture();
+		const result = await service.similar({
+			productId: 'a',
+			...settings,
+			filters: { sourceMode: 'only', sources: ['s1', 's2'] }
+		});
+		if (!result.ok) throw new Error(result.message);
+		expect(result.reference.sources).toHaveLength(2);
+		expect(result.results.every((r) => r.stability === undefined)).toBe(true);
+	});
+	it('removes all measurements of one reviewer and rebuilds the measurement-level median', async () => {
+		const { service } = sensitivityFixture([
+			{ id: 'a-repeat', productId: 'a', sourceId: 's1', partition: 'iem-711', kind: 'default' }
+		]);
+		const result = await service.similar({ productId: 'a', ...settings });
+		if (!result.ok) throw new Error(result.message);
+		// Four measurement coefficients [-4,-2,0,2] give -1, not median([-3,0,2])=0.
+		// Omitting s1/s2/s3 gives 1/-2/-2, not one omission per measurement.
+		expect(result.reference.sources).toHaveLength(3);
+		expect(result.results.find((r) => r.candidate.product.id === 'b')).toMatchObject({
+			distance: 2.5,
+			stability: { scoreRange: [0.5, 3.5] }
+		});
+	});
+	it('rebuilds variants after the same published source correction as the actual consensus', async () => {
+		const { service, packs, files } = sensitivityFixture();
+		const pack = packs[0];
+		if (!pack?.statistics) throw new Error('fixture statistics');
+		pack.statistics.sourceOffsets = { s3: Array.from(RANK_GRID, (_, i) => 2 * (i % 2 ? 1 : -1)) };
+		pack.statistics.support = {
+			status: 'sufficient',
+			reason: null,
+			minimumProducts: 20,
+			multiSourceProducts: 20,
+			sources: 3,
+			spread: Array.from(RANK_GRID, () => 20),
+			sourceProducts: {},
+			sourceBins: {}
+		};
+		files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+		const result = await service.similar({ productId: 'a', ...settings, harmonise: true });
+		if (!result.ok) throw new Error(result.message);
+		// Corrected reference coefficients [-2,0,0]: median 0, LOO 0,-1,-1.
+		expect(result.harmonised).toBe(true);
+		expect(result.results.find((r) => r.candidate.product.id === 'b')?.stability?.scoreRange).toEqual([
+			1.5, 2.5
+		]);
+	});
+	it('evaluates every reviewer even at 57 reviewers, without sampling', () => {
+		const { catalog, packs } = sensitivityFixture();
+		const partition = catalog.partitions[0],
+			pack = packs[0];
+		const template = catalog.measurements.find((m) => m.id === 'a1'),
+			source = catalog.sources[0];
+		if (!partition || !pack || !template || !source) throw new Error('fixture');
+		for (let i = 3; i < 57; i++) {
+			const id = `a-extra-${i}`,
+				sourceId = `s${i + 1}`;
+			catalog.sources.push({ ...source, id: sourceId });
+			catalog.measurements.push({ ...template, id, sourceId });
+			pack.curves.push({
+				measurementId: id,
+				channel: 'avg',
+				values: Float64Array.from(RANK_GRID, (_, bin) => (bin % 2 ? i : -i))
+			});
+		}
+		const candidate = buildPartitionIndex(catalog, partition, pack).products.get('a');
+		expect(candidate?.info.sources).toHaveLength(57);
+		expect(reviewerVariants(candidate)).toHaveLength(57);
+		expect(reviewerVariants(candidate)).toBe(reviewerVariants(candidate));
+		if (!candidate?.consensusInputs) throw new Error('fixture consensus');
+		const inputs = candidate.consensusInputs;
+		// The memoized medoid path must be bit-identical to independent full reconstructions.
+		candidate.info.sources.forEach((reviewer, i) => {
+			const pooled = consensus(
+				inputs.filter((c) => c.measurement.sourceId !== reviewer.id),
+				RANK_GRID
+			);
+			if (!pooled) throw new Error('fixture omission');
+			expect(reviewerVariants(candidate)[i]).toEqual(ranking.scoredCurve(pooled.values));
+		});
+	});
+});
 
 describe('atlas service', () => {
 	it('keeps an exact redirected measurement parent even if the former parent still exists', async () => {

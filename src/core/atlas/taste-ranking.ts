@@ -14,19 +14,21 @@ import {
 	alignedCurve,
 	distanceOptions,
 	rankingCaveats,
+	relatedToReference,
 	selection,
 	sourceMode,
 	statisticCurve,
 	topK
 } from './ranking.ts';
-import type { TasteRequest, TasteResult, UnusedTasteItem } from './types.ts';
+import type { CandidateInfo, TasteRequest, TasteResult, UnusedTasteItem } from './types.ts';
 
 export function tasteRanking(
 	index: PartitionIndex,
 	items: RatedItem[],
 	unusedItems: UnusedTasteItem[],
 	request: TasteRequest,
-	form: Form
+	form: Form,
+	referenceProducts: readonly CandidateInfo['product'][] = []
 ): TasteResult {
 	const references = request.items.map((i) => i.productId);
 	const common = {
@@ -95,6 +97,9 @@ export function tasteRanking(
 			return [
 				{
 					candidate: candidate.info,
+					...(relatedToReference(candidate.info.product, referenceProducts)
+						? { relatedToReference: true as const }
+						: {}),
 					fit: m.fit,
 					tasteId: taste.id,
 					rankCurve: alignedCurve(values, distance.offset),
