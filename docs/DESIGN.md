@@ -9,7 +9,7 @@ it does not promise a listening experience or turn a measurement into a verdict.
 
 Self-hosted **Newsreader Variable** carries page titles and product names. **DM Sans Variable** is the
 interface and reading face; **IBM Plex Mono** is reserved for values, axes and technical labels.
-Product brands are supporting text, not slogans. Body text is 16px; controls 14px; secondary text
+Product brands are supporting text, not slogans. Body text is 16px; primary controls 14px; secondary text and compact row actions
 uses the 13px minimum token, raised to 14px at mobile widths (640px and below), including chart labels.
 Display titles scale with viewport width. Tabular figures keep changing results steady.
 
@@ -89,8 +89,9 @@ switches save outgoing corrections and restore a draft only when returning to th
 models without a draft start without corrections. Pending results keep
 the references and sort of their response until the replacement arrives.
 
-Each results heading has a route-specific method sentence and one concise rig/distance/reviewer
-scoring line. “How this ranking works” explains the method and lists participating and excluded
+Each results heading has a route-specific method sentence that names the rig once. A separate
+metadata line explains the distance or taste score and reviewer scoring pool, without repeating the
+rig. “How this ranking works” explains the method and lists participating and excluded
 references using the existing measurement diagnostics and engine taste exclusions. After a workspace
 preference edit, accepted results are compared by product with the previous displayed list: “New”,
 “↑N” and “↓N” markers accompany one polite count summary. First loads have no markers. Sort, filters,
@@ -102,13 +103,20 @@ up to ten more, not a probability or a claim about audibility. Sides with fewer 
 reviewers are unassessed; expanded evidence explains missing assessment, and the method disclosure
 explains the evaluated pool and excludes unit variation and perceptual claims. Included related
 mods/prototypes have a quiet “Variant of [reference]” text label.
+The reviewer count describes contributors to the candidate consensus. If the per-reviewer distance
+range covers fewer of those reviewers, the line explicitly says “across N of them”; it does not imply
+that every contributing reviewer has sufficient overlap with the reference.
 
 Rows lead with rank, product and dB distance, or an explicitly labelled taste ranking score (not dB
 or percent). The summary keeps at most two important band differences. One historical USD listing
 stays visible with its reviewer and observation date, explicitly not a listing date; observations
 older than twelve months are flagged as potentially out of date. Additional listings and band evidence are expandable. Unknown
 prices are explicit. Like and Dislike toggle buttons immediately add or update a workspace product,
-preserving existing reasons, comfort and exact measurement. “More” holds all five ratings, optional
+preserving existing reasons, comfort and exact measurement. Desktop and tablet rows put Show on
+chart, Like, Dislike and More on one action line, followed by Compare · Product page. Mobile wraps
+naturally, keeping the two text links together. Action names include the product for assistive
+technology, while their visible labels remain short. “More” is a native button with expanded state
+and a controlled inline panel; it holds all five ratings, optional
 reasons and comfort-only evidence before saving, without navigation. Selected controls reflect saved
 ratings; Love, Neutral and comfort-only status also remain explicit. Remove, clear and rating changes
 offer keyboard-reachable Undo. Scrollable band/reference tables are named keyboard-focusable regions.
@@ -179,14 +187,17 @@ available median and fold improvements remain distinct.
 
 Unit/component checks cover search, migration, query races, chart values and controls, diagnostics,
 band/price wording, segmented ratings, immediate ratings and Undo, two-step measurement selection,
-method sentences, rank markers and contrast. Browser journeys and axe cover the real dataset,
-including similar-to-compare quick ratings, Hexa measurement selection and stable updating positions. Visual review uses
+method sentences, rank sensitivity, partial reviewer-range coverage, rank markers, worker recovery,
+canvas preservation and contrast. Browser journeys and axe cover the real dataset, including
+similar-to-compare quick ratings, Hexa measurement selection, stable updating positions, compact
+action geometry, authoritative correction history, rig recovery and dataset-update reload guidance. Visual review uses
 1440×900, 834×1112 and 390×844, in both themes, including expanded evidence and EQ. Automated checks
 do not replace real assistive-technology testing.
 
 `tests/e2e/visual.spec.ts` captures empty/unrated/single/multi-reference workspaces, per-reference
 tables, quick-rating rank changes, measurement selection, method participation, reviewer-only scoring,
-taste constraints, missing variants and current validation figures.
+taste constraints, missing variants and current validation figures. Populated review captures also
+include leave-one-reviewer-out rank ranges and included mods/prototypes with their reference label.
 The page journeys capture Compare, catalog/product, EQ and Method/source tables. Captures use CSS
 pixel dimensions (including mobile), check document overflow and keep exports outside the repo.
 Visual review also checks clear series identities, readable wrapped evidence, native control text
