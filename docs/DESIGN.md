@@ -139,6 +139,9 @@ reference solid). The plot, SVG legend and PNG export share those identities; co
 
 Missing-rig diagnostics identify each reference's default or explicitly selected measurement support,
 then offer engine-provided common partitions. They never substitute a variant or silently mix rigs.
+When alternatives were not supplied (the single-reference failure path), the message only states
+that the selected rig lacks the reference and offers automatic rig selection. Only an explicitly
+empty alternatives list says no rig covers all references.
 A local reference requires an explicit rig choice; file data stays in the browser session and is
 excluded from URLs and saved profiles.
 Its declared rig is retained with the session-local reference and locks the independent rig control.

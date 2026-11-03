@@ -649,6 +649,23 @@ test('Back and Forward keep URL taste corrections authoritative; only explicit m
 		.toBe(JSON.stringify([{ tasteId: 0, bands: { bass: 0.5 } }]));
 });
 
+test('single-reference rig failures offer automatic selection without claiming all alternatives were searched', async ({
+	page
+}) => {
+	await page.goto(`/?${new URLSearchParams({ ref: volume, m: tuning, rig: 'iem-5128' })}`);
+	await expect(page.locator('.chart-column h2')).toHaveText(
+		'This reference isn’t measured on the selected rig. Try automatic rig.'
+	);
+	await expect(page.locator('.result-row')).toHaveCount(0);
+	await expect(
+		page.getByText('No rig covers every reference. Change a reference or variant.', { exact: true })
+	).toHaveCount(0);
+	await page.getByRole('button', { name: 'Use automatic rig', exact: true }).click();
+	await expect(page).not.toHaveURL(/rig=/);
+	await expect(page).toHaveURL(new RegExp(tuning));
+	await expect(page.locator('.result-row')).toHaveCount(20);
+});
+
 test('charting a match redraws the chart without re-ranking the results', async ({ page }) => {
 	await page.goto(shared([reference]));
 	await expect(page.locator('.result-row')).toHaveCount(20);

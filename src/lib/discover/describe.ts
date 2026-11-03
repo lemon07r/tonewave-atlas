@@ -4,6 +4,14 @@ import type { CandidateInfo } from '#core/atlas/types.ts';
 import { priceListings } from '#lib/product/data.ts';
 
 const WORDING = { omit: 0.75, slight: 2, much: 4 } as const;
+/** Missing alternatives were not searched; an explicit empty list means none cover the set. */
+export function rigFailureMessage(partitions: readonly string[] | undefined): string {
+	if (partitions === undefined)
+		return 'This reference isn’t measured on the selected rig. Try automatic rig.';
+	return partitions.length
+		? 'This rig doesn’t cover every reference. Choose a rig below.'
+		: 'No rig covers every reference. Change a reference or variant.';
+}
 export const bandLabels: Record<Band, string> = {
 	'sub-bass': 'sub-bass',
 	bass: 'bass',

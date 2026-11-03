@@ -37,7 +37,7 @@
 		takeMigration
 	} from '#lib/catalog/handoff.ts';
 	import MigrationNote from '#lib/catalog/MigrationNote.svelte';
-	import { bandLabels } from './describe.ts';
+	import { bandLabels, rigFailureMessage } from './describe.ts';
 	import SearchCombobox from '#lib/components/SearchCombobox.svelte';
 	import SegmentedControl from '#lib/components/SegmentedControl.svelte';
 	import Toggle from '#lib/components/Toggle.svelte';
@@ -881,9 +881,7 @@
 					/>{:else}<div class="empty-state">
 						<h2>
 							{#if queryError?.error === 'not-measured-on-rig'}
-								{queryError.partitions?.length
-									? 'This rig doesn’t cover every reference. Choose a rig below.'
-									: 'No rig covers every reference. Change a reference or variant.'}
+								{rigFailureMessage(queryError.partitions)}
 							{:else if queryError?.error === 'partition-required'}
 								Choose a rig below to draw your references.
 							{:else if queryError || networkError || catalogError}
@@ -946,7 +944,11 @@
 						</p>{/if}
 				</div>
 				{#if loading && !result}<Skeleton rows={4} />{/if}
-				{#if queryError}<Notice kind="caution" title="References do not overlap on this rig"
+				{#if queryError}<Notice
+						kind="caution"
+						title={queryError.partitions === undefined
+							? 'Reference unavailable on this rig'
+							: 'References do not overlap on this rig'}
 						><ReferenceDiagnostics
 							{items}
 							{form}
@@ -957,7 +959,18 @@
 							sources={summary?.sources ?? []}
 							selected={settings.sources}
 							mode={settings.sourceMode}
-						/>{#if queryError.partitions?.length}<div class="compatible-rigs">
+						/>{#if queryError.error === 'not-measured-on-rig' && queryError.partitions === undefined}<p>
+								This reference isn’t measured on the selected rig. Automatic rig selection can look for a
+								compatible rig without substituting a measurement.
+							</p>
+							<button
+								type="button"
+								class="button quiet"
+								onclick={() => {
+									change({ rig: undefined, sources: undefined, chart: undefined });
+								}}>Use automatic rig</button
+							>
+						{:else if queryError.partitions?.length}<div class="compatible-rigs">
 								<span>All references, including selected variants, are measured on:</span>
 								{#each queryError.partitions as partition (partition)}<button
 										type="button"
