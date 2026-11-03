@@ -2,7 +2,7 @@ import type { Measurement, Product } from '#core/dataset/types.ts';
 import type { Phone } from './common.ts';
 import { defaultVariantIndex, withoutAttribution } from './transform.ts';
 import { labelledState } from './switches.ts';
-import { isFoldedReference } from './identity-folds.ts';
+import { isFoldedPad, isFoldedReference } from './identity-folds.ts';
 
 interface Row {
 	measurement: Measurement;
@@ -128,6 +128,8 @@ export function assertDefaultCoverage(
 	decisions: readonly Decision[]
 ): void {
 	for (const { measurement: m } of rows) {
+		if (isFoldedPad(m) && m.variant.isDefault)
+			throw new Error(`Default coverage: aftermarket pad cannot be a stock default: ${m.id}`);
 		if (m.variant.kind !== 'default' && !m.variant.label.trim())
 			throw new Error(`Non-default label: empty label for ${m.id}`);
 		if (m.variant.isDefault !== (m.variant.kind === 'default'))
@@ -187,7 +189,9 @@ export function finaliseDefaults(
 			if (defaults.length < 2) continue;
 			const hasBaseDefault = defaults.some((m) => !isFoldedReference(m));
 			const matches = g.preferred
-				? ms.filter((m) => g.state(m) === g.preferred && (!hasBaseDefault || !isFoldedReference(m)))
+				? ms.filter(
+						(m) => !isFoldedPad(m) && g.state(m) === g.preferred && (!hasBaseDefault || !isFoldedReference(m))
+					)
 				: [];
 			const selected = matches.length
 				? (matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches))
@@ -231,7 +235,8 @@ export function finaliseDefaults(
 		}
 		for (const [source, ms] of g.sources) {
 			if (ms.some((m) => m.variant.kind === 'default')) continue;
-			const matches = g.preferred ? ms.filter((m) => g.state(m) === g.preferred) : [];
+			const candidates = ms.filter((m) => !isFoldedPad(m));
+			const matches = g.preferred ? candidates.filter((m) => g.state(m) === g.preferred) : [];
 			if (
 				!requiredFallback(ms) &&
 				g.preferred &&
@@ -241,7 +246,7 @@ export function finaliseDefaults(
 				exceptions.push({ productId: g.product.id, source, partition: g.partition, preferred: g.preferred });
 				continue;
 			}
-			const selected = fallback(g.product, matches.length ? matches : ms);
+			const selected = fallback(g.product, matches.length ? matches : candidates);
 			const reason = matches.length ? 'selected labelled switch state' : 'deterministic coverage fallback';
 			selected.provenance.processing.push(
 				`default coverage: ${reason}; previous kind ${selected.variant.kind}; original label retained`

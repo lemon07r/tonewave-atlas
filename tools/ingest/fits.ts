@@ -1,6 +1,19 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import { identity } from './transform.ts';
-import { mergeDescriptorIdentities, type IdentityDescriptor } from './identity-folds.ts';
+import {
+	foldedPadMarker,
+	isFoldedReference,
+	mergeDescriptorIdentities,
+	type IdentityDescriptor
+} from './identity-folds.ts';
+import { tipSuffixes } from './variant-labels.ts';
+
+const modified = /\[modified:|\b(?:mod(?:ded|ification|s)?|DIY|prototype|reshell)\b/i;
+
+/** Used pads are worn stock; all other pad descriptors describe a response-changing swap. */
+export function isPadSwapDescriptor(label: string): boolean {
+	return /\b(?:ear)?pads?\b/i.test(label) && !/^\(?\s*used\s+pads\s*\)?$/i.test(label);
+}
 
 /** Positions, not substrings: fit words in real names or explicit modifications stay identity. */
 export function fitIdentity(
@@ -8,8 +21,7 @@ export function fitIdentity(
 	model: string,
 	acceptedParent: (model: string) => boolean = () => false
 ): IdentityDescriptor | null {
-	if (/\[modified:|\b(?:mod(?:ded|ification|s)?|DIY|prototype|reshell)\b/i.test(`${brand} ${model}`))
-		return null;
+	if (modified.test(`${brand} ${model}`)) return null;
 	const result = (parent: string, label: string): IdentityDescriptor | null => {
 		parent = parent.trim();
 		if (!parent || /^(?:sample|unit)\s*[:#-]?\s*\d+$/i.test(`${brand} ${parent}`.trim())) return null;
@@ -18,7 +30,14 @@ export function fitIdentity(
 	const parenthesized = model.match(/^(.*?)\s*(\(([^()]*)\))\s*$/);
 	if (parenthesized?.[1] && parenthesized[2] && parenthesized[3]) {
 		const text = parenthesized[3].trim();
-		if (/^(?:deep|shallow)(?:\s+insertion)?$|\bfoam$|\b(?:ear)?pads?(?:\s+on)?$/i.test(text))
+		const foamOnly =
+			/\bfoam$/i.test(text) && tipSuffixes(`Fit (${text})`).some((s) => s.parent === 'Fit' && !s.unknown);
+		if (
+			/^(?:(?:deep|shallow)(?:\s+insertion)?|foam\s+pads\s+on|(?:[\p{L}\p{N}+-]+\s+)?(?:ear)?pads?)$/iu.test(
+				text
+			) ||
+			foamOnly
+		)
 			return result(parenthesized[1], parenthesized[2]);
 	}
 	for (const pattern of [
@@ -52,15 +71,58 @@ export function mergeFitIdentities(
 	aliases: Record<string, string> = {},
 	productAliases: Record<string, string> = {}
 ) {
-	return mergeDescriptorIdentities(
+	const key = (productId: string, m: Measurement) => `${productId}|${m.sourceId}|${m.partition}`;
+	const stockDefaults = new Set(
+		rows
+			.filter((r) => r.measurement.variant.isDefault && !isFoldedReference(r.measurement))
+			.map((r) => key(r.measurement.productId, r.measurement))
+	);
+	const pads = new Set<Measurement>();
+	const retainedPads = new Map<
+		string,
+		{ productId: string; product: string; source: string; partition: string; reason: string }
+	>();
+	const ambiguous: { productId: string; product: string; reason: string }[] = [];
+	const result = mergeDescriptorIdentities(
 		products,
 		rows,
 		'fit',
-		(p) =>
-			fitIdentity(p.brand, p.model, (parent) =>
+		(p) => {
+			const suffix = fitIdentity(p.brand, p.model, (parent) =>
 				products.has(identity(p.brand, parent, p.form, aliases, productAliases).id)
-			),
+			);
+			if (
+				!suffix &&
+				!modified.test(`${p.brand} ${p.model}`) &&
+				/\([^()]*\b(?:foam|(?:ear)?pads?|deep|shallow)\b[^()]*\)\s*$/i.test(p.model)
+			)
+				ambiguous.push({
+					productId: p.id,
+					product: `${p.brand} ${p.model}`,
+					reason: 'mixed or unrecognized parenthesized fit marker; model identity retained'
+				});
+			return suffix;
+		},
 		aliases,
-		productAliases
+		productAliases,
+		(m, parentId, suffix) => {
+			if (!isPadSwapDescriptor(suffix.label)) return true;
+			if (stockDefaults.has(key(parentId, m))) {
+				pads.add(m);
+				return true;
+			}
+			const p = products.get(m.productId);
+			if (!p) throw new Error('Missing pad product');
+			retainedPads.set(key(p.id, m), {
+				productId: p.id,
+				product: `${p.brand} ${p.model}`,
+				source: m.sourceId,
+				partition: m.partition,
+				reason: 'no same-source/partition stock default; pad identity retained'
+			});
+			return false;
+		}
 	);
+	for (const m of pads) m.provenance.processing.push(foldedPadMarker);
+	return { ...result, retainedPads: [...retainedPads.values()], ambiguous };
 }

@@ -237,11 +237,13 @@ to the base, and inherited product/measurement redirects continue to resolve.
 
 After the established sample and exact-parent switch/accessory folds, both catalogs remove only
 remaining positioned fit descriptors:
-terminal parentheses containing `Deep Insertion`/`Shallow Insertion`, `Foam`/`… foam`, `… pad(s)`/
+terminal parentheses containing `Deep Insertion`/`Shallow Insertion`, `Foam`/recognized foam-tip terms, `… pad(s)`/
 `… earpad(s)` (including `used pads` and `foam pads on`); a terminal standalone `deep`/`shallow`;
 `Stock [colour] Tip`; a named `Tip`/`Pads` suffix; and `pad-rolling`, `[Pads Collection]` or `- Pads`.
 Named multiword accessories require an already accepted exact parent; otherwise only one accessory
 word, or an alphanumeric accessory code followed by `PRO`, is removed. No fuzzy parent is inferred.
+Parenthesized content must be entirely a recognized fit descriptor; mixed model/fit text such as
+`PR1(HiFi version foam)` stays a separate product and is reported as an ambiguous marker.
 Years, bare S1/S2 and ordinal unit qualifiers are retained; only the existing explicit sample rules
 run again to remove a sample marker exposed by fit folding. Existing exact-parent accessory decisions
 take precedence over synthesizing fit-only bases, so a model word before bare `tips` is not guessed
@@ -262,6 +264,10 @@ default from the same source/partition, even if it alone matches the preferred s
 Without a base default, unchanged final coverage can select one fit/tuning curve as `default`, with
 its descriptor and previous kind retained; this is a usable source reference, not verified stock.
 The build report's `fitIdentity` lists each move and synthesized base.
+
+Aftermarket pad descriptors fold only when the same source already has a stock default for the exact
+base product and partition; otherwise the pad product keeps its original ID with no redirect.
+Folded pad curves can never be defaults, while `(used pads)` denotes worn stock and keeps ordinary fit/default coverage.
 
 ### Switch and accessory folding
 

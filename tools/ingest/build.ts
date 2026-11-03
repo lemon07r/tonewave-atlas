@@ -669,7 +669,7 @@ export async function build(paths = { root: ROOT, cache: CACHE, output: OUTPUT }
 			const names = map.get(move.to) ?? new Set<string>();
 			for (const name of map.get(move.from) ?? []) names.add(name);
 			map.set(move.to, names);
-			map.delete(move.from);
+			if (!products.has(move.from)) map.delete(move.from);
 		}
 	}
 	const switchDefaults = reconcileSwitchDefaults(products, allCurves);

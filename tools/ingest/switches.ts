@@ -1,6 +1,7 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import { classifyEq } from './eq.ts';
-import { isFoldedReference } from './identity-folds.ts';
+import { isFoldedPad, isFoldedReference } from './identity-folds.ts';
+import { fitIdentity, isPadSwapDescriptor } from './fits.ts';
 import { collisionGroups, normalise, withoutAttribution } from './transform.ts';
 import {
 	adapterState,
@@ -58,6 +59,16 @@ export function mergeSwitchIdentities(products: Map<string, Product>, rows: read
 		const suffix = switchSuffix ?? cableSuffix ?? tipSuffix;
 		if (!suffix) continue;
 		const kind = switchSuffix ? 'switch' : cableSuffix ? 'cable' : 'tip';
+		// Pad swaps and mixed foam/model markers belong to the stricter fit identity policy.
+		if (
+			kind === 'tip' &&
+			(isPadSwapDescriptor(suffix.label) ||
+				(tipSuffix?.unknown?.length &&
+					/^\([^()]*\)$/.test(suffix.label) &&
+					/\bfoam\b/i.test(suffix.label) &&
+					!fitIdentity(p.brand, p.model)))
+		)
+			continue;
 		const parent = parents.get(key(p, suffix.parent));
 		if (!parent || !products.has(parent.id) || stateSuffix(parent.model)) {
 			unresolved.push({
@@ -303,6 +314,7 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 					(m) =>
 						state(m) === preferred &&
 						m.variant.kind !== 'unit' &&
+						!isFoldedPad(m) &&
 						(!isFoldedReference(m) ||
 							!ms.some(
 								(base) => base.variant.isDefault && !isFoldedReference(base) && base.partition === m.partition

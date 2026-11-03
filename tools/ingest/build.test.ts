@@ -182,14 +182,18 @@ describe('cached dataset build safety', () => {
 			isDefault: false,
 			label: 'Simgot SM5 (D) · (Deep Insertion)'
 		});
-		expect(headphones.products.map((p) => p.model)).toEqual(['HD 650']);
+		expect(headphones.products.map((p) => p.model)).toEqual(['HD 650 ZMF Pads']);
 		expect(headphones.measurements[0]?.variant).toMatchObject({
 			kind: 'default',
-			isDefault: true,
-			label: 'HD650 ZMF · ZMF Pads'
+			isDefault: true
 		});
-		expect(report.fitIdentity.moves).toHaveLength(2);
-		expect(report.defaultCoverage.changes.map((c) => c.selected)).toContain(headphones.measurements[0]?.id);
+		expect(
+			headphones.measurements[0]?.provenance.processing.some((p) => p.startsWith('recognized fit identity:'))
+		).toBe(false);
+		expect(report.fitIdentity.moves).toHaveLength(1);
+		expect(report.defaultCoverage.changes.map((c) => c.selected)).not.toContain(
+			headphones.measurements[0]?.id
+		);
 	});
 	it('publishes catalog-equivalent manifest counts across forms and retains folded sample curves offline', async () => {
 		const files = ['Model', 'Model (sample 2)', 'HD600 Sample 2', 'HD600 Sample 1'];

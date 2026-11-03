@@ -5,7 +5,7 @@ import { fitIdentity, mergeFitIdentities } from './fits.ts';
 import { isFoldedReference } from './identity-folds.ts';
 import { buildRedirects } from './redirects.ts';
 import { mergeSampleIdentities } from './samples.ts';
-import { reconcileSwitchDefaults } from './switches.ts';
+import { mergeSwitchIdentities, reconcileSwitchDefaults } from './switches.ts';
 import { identity } from './transform.ts';
 import { readInputs } from './common.ts';
 
@@ -61,7 +61,7 @@ describe('fit/tip/pad product identities', () => {
 		['Oracle MKII deep', 'Oracle MKII', 'deep'],
 		['S12(Foam)', 'S12', '(Foam)'],
 		['HM20(Foam)', 'HM20', '(Foam)'],
-		['PR1(HiFi version foam)', 'PR1', '(HiFi version foam)'],
+		['Model(Sennheiser foam)', 'Model', '(Sennheiser foam)'],
 		['Polaris 2025 Stock Tip', 'Polaris 2025', 'Stock Tip'],
 		['Polaris 2023 Stock Tip', 'Polaris 2023', 'Stock Tip'],
 		['D-FI 2025 Stock Tip', 'D-FI 2025', 'Stock Tip'],
@@ -99,6 +99,114 @@ describe('fit/tip/pad product identities', () => {
 	])('removes only the positioned descriptor from %s', (model, parent, label) => {
 		expect(fitIdentity('Maker', model)).toEqual({ parent, label });
 	});
+	it.each(['PR1(HiFi version foam)', 'PR1(HiFi version pads)', 'Model (2025 edition foam)'])(
+		'keeps mixed parenthesized model identity intact: %s',
+		(model) => {
+			expect(fitIdentity('KZ', model)).toBeNull();
+			const { products, rows } = fixture([model], 'iem', 'KZ');
+			const before = structuredClone({ products, rows });
+			expect(mergeFitIdentities(products, rows).moves).toEqual([]);
+			expect({ products, rows }).toEqual(before);
+		}
+	);
+	it.each([
+		' (Yaxi pads)',
+		' (third-party earpads)',
+		' ZMF Pads',
+		' pad-rolling',
+		' [Pads Collection]',
+		' - Pads',
+		'(foam pads on)'
+	])('keeps a pad product separate without a same-source/partition stock default: %s', (suffix) => {
+		const { products, rows } = fixture([`Model${suffix}`], 'headphone');
+		const before = structuredClone({ products, rows });
+		expect(mergeFitIdentities(products, rows).moves).toEqual([]);
+		expect({ products, rows }).toEqual(before);
+		finaliseDefaults(products, rows, []);
+		expect(rows[0]?.measurement.variant.isDefault).toBe(true);
+	});
+	it.each(['source', 'partition', 'non-default'])(
+		'does not use a mismatching %s base as stock evidence for a pad fold',
+		(mismatch) => {
+			const { products, rows } = fixture(['Model', 'Model (Yaxi pads)'], 'headphone');
+			const base = rows[0]?.measurement;
+			if (!base) throw new Error('Missing stock fixture');
+			if (mismatch === 'source') base.sourceId = 'other';
+			if (mismatch === 'partition') base.partition = 'headphone-711';
+			if (mismatch === 'non-default') {
+				base.variant.kind = 'tuning';
+				base.variant.isDefault = false;
+			}
+			const before = structuredClone({ products, rows });
+			expect(mergeFitIdentities(products, rows).moves).toEqual([]);
+			expect({ products, rows }).toEqual(before);
+		}
+	);
+	it('folds pad curves only for eligible sources and retains the other source under its original ID', () => {
+		const { products, rows } = fixture(['Model', 'Model (Yaxi pads)'], 'headphone');
+		const pad = rows[1];
+		if (!pad) throw new Error('Missing pad fixture');
+		const retained = structuredClone(pad);
+		retained.measurement.id = 'other-source-pad';
+		retained.measurement.sourceId = 'other';
+		rows.push(retained);
+		const id = retained.measurement.productId;
+		products.get(id)?.measurementIds.push(retained.measurement.id);
+		const result = mergeFitIdentities(products, rows);
+		expect(result.moves).toMatchObject([{ from: id, measurements: 1 }]);
+		expect(products.get(id)?.measurementIds).toEqual([retained.measurement.id]);
+		expect(pad.measurement.productId).toBe(rows[0]?.measurement.productId);
+		expect(retained.measurement.productId).toBe(id);
+		finaliseDefaults(products, rows, []);
+		expect(pad.measurement.variant).toMatchObject({ kind: 'fit', isDefault: false });
+		expect(retained.measurement.variant).toMatchObject({ kind: 'default', isDefault: true });
+	});
+	it('never promotes a folded pad if later partition assignment separates it from stock', () => {
+		const { products, rows } = fixture(['Model', 'Model (Yaxi pads)'], 'headphone');
+		const base = rows[0]?.measurement,
+			pad = rows[1]?.measurement;
+		if (!base || !pad) throw new Error('Missing pad fixture');
+		mergeFitIdentities(products, rows);
+		base.partition = 'headphone-other';
+		expect(() => finaliseDefaults(products, rows, [])).toThrow();
+		expect(pad.variant.isDefault).toBe(false);
+	});
+	it('treats used pads as worn stock, retaining ordinary fit-only default coverage', () => {
+		const { products, rows } = fixture(['HD 598 (used pads)'], 'headphone');
+		expect(mergeFitIdentities(products, rows).moves).toHaveLength(1);
+		finaliseDefaults(products, rows, []);
+		expect([...products.values()].map((p) => p.model)).toEqual(['HD 598']);
+		expect(rows[0]?.measurement.variant).toMatchObject({
+			kind: 'default',
+			isDefault: true,
+			label: 'Maker HD 598 (used pads)'
+		});
+	});
+	it.each(['Model (HiFi version foam)', 'Model (foam pads on)'])(
+		'does not let legacy accessory folding bypass the stricter fit rule: %s',
+		(model) => {
+			const { products, rows } = fixture(['Model', model], 'headphone');
+			const base = rows[0]?.measurement;
+			if (!base) throw new Error('Missing stock fixture');
+			base.sourceId = 'other';
+			expect(mergeSwitchIdentities(products, rows).moves).toEqual([]);
+			expect(mergeFitIdentities(products, rows).moves).toEqual([]);
+			expect(products.size).toBe(2);
+		}
+	);
+	it.each([' (Yaxi pads)', ' ZMF Pads', ' pad-rolling', ' [Pads Collection]', ' - Pads', '(foam pads on)'])(
+		'folds a pad only alongside a stock default and keeps it non-default: %s',
+		(suffix) => {
+			const { products, rows } = fixture(['Model', `Model${suffix}`], 'headphone');
+			expect(mergeFitIdentities(products, rows).moves).toHaveLength(1);
+			finaliseDefaults(products, rows, []);
+			expect(products.size).toBe(1);
+			expect(rows.map((r) => [r.measurement.variant.kind, r.measurement.variant.isDefault])).toEqual([
+				['default', true],
+				['fit', false]
+			]);
+		}
+	);
 	it.each([
 		['1More', 'Fit Open S50'],
 		['Beats', 'Fit Pro'],

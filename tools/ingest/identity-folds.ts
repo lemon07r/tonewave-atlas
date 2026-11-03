@@ -7,6 +7,12 @@ export interface IdentityDescriptor {
 	label: string;
 }
 
+export const foldedPadMarker = 'folded aftermarket pad: never eligible as a stock default';
+
+export function isFoldedPad(measurement: Measurement): boolean {
+	return measurement.provenance.processing.includes(foldedPadMarker);
+}
+
 /** Folded experiment curves must not replace an existing source/partition base default. */
 export function isFoldedReference(measurement: Measurement): boolean {
 	return measurement.provenance.processing.some((step) =>
@@ -21,7 +27,8 @@ export function mergeDescriptorIdentities(
 	kind: DescriptorKind,
 	descriptor: (product: Product) => IdentityDescriptor | null,
 	aliases: Record<string, string> = {},
-	productAliases: Record<string, string> = {}
+	productAliases: Record<string, string> = {},
+	canFold: (measurement: Measurement, parentId: string, suffix: IdentityDescriptor) => boolean = () => true
 ) {
 	const moves: {
 		from: string;
@@ -38,13 +45,17 @@ export function mergeDescriptorIdentities(
 		if (!suffix) continue;
 		const target = identity(p.brand, suffix.parent, p.form, aliases, productAliases);
 		if (target.id === p.id) continue;
+		const selected = rows.filter(
+			(r) => r.measurement.productId === p.id && canFold(r.measurement, target.id, suffix)
+		);
+		if (!selected.length) continue;
 		let parent = products.get(target.id);
 		if (!parent) {
 			parent = { id: target.id, brand: target.brand, model: target.model, form: p.form, measurementIds: [] };
 			products.set(parent.id, parent);
 			created.push(parent.id);
 		}
-		for (const { measurement: m } of rows.filter((r) => r.measurement.productId === p.id)) {
+		for (const { measurement: m } of selected) {
 			const previous = m.variant.kind;
 			const labels = [withoutAttribution(m.variant.file)];
 			for (const label of [m.variant.label, suffix.label])
@@ -59,7 +70,9 @@ export function mergeDescriptorIdentities(
 			);
 			parent.measurementIds.push(m.id);
 		}
-		products.delete(p.id);
+		const moved = new Set(selected.map((r) => r.measurement.id));
+		p.measurementIds = p.measurementIds.filter((id) => !moved.has(id));
+		if (!p.measurementIds.length) products.delete(p.id);
 		moves.push({
 			from: p.id,
 			to: parent.id,
@@ -67,7 +80,7 @@ export function mergeDescriptorIdentities(
 			before: `${p.brand} ${p.model}`,
 			parent: `${parent.brand} ${parent.model}`,
 			label: suffix.label,
-			measurements: p.measurementIds.length
+			measurements: selected.length
 		});
 	}
 	return { moves, created };
