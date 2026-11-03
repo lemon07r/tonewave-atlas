@@ -1,6 +1,6 @@
 import type { Measurement, Product } from '#core/dataset/types.ts';
 import { classifyEq } from './eq.ts';
-import { isFoldedSample } from './samples.ts';
+import { isFoldedReference } from './identity-folds.ts';
 import { collisionGroups, normalise, withoutAttribution } from './transform.ts';
 import {
 	adapterState,
@@ -303,6 +303,10 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 					(m) =>
 						state(m) === preferred &&
 						m.variant.kind !== 'unit' &&
+						(!isFoldedReference(m) ||
+							!ms.some(
+								(base) => base.variant.isDefault && !isFoldedReference(base) && base.partition === m.partition
+							)) &&
 						!ambiguousTip(m) &&
 						classifyEq(`${m.variant.file} ${m.variant.label}`) !== 'ambiguous'
 				);
@@ -313,11 +317,11 @@ export function reconcileSwitchDefaults(products: ReadonlyMap<string, Product>, 
 					ms.filter(
 						(m) =>
 							m.variant.isDefault &&
-							!isFoldedSample(m) &&
+							!isFoldedReference(m) &&
 							!eligible.some((candidate) => candidate.partition === m.partition) &&
 							ms.some(
 								(sample) =>
-									isFoldedSample(sample) && sample.partition === m.partition && state(sample) === preferred
+									isFoldedReference(sample) && sample.partition === m.partition && state(sample) === preferred
 							)
 					)
 				);

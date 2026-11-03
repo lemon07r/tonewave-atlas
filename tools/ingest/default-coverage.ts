@@ -2,7 +2,7 @@ import type { Measurement, Product } from '#core/dataset/types.ts';
 import type { Phone } from './common.ts';
 import { defaultVariantIndex, withoutAttribution } from './transform.ts';
 import { labelledState } from './switches.ts';
-import { isFoldedSample } from './samples.ts';
+import { isFoldedReference } from './identity-folds.ts';
 
 interface Row {
 	measurement: Measurement;
@@ -185,9 +185,9 @@ export function finaliseDefaults(
 		for (const [source, ms] of g.sources) {
 			const defaults = ms.filter((m) => m.variant.kind === 'default');
 			if (defaults.length < 2) continue;
-			const hasBaseDefault = defaults.some((m) => !isFoldedSample(m));
+			const hasBaseDefault = defaults.some((m) => !isFoldedReference(m));
 			const matches = g.preferred
-				? ms.filter((m) => g.state(m) === g.preferred && (!hasBaseDefault || !isFoldedSample(m)))
+				? ms.filter((m) => g.state(m) === g.preferred && (!hasBaseDefault || !isFoldedReference(m)))
 				: [];
 			const selected = matches.length
 				? (matches.find((m) => m.variant.kind === 'default') ?? fallback(g.product, matches))
