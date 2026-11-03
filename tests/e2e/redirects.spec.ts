@@ -212,6 +212,45 @@ test('shared ratings use the same merge policy and can be restored for the sessi
 	await expect(page.locator('.profile-row')).toHaveCount(2);
 });
 
+test('a restored moved measurement loads the variant selector for its redirected owner', async ({ page }) => {
+	const ratings = [{ ...like(hexa), measurementId: 'legacy-measurement' }, dislike(reference)];
+	await page.goto(`/?${new URLSearchParams({ ratings: JSON.stringify(ratings), rig: 'iem-711' })}`);
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	await expect(note).toContainText('a duplicate rating from an older link was dropped');
+	await note.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await expect(page.locator('.profile-row h3')).toHaveText(['CrinEar Reference', 'CrinEar Reference']);
+	const restored = page.locator('.profile-row').first();
+	await restored.locator('details > summary').click();
+	const selector = restored.getByRole('combobox', { name: 'Measurement for CrinEar Reference', exact: true });
+	await expect(selector).toHaveValue(variant);
+	await expect(selector.locator(`option[value="${variant}"]`)).toHaveCount(1);
+});
+
+test('a repeated destructive shared-link migration keeps Undo after its notice was deduplicated', async ({
+	page
+}) => {
+	const ratings = [like('legacy-product'), dislike(reference)];
+	const original = `/?${new URLSearchParams({ ratings: JSON.stringify(ratings), rig: 'iem-711' })}`;
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	await page.goto(original);
+	await expect(note).toContainText('a duplicate rating from an older link was dropped');
+	await expect
+		.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
+		.toEqual([dislike(reference)]);
+	await note.getByRole('button', { name: 'Dismiss catalog update' }).click();
+	await page.goto(original);
+	await expect
+		.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
+		.toEqual([dislike(reference)]);
+	await expect(note.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+	await note.getByRole('button', { name: 'Undo', exact: true }).click();
+	await expect
+		.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
+		.toEqual(ratings);
+	await expect(page.locator('.profile-row')).toHaveCount(2);
+});
+
 test('migration Undo retains the earliest snapshot while import has its own ordinary Undo', async ({
 	page
 }) => {

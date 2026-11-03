@@ -52,11 +52,14 @@
 		nameFor?: (id: string) => string;
 	} = $props();
 	let open = $state<boolean>(false);
-	let draft = $derived<WorkspaceItem>(
-		existing
-			? { ...existing }
-			: { productId: candidate.product.id, rating: 'unrated', strength: 0, soundRelated: true }
-	);
+	// Worker responses replace candidate objects even for chart-only updates. Only a new
+	// candidate identity or saved preference should reset an in-progress rating.
+	// A string key: deriveds only propagate when their value changes, so equal keys keep the draft.
+	let draftKey = $derived(JSON.stringify([candidate.id, candidate.product.id, existing ?? null]));
+	let draft = $derived.by<WorkspaceItem>(() => {
+		const [, productId, saved] = JSON.parse(draftKey) as [string, string, WorkspaceItem | null];
+		return saved ?? { productId, rating: 'unrated', strength: 0, soundRelated: true };
+	});
 	let sources = $state.raw<CurveSource[]>([]);
 	let error = $state('');
 	$effect(() => {

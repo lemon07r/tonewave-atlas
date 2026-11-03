@@ -54,6 +54,11 @@
 	let identity = $state.raw<CatalogIdentity>();
 	let migrationNote = $state<string[]>([]);
 	let migrationBefore = $state.raw<{ profile: Profile; url: string }>();
+	let migrationDisplay = $derived(
+		migrationNote.length || !migrationBefore
+			? migrationNote
+			: ['A catalog update changed your ratings. Undo restores the pre-migration profile for this session.']
+	);
 	let migrationUndone = false;
 	let locationVersion = 0;
 	let catalogLoading = $state(true);
@@ -488,10 +493,11 @@
 		<p>Add products you know, then rate your experience. Start with one Like or build a set of references.</p>
 	</div>
 	<MigrationNote
-		messages={migrationNote}
+		messages={migrationDisplay}
 		onundo={migrationBefore ? undoMigration : undefined}
 		ondismiss={() => {
 			migrationNote = [];
+			migrationBefore = undefined;
 		}}
 	/>
 	<div class="discover-grid">

@@ -56,6 +56,59 @@ test('rating an existing row retains preferences, and duplicate reference labels
 	expect(onrate).toHaveBeenCalledExactlyOnceWith(existing);
 });
 
+test('an unsaved rating survives fresh objects for the same candidate but resets for another candidate or saved item', async () => {
+	const candidate: CandidateInfo = {
+		id: 'tuning-a',
+		product: { id: 'p', brand: 'Fixture', model: 'One', form: 'iem' },
+		kind: 'tuning',
+		variantLabel: 'Setting A',
+		measurementIds: ['measurement-a'],
+		sources: [],
+		prices: [],
+		priceUsd: null
+	};
+	const onrate = vi.fn();
+	const screen = await render(ResultRow, {
+		candidate,
+		rank: 1,
+		distance: 1,
+		bands: [],
+		onshow: vi.fn(),
+		onrate
+	});
+	await screen.getByText('Rate this product', { exact: true }).click();
+	await screen.getByRole('radio', { name: 'Dislike', exact: true }).click();
+	await screen.getByRole('checkbox', { name: 'Other', exact: true }).click();
+	await screen.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true }).click();
+	// A completed chart-only query supplies newly deserialized objects, not a new identity.
+	await screen.rerender({ candidate: { ...candidate, product: { ...candidate.product } }, selected: true });
+	await expect.element(screen.getByRole('radio', { name: 'Dislike', exact: true })).toBeChecked();
+	await expect.element(screen.getByRole('checkbox', { name: 'Other', exact: true })).toBeChecked();
+	await expect
+		.element(screen.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true }))
+		.toBeChecked();
+	await screen.getByRole('button', { name: 'Save rating', exact: true }).click();
+	expect(onrate).toHaveBeenCalledExactlyOnceWith({
+		productId: 'p',
+		rating: 'dislike',
+		strength: 1,
+		soundRelated: false,
+		dislikeReasons: ['other'],
+		measurementId: 'measurement-a'
+	});
+	await screen.rerender({ candidate: { ...candidate, id: 'tuning-b', measurementIds: ['measurement-b'] } });
+	await expect.element(screen.getByRole('radio', { name: 'Not rated', exact: true })).toBeChecked();
+	await expect.element(screen.getByRole('button', { name: 'Save rating', exact: true })).toBeDisabled();
+	await screen.rerender({
+		existing: { productId: 'p', rating: 'like', strength: 0.6, soundRelated: true, likedAspects: ['bass'] }
+	});
+	await expect.element(screen.getByRole('radio', { name: 'Like', exact: true })).toBeChecked();
+	await expect.element(screen.getByRole('checkbox', { name: 'Bass', exact: true })).toBeChecked();
+	await expect
+		.element(screen.getByRole('checkbox', { name: 'Fit or comfort, not sound', exact: true }))
+		.not.toBeChecked();
+});
+
 test('keeps small reference and band headers readable with normal tracking and explicit kerning', async () => {
 	const screen = await render(ResultRow, {
 		candidate: {

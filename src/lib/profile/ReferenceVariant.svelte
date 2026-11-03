@@ -25,8 +25,16 @@
 	);
 	$effect(() => {
 		let active = true;
+		// Match canonicalItem: only a redirected measurement overrides a surviving product.
+		const movedOwner =
+			currentMeasurement && currentMeasurement !== measurementId
+				? identity?.measurementProduct(currentMeasurement)
+				: undefined;
 		void detail(
-			identity?.productId(productId) ?? identity?.measurementProduct(currentMeasurement) ?? productId
+			movedOwner ??
+				identity?.productId(productId) ??
+				identity?.measurementProduct(currentMeasurement) ??
+				productId
 		).then(
 			(value) => {
 				if (active) data = value;
