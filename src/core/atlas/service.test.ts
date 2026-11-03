@@ -1,6 +1,9 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { encodePack, type CurvePack } from '../dataset/codec.ts';
 import { rankPacked } from '../analysis/distance.ts';
+import * as distanceEngine from '../analysis/distance.ts';
+import * as multiReference from '../analysis/multi-reference.ts';
+import * as tasteEngine from '../analysis/taste.ts';
 import type {
 	Catalog,
 	Manifest,
@@ -20,6 +23,7 @@ import { AtlasService } from './service.ts';
 import type { CompareRequest, SimilarRequest } from './types.ts';
 import { spreadFor } from './spread.ts';
 import { reviewerVariants } from './stability.ts';
+import { DatasetUpdatedError } from './errors.ts';
 
 interface ExtraMeasurement {
 	id: string;
@@ -575,6 +579,36 @@ describe('leave-one-reviewer-out rank sensitivity', () => {
 			1.5, 2.5
 		]);
 	});
+	it('refreshes stability over the new topK margin without rescoring similar candidates', async () => {
+		const f = sensitivityFixture();
+		const pack = f.packs[0],
+			template = f.catalog.measurements.find((m) => m.id === 'b1');
+		if (!pack || !template) throw new Error('fixture');
+		for (let i = 0; i < 20; i++) {
+			const id = `extra-${i}`;
+			f.catalog.products.push({ id, brand: 'Brand', model: id, form: 'iem', measurementIds: [id] });
+			f.catalog.measurements.push({ ...template, id, productId: id });
+			pack.curves.push({
+				measurementId: id,
+				channel: 'avg',
+				values: Float64Array.from(RANK_GRID, (_, bin) => 1.5 * (bin % 2 ? 1 : -1))
+			});
+		}
+		f.files.set('v1/catalog-iem.json.gz', new TextEncoder().encode(JSON.stringify(f.catalog)));
+		f.files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+		const scores = vi.spyOn(distanceEngine, 'scorePacked');
+		try {
+			const first = await f.service.similar({ productId: 'a', ...settings, topK: 1 });
+			const more = await f.service.similar({ productId: 'a', ...settings, topK: 5 });
+			expect(scores).toHaveBeenCalledTimes(1);
+			expect(first.ok && first.results[0]?.stability?.rankRange).toEqual([1, 11]);
+			expect(more.ok && more.results[0]?.stability?.rankRange).toEqual([1, 15]);
+			const fresh = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: f.fetcher });
+			expect(more).toEqual(await fresh.similar({ productId: 'a', ...settings, topK: 5 }));
+		} finally {
+			scores.mockRestore();
+		}
+	});
 	it('evaluates every reviewer even at 57 reviewers, without sampling', () => {
 		const { catalog, packs } = sensitivityFixture();
 		const partition = catalog.partitions[0],
@@ -608,6 +642,279 @@ describe('leave-one-reviewer-out rank sensitivity', () => {
 			if (!pooled) throw new Error('fixture omission');
 			expect(reviewerVariants(candidate)[i]).toEqual(ranking.scoredCurve(pooled.values));
 		});
+	});
+});
+
+describe('scoring computation caches', () => {
+	function comparisonFixture() {
+		const f = fixture(8, [
+			{ id: 'd711', productId: 'd', partition: 'iem-711', kind: 'default', shape: 8 },
+			{ id: 'e711', productId: 'e', partition: 'iem-711', kind: 'default', shape: -5 }
+		]);
+		const pack = f.packs[0];
+		if (!pack) throw new Error('fixture pack');
+		// C is near the midpoint with a small off-axis component: it uniquely wins minimax,
+		// while the on-segment B/B-tuning have lower arithmetic mean distance.
+		for (const curve of pack.curves)
+			if (curve.measurementId === 'c1' || curve.measurementId === 'c2')
+				curve.values = Float64Array.from(f.base, (v, i) => v + (i < 60 ? -4 : 4) + (i % 2 ? 0.25 : -0.25));
+		f.files.set('v1/rank-iem-711.bin.gz', encodePack(pack));
+		return f;
+	}
+	it('reuses full compare scores and Pareto membership for sort, Pareto and topK changes', async () => {
+		const base: CompareRequest = {
+			references: [{ productId: 'a' }, { productId: 'd' }],
+			partition: 'iem-711',
+			filters: { includeTunings: true },
+			topK: 1
+		};
+		const changes: CompareRequest[] = [
+			{ ...base, sort: 'minimax' },
+			{ ...base, paretoOnly: true },
+			{ ...base, topK: 99 },
+			{ ...base, topK: 0 }
+		];
+		const expected = await Promise.all(
+			changes.map((request) => comparisonFixture().service.compare(request))
+		);
+		const scores = vi.spyOn(multiReference, 'compareReferences'),
+			distances = vi.spyOn(distanceEngine, 'distanceSummary');
+		try {
+			const { service } = comparisonFixture();
+			const first = await service.compare(base);
+			const distanceCalls = distances.mock.calls.length;
+			expect(scores).toHaveBeenCalledTimes(1);
+			for (let i = 0; i < changes.length; i++) {
+				const request = changes[i];
+				if (!request) throw new Error('fixture request');
+				expect(await service.compare(request)).toEqual(expected[i]);
+				expect(scores).toHaveBeenCalledTimes(1);
+				expect(distances).toHaveBeenCalledTimes(distanceCalls);
+			}
+			const sorted = expected[0],
+				pareto = expected[1];
+			expect(
+				first.ok && sorted?.ok && first.results[0]?.candidate.id !== sorted.results[0]?.candidate.id
+			).toBe(true);
+			expect(pareto?.ok && pareto.counts.pareto).toBeLessThan(pareto?.ok ? pareto.counts.candidates : 0);
+		} finally {
+			scores.mockRestore();
+			distances.mockRestore();
+		}
+	});
+	it('invalidates compare scores for score-affecting settings and evicts the previous computation', async () => {
+		const { service } = comparisonFixture();
+		const base: CompareRequest = {
+			references: [{ productId: 'a' }, { productId: 'd' }],
+			partition: 'iem-711'
+		};
+		const scores = vi.spyOn(multiReference, 'compareReferences');
+		try {
+			for (const request of [
+				base,
+				{ ...base, focus: 'bass' as const },
+				base,
+				{ ...base, treblePenalty: 2 },
+				{ ...base, filters: { minReviewers: 2 } },
+				{ ...base, references: [{ productId: 'a', measurementId: 'a1' }, { productId: 'd' }] },
+				{ ...base, filters: { sourceMode: 'only' as const, sources: ['s1'] } }
+			]) {
+				const before = scores.mock.calls.length;
+				expect(await service.compare(request)).toMatchObject({ ok: true });
+				expect(scores).toHaveBeenCalledTimes(before + 1);
+			}
+		} finally {
+			scores.mockRestore();
+		}
+	});
+	it('reuses full similar scores when topK grows rather than caching only displayed rows', async () => {
+		const base = { productId: 'a', partition: 'iem-711', topK: 1 };
+		const expected = await comparisonFixture().service.similar({ ...base, topK: 99 });
+		const scores = vi.spyOn(distanceEngine, 'scorePacked');
+		try {
+			const { service } = comparisonFixture();
+			const first = await service.similar(base);
+			const more = await service.similar({ ...base, topK: 99 });
+			expect(more).toEqual(expected);
+			expect(first.ok && more.ok && more.results.length > first.results.length).toBe(true);
+			expect(scores).toHaveBeenCalledTimes(1);
+		} finally {
+			scores.mockRestore();
+		}
+	});
+	it('reuses taste scores and model for topK changes but invalidates corrections', async () => {
+		const base = {
+			partition: 'iem-711',
+			items: [{ productId: 'a', rating: 'like' as const, strength: 1, soundRelated: true }],
+			topK: 1
+		};
+		const expected = await comparisonFixture().service.taste({ ...base, topK: 99 });
+		const scores = vi.spyOn(tasteEngine, 'scoreTastePacked'),
+			models = vi.spyOn(tasteEngine, 'buildTasteModel');
+		try {
+			const { service } = comparisonFixture();
+			await service.taste(base);
+			expect(await service.taste({ ...base, topK: 99 })).toEqual(expected);
+			expect(scores).toHaveBeenCalledTimes(1);
+			expect(models).toHaveBeenCalledTimes(1);
+			await service.taste({ ...base, corrections: [{ tasteId: 0, bands: { bass: 2 } }] });
+			expect(scores).toHaveBeenCalledTimes(2);
+			expect(models).toHaveBeenCalledTimes(2);
+		} finally {
+			scores.mockRestore();
+			models.mockRestore();
+		}
+	});
+	it('isolates cached score computations from mutation of returned results', async () => {
+		const { service } = comparisonFixture();
+		const request: CompareRequest = { productIds: ['a', 'd'], partition: 'iem-711', topK: 1 };
+		const first = await service.compare(request),
+			expected = structuredClone(first);
+		if (!first.ok || !first.results[0]) throw new Error('fixture result');
+		first.results[0].tradeoff.distances.fill(999);
+		first.results[0].candidate.measurementIds.length = 0;
+		first.references[0]?.rankCurve.fill(999);
+		expect(await service.compare(request)).toEqual(expected);
+	});
+});
+
+describe('dataset update fallback', () => {
+	function nextManifest(files: Map<string, Uint8Array>) {
+		const bytes = files.get('manifest.json');
+		if (!bytes) throw new Error('fixture manifest');
+		const manifest = JSON.parse(new TextDecoder().decode(bytes)) as Manifest;
+		files.set('manifest.json', new TextEncoder().encode(JSON.stringify({ ...manifest, version: 'v2' })));
+	}
+	it.each(['catalog', 'detail', 'rank', 'targets'] as const)(
+		'raises a sticky typed update error for a removed versioned %s file without mixing versions',
+		async (kind) => {
+			const f = fixture();
+			const fetcher = vi.fn(f.fetcher);
+			const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+			await service.products('iem');
+			nextManifest(f.files);
+			const file = {
+				catalog: 'catalog-headphone.json.gz',
+				detail: 'detail-iem-711-b.bin.gz',
+				rank: 'rank-iem-711.bin.gz',
+				targets: 'targets.json.gz'
+			}[kind];
+			f.files.delete(`v1/${file}`);
+			const request =
+				kind === 'catalog'
+					? service.products('headphone')
+					: kind === 'detail'
+						? service.productDetail('b')
+						: kind === 'rank'
+							? service.similar({ productId: 'a', partition: 'iem-711' })
+							: service.targets('iem');
+			await expect(request).rejects.toMatchObject({
+				name: 'DatasetUpdatedError',
+				code: 'dataset-updated',
+				previousVersion: 'v1',
+				newVersion: 'v2',
+				reloadMessage: 'The dataset was updated. Reload to continue.'
+			});
+			expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+			expect(f.calls.filter((path) => path === 'manifest.json')).toHaveLength(2);
+			expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
+			const calls = fetcher.mock.calls.length;
+			await expect(service.products('iem')).rejects.toBeInstanceOf(DatasetUpdatedError);
+			await expect(service.targets('iem')).rejects.toBeInstanceOf(DatasetUpdatedError);
+			expect(fetcher).toHaveBeenCalledTimes(calls);
+		}
+	);
+	it.each(['network', '503'] as const)('checks the manifest after a versioned %s failure', async (kind) => {
+		const f = fixture();
+		const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+			if (
+				(input instanceof Request ? input.url : input.toString()).endsWith('/v1/catalog-headphone.json.gz')
+			) {
+				if (kind === 'network') throw new TypeError('Network failed');
+				return new Response(null, { status: 503 });
+			}
+			return f.fetcher(input, init);
+		});
+		const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+		await service.products('iem');
+		nextManifest(f.files);
+		await expect(service.products('headphone')).rejects.toMatchObject({
+			code: 'dataset-updated',
+			newVersion: 'v2'
+		});
+		expect(fetcher.mock.calls.some(([, init]) => init?.cache === 'no-store')).toBe(true);
+	});
+	it('shares one no-store manifest refresh across concurrent versioned file failures', async () => {
+		const f = fixture();
+		let release!: (response: Response) => void;
+		const refresh = new Promise<Response>((resolve) => {
+			release = resolve;
+		});
+		let bothFailed!: () => void;
+		const failuresReached = new Promise<void>((resolve) => {
+			bothFailed = resolve;
+		});
+		let failures = 0;
+		const fetcher = vi.fn<typeof fetch>((input, init) => {
+			if (init?.cache === 'no-store') return refresh;
+			const url = input instanceof Request ? input.url : input.toString();
+			if (url.endsWith('/v1/catalog-headphone.json.gz') || url.endsWith('/v1/targets.json.gz')) {
+				if (++failures === 2) bothFailed();
+				return Promise.resolve(new Response(null, { status: 404 }));
+			}
+			return f.fetcher(input, init);
+		});
+		const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+		await service.products('iem');
+		nextManifest(f.files);
+		const pending = Promise.allSettled([service.products('headphone'), service.targets('iem')]);
+		await failuresReached;
+		release(await f.fetcher('https://dataset.example/data/manifest.json'));
+		const results = await pending;
+		expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+		for (const result of results) {
+			expect(result.status).toBe('rejected');
+			if (result.status === 'rejected')
+				expect(result.reason).toMatchObject({
+					code: 'dataset-updated',
+					previousVersion: 'v1',
+					newVersion: 'v2'
+				});
+		}
+		expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
+	});
+	it.each(['unchanged', 'refresh-failed'] as const)(
+		'preserves the original failure and allows retry when update detection is %s',
+		async (scenario) => {
+			const f = fixture();
+			const original = new TypeError('Network failed');
+			let fail = true;
+			const fetcher = vi.fn<typeof fetch>((input, init) => {
+				if (init?.cache === 'no-store' && scenario === 'refresh-failed')
+					return Promise.reject(new Error('Manifest offline'));
+				if (
+					fail &&
+					(input instanceof Request ? input.url : input.toString()).endsWith('/v1/catalog-headphone.json.gz')
+				) {
+					fail = false;
+					return Promise.reject(original);
+				}
+				return f.fetcher(input, init);
+			});
+			const service = new AtlasService({ baseUrl: 'https://dataset.example/data/', fetch: fetcher });
+			await service.products('iem');
+			await expect(service.products('headphone')).rejects.toBe(original);
+			expect(await service.products('headphone')).toEqual([]);
+			expect(fetcher.mock.calls.filter(([, init]) => init?.cache === 'no-store')).toHaveLength(1);
+		}
+	);
+	it('continues using only the pinned version while its files remain available', async () => {
+		const f = fixture();
+		await f.service.products('iem');
+		nextManifest(f.files);
+		expect(await f.service.products('headphone')).toEqual([]);
+		expect(f.calls.filter((path) => path === 'manifest.json')).toHaveLength(1);
+		expect(f.calls.some((path) => path.startsWith('v2/'))).toBe(false);
 	});
 });
 

@@ -8,6 +8,7 @@ import {
 	dislikeTrait,
 	scoreTasteCandidate,
 	rankTastePacked,
+	scoreTastePacked,
 	type DislikeReason,
 	type RatedItem
 } from './taste.ts';
@@ -259,9 +260,12 @@ describe('packed two-stage taste ranking', () => {
 						const fit = scoreTasteCandidate(curve, model);
 						return fit ? [{ index, fit }] : [];
 					})
-					.sort((a, b) => a.fit.score - b.fit.score || a.index - b.index)
-					.slice(0, topK);
-				expect(rankTastePacked(matrix, model, topK)).toEqual(expected);
+					.sort((a, b) => a.fit.score - b.fit.score || a.index - b.index);
+				expect(rankTastePacked(matrix, model, topK)).toEqual(expected.slice(0, topK));
+				const scores = scoreTastePacked(matrix, model);
+				expect(scores.map((row) => row.index)).toEqual(expected.map((row) => row.index));
+				for (let i = 0; i < expected.length; i++)
+					expect(scores[i]?.score).toBeCloseTo(expected[i]?.fit.score ?? NaN, 10);
 			}),
 			{ numRuns: 12 }
 		);
@@ -270,10 +274,16 @@ describe('packed two-stage taste ranking', () => {
 		const model = buildTasteModel([item('a', bass(0))], options),
 			matrix = new Float32Array(120 * 40);
 		expect(rankTastePacked(matrix, model, 5).map((r) => r.index)).toEqual([0, 1, 2, 3, 4]);
+		expect(scoreTastePacked(matrix, model)).toEqual(
+			Array.from({ length: 40 }, (_, index) => ({ index, score: 0 }))
+		);
 		expect(rankTastePacked(matrix, model, 0)).toEqual([]);
 		expect(rankTastePacked(new Float32Array(), model)).toEqual([]);
+		expect(scoreTastePacked(new Float32Array(), model)).toEqual([]);
 		expect(rankTastePacked(matrix, buildTasteModel([item('bad', bass(0), 'dislike')]))).toEqual([]);
+		expect(scoreTastePacked(matrix, buildTasteModel([item('bad', bass(0), 'dislike')]))).toEqual([]);
 		expect(() => rankTastePacked(new Float32Array(121), model)).toThrow(RangeError);
+		expect(() => scoreTastePacked(new Float32Array(121), model)).toThrow(RangeError);
 		expect(() => rankTastePacked(matrix, model, -1)).toThrow(RangeError);
 	});
 });

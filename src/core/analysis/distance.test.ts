@@ -1,12 +1,32 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { GRID, RANK_GRID, RANK_SIZE } from '../grid.ts';
-import { responseDistance, rankPacked } from './distance.ts';
+import { responseDistance, rankPacked, scorePacked } from './distance.ts';
 import { makeWeights } from './weights.ts';
 import { detectNarrowPeaks } from './peaks.ts';
 import { compareReferences } from './multi-reference.ts';
 
 describe('response distance', () => {
+	it('full cached scalar scores preserve hand-derived distances and stable ties at every cutoff', () => {
+		// Alternating +/-a has zero mean and RMS a. An all-missing row has no score.
+		const amplitudes = [2, 2, 0, 1, NaN];
+		const matrix = Float32Array.from(
+			amplitudes.flatMap((a) => Array.from(RANK_GRID, (_, i) => (i % 2 ? a : -a)))
+		);
+		const reference = new Float64Array(RANK_SIZE);
+		const expected = [
+			{ index: 2, distance: 0 },
+			{ index: 3, distance: 1 },
+			{ index: 0, distance: 2 },
+			{ index: 1, distance: 2 }
+		];
+		expect(scorePacked(matrix, reference)).toEqual(expected);
+		for (const k of [0, 1, 2, 3, 4, 99])
+			expect(
+				rankPacked(matrix, reference, k).matches.map((m) => ({ index: m.index, distance: m.stats.distance }))
+			).toEqual(expected.slice(0, k));
+		expect(() => scorePacked(new Float32Array(1), reference)).toThrow(RangeError);
+	});
 	it('matches a hand-computed weighted case including slope and energy shares', () => {
 		// e=[0,2,4], w=[1,2,1]: mean=2, variance=2, log f steps=1 -> slope=2.
 		const d = responseDistance([0, 2, 4], [0, 0, 0], {
