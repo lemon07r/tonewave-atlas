@@ -199,8 +199,11 @@ Products receive metadata-only `modified: true` for a `[modified: …]` model ma
 case-insensitive `mod`, `modded`, `modified`, `prototype` or `proto` model word, or a source-local
 `Custom (…)` brand (never Custom Art). Removing a terminal marker or those words and an adjacent
 Foam descriptor links `baseProductId` only to one existing unmodified product with the same form and
-brand/model identity key; missing or ambiguous bases stay unlinked. These annotations never change
-identities, IDs, measurements or redirects. The build report's `productFlags` gives overlapping
+brand/model identity key; missing or ambiguous bases stay unlinked.
+An unmatched base next tries removing a trailing bracketed/parenthesised mod/prototype segment, then
+a trailing one- or two-word qualifier plus `mod`, `modded` or `prototype`; multiple matching stock
+bases stay ambiguous, and a stripped model that would itself be modified is never a base.
+These annotations never change identities, IDs, measurements or redirects. The build report's `productFlags` gives overlapping
 per-rule counts and every word-rule match, including the `modified` word inside explicit markers.
 
 Catalog redirects preserve historical product and measurement links across identity/form moves.

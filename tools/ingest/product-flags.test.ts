@@ -76,12 +76,64 @@ describe('modified product metadata', () => {
 		markModifiedProducts([modified, plain, stock], { nfacous: 'NF Audio' });
 		expect(modified.baseProductId).toBe(stock.id);
 	});
+	it.each([
+		['Susvara', 'Susvara [Bass Mod]'],
+		['HE500', 'HE500 [Bass Mod]'],
+		['P2-Pro', 'P2-Pro [Mod]'],
+		['ASTERIA', 'ASTERIA (PROTOTYPE)'],
+		['Studio SA4', 'Studio SA4 (Prototype)'],
+		['TH900', 'TH900 (Eudis Mod)'],
+		['HE400se [Stealth 2024]', 'HE400se [Stealth 2024] [Bass Mod]'],
+		['Reference', 'Reference (production proto)']
+	])('links the complete trailing mod segment in %s / %s', (stockModel, modifiedModel) => {
+		const stock = product('stock', stockModel),
+			modified = product('modified', modifiedModel);
+		const before = structuredClone(modified);
+		markModifiedProducts([stock, modified]);
+		expect(modified).toEqual({ ...before, modified: true, baseProductId: stock.id });
+	});
+	it.each([
+		['CHU', 'CHU BASS MOD'],
+		['Reference', 'Reference Bass Boost modded'],
+		['Reference', 'Reference Production prototype'],
+		['Model', 'Model Cotton Mod']
+	])('links a one/two-word trailing qualifier in %s / %s', (stockModel, modifiedModel) => {
+		const stock = product('stock', stockModel),
+			modified = product('modified', modifiedModel);
+		markModifiedProducts([stock, modified]);
+		expect(modified).toMatchObject({ modified: true, baseProductId: stock.id });
+	});
+	it('leaves an ambiguous pair of one-word and two-word phrase bases unlinked', () => {
+		const products = [
+			product('short', 'Reference'),
+			product('long', 'Reference Alpha'),
+			product('modified', 'Reference Alpha Beta Mod')
+		];
+		const report = markModifiedProducts(products);
+		expect(products.at(-1)).toMatchObject({ modified: true });
+		expect(products.at(-1)).not.toHaveProperty('baseProductId');
+		expect(report.baseLinks).toBe(0);
+	});
+	it('preserves the existing resolver priority instead of replacing accepted links', () => {
+		const products = [
+			product('stock', 'Susvara'),
+			product('existing-base', 'Susvara Bass'),
+			product('modified', 'Susvara [Bass Mod]')
+		];
+		markModifiedProducts(products);
+		expect(products.at(-1)?.baseProductId).toBe('existing-base');
+	});
+	it('rejects a stripped base that still contains a modification word, even if its compact key matches stock', () => {
+		const products = [product('compact', 'ReferenceMod'), product('modified', 'Reference Mod [Bass Mod]')];
+		markModifiedProducts(products);
+		expect(products.at(-1)).toMatchObject({ modified: true });
+		expect(products.at(-1)).not.toHaveProperty('baseProductId');
+	});
 	it('omits ambiguous, missing, modified or cross-form bases without stripping real qualifiers', () => {
 		const cases = [
 			[product('a', 'Model', 'Maker Audio'), product('b', 'Model'), product('ambiguous', 'Model Mod')],
 			[product('iem', 'Model'), product('cross-form', 'Model Mod', 'Maker', 'headphone')],
 			[product('stock', 'Model'), product('revision', 'Model Mod V2')],
-			[product('stock', 'Model'), product('cotton', 'Model Cotton Mod')],
 			[product('modified-base', 'Model Mod'), product('nested-mod', 'Model Mod [modified: pads]')],
 			[product('stock', 'Model'), product('nonterminal', 'Model [modified: pads] SE [label]')],
 			[product('empty', 'Mod')]

@@ -31,6 +31,25 @@ function stockModel(model: string): string {
 		.replace(/\s+/g, ' ');
 }
 
+function stockModelCandidates(model: string): string[][] {
+	// Preserve accepted links before trying the two broader, ordered fallbacks.
+	const candidates = [[stockModel(model)]];
+	const normalized = model.normalize('NFKC');
+	const segment = /\s*(?:\[[^[\]]*\]|\([^()]*\))\s*$/u.exec(normalized);
+	if (segment && word.test(segment[0])) candidates.push([normalized.slice(0, segment.index).trim()]);
+	const phrases: string[] = [];
+	const qualifier = "[\\p{L}\\p{N}]+(?:[-'’][\\p{L}\\p{N}]+)*";
+	for (const count of [1, 2]) {
+		const phrase = new RegExp(
+			`(?:^|\\s+)(?:${qualifier}\\s+){${count}}(?:mod|modded|prototype)\\s*$`,
+			'iu'
+		).exec(normalized);
+		if (phrase) phrases.push(normalized.slice(0, phrase.index).trim());
+	}
+	candidates.push(phrases);
+	return candidates;
+}
+
 /** Metadata only: never rewrite identities, measurement membership, or redirects. Rule counts overlap. */
 export function markModifiedProducts(
 	products: readonly Product[],
@@ -65,12 +84,21 @@ export function markModifiedProducts(
 		(product) => key(product)
 	);
 	for (const product of modified) {
-		const model = stockModel(product.model);
-		const candidates = identityKey(modelIdentity(model)) ? stocks.get(key(product, model)) : undefined;
-		const base = candidates?.length === 1 ? candidates[0] : undefined;
-		if (base) {
-			product.baseProductId = base.id;
-			report.baseLinks++;
+		for (const models of stockModelCandidates(product.model)) {
+			const candidates = new Map<string, Product>();
+			for (const model of models) {
+				if (marker.test(model) || word.test(model) || custom.test(product.brand.trim())) continue;
+				if (!identityKey(modelIdentity(model))) continue;
+				for (const stock of stocks.get(key(product, model)) ?? []) candidates.set(stock.id, stock);
+			}
+			if (!candidates.size) continue;
+			// The one- and two-word phrase interpretations must agree on a single stock product.
+			const base = candidates.size === 1 ? candidates.values().next().value : undefined;
+			if (base) {
+				product.baseProductId = base.id;
+				report.baseLinks++;
+			}
+			break;
 		}
 		if (words.has(product))
 			report.wordMatches.push({
