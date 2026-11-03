@@ -259,9 +259,10 @@ precedence over the fit rule, including Foam Mod products and modded builds endi
 The shared sample-fold machinery resolves canonical IDs and reviewed aliases, synthesizes missing
 bases, preserves every accepted measurement/file/URL/curve and redirects retired IDs with history.
 The full source label and descriptor survive in variant labels and processing provenance. Curves
-start as `fit`, preserving an existing `tuning` kind. A folded fit cannot displace an existing base
-default from the same source/partition, even if it alone matches the preferred switch state.
-Without a base default, unchanged final coverage can select one fit/tuning curve as `default`, with
+start as `fit`, preserving an existing `tuning` or stronger `unit` kind; a combined sample/fit keeps
+both descriptors and the lowest-numbered-sample coverage fallback. A folded fit cannot displace an
+existing base default from the same source/partition, even if it alone matches the preferred switch state.
+Without a base default, unchanged final coverage can select one fit/tuning/unit curve as `default`, with
 its descriptor and previous kind retained; this is a usable source reference, not verified stock.
 The build report's `fitIdentity` lists each move and synthesized base.
 
@@ -404,7 +405,7 @@ high-frequency response and inter-source differences require caution.
 
 ### Current build summary
 
-Build `7108689ce37f48ad83288d35`: **9,489 products / 40,802 measurements / 138 databases / 118 publishers**
+Build `4199d08ffc44cf0977b5bae0`: **9,489 products / 40,802 measurements / 138 databases / 118 publishers**
 (7,790 IEM products / 33,488 measurements; 1,699 headphone products / 7,314 measurements).
 Its **305 quality-quarantine candidates** comprise 88 explicit post-hoc EQ, 72 fake/replica/clone/copy,
 87 invalid identities/markers/unidentified customs, 32 source-chain tests/devices,
@@ -430,8 +431,11 @@ All **72 folded aftermarket-pad curves are non-default**, with prior same-source
 evidence for every fold. Ten pad products lacking stock coverage and ambiguous `PR1(HiFi version foam)`
 retain their baseline IDs and variants without redirects. All **380 modification identities** are unchanged. Eleven mixed/unnamed
 sample descriptors remain outside the exact sample rules, and unidentified `Sample | 1 Deep` remains
-unfolded. The manifest publishes all 138 source counts and 53 partition counts,
-verified against both catalogs; its gzip size is **25,543 bytes**, versus **25,552** before the change.
+unfolded. Relative to `7108689ce37f48ad83288d35`, preserving incoming unit metadata changes only
+jacstone's `Tanchjim Tanya DSP S2 D` (`m-acdcd88a9568197a26d1`) from `fit` to `unit`; all default flags,
+labels, provenance, identities, partitions, curves, rig evidence and statistics are unchanged.
+The manifest publishes all 138 source counts and 53 partition counts,
+verified against both catalogs; its gzip size is **25,541 bytes**, versus **25,552** before the change.
 LOCO reports
 **37 scored, 37 correct, one insufficient-support and zero wrong controls**. Missing/invalid channels and source-level failures
 are reported separately.

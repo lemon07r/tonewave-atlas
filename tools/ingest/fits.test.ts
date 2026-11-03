@@ -381,6 +381,41 @@ describe('fit/tip/pad product identities', () => {
 		expect(rows.every((r) => r.measurement.variant.isDefault)).toBe(true);
 		expect(fit.variant.label).toContain('(Foam)');
 	});
+	it.each(['iem', 'headphone'] as const)(
+		'keeps sample identity stronger than fit metadata through the complete %s folding pipeline',
+		(form) => {
+			const { products, rows } = fixture(['Model (sample 2) (Foam)', 'Model (sample 1) (Foam)'], form);
+			const originalFiles = rows.map((r) => r.measurement.variant.file);
+			expect(mergeSampleIdentities(products, rows).moves).toHaveLength(2);
+			expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['unit', 'unit']);
+			mergeSwitchIdentities(products, rows);
+			expect(mergeFitIdentities(products, rows).moves).toHaveLength(1);
+			expect(mergeSampleIdentities(products, rows).moves).toEqual([]);
+			const foldedKinds = rows.map((r) => r.measurement.variant.kind);
+			const { decisions } = reconcileSwitchDefaults(products, rows);
+			finaliseDefaults(products, rows, decisions);
+			expect({ foldedKinds, defaults: rows.map((r) => r.measurement.variant.isDefault) }).toEqual({
+				foldedKinds: ['unit', 'unit'],
+				defaults: [false, true]
+			});
+			expect(rows.map((r) => r.measurement.variant.kind)).toEqual(['unit', 'default']);
+			expect(rows.map((r) => r.measurement.variant.file)).toEqual(originalFiles);
+			expect([...products.values()].map((p) => p.model)).toEqual(['Model']);
+			for (const [i, row] of rows.entries()) {
+				expect(row.measurement.variant.label).toContain(`(sample ${2 - i})`);
+				expect(row.measurement.variant.label).toContain('(Foam)');
+				expect(row.measurement.provenance.processing).toContainEqual(
+					expect.stringContaining('recognized sample/unit identity:')
+				);
+				expect(row.measurement.provenance.processing).toContainEqual(
+					expect.stringContaining('recognized fit identity:')
+				);
+			}
+			expect(rows[1]?.measurement.provenance.processing).toContain(
+				'default coverage: deterministic coverage fallback; previous kind unit; original label retained'
+			);
+		}
+	);
 	it('composes explicit sample folding after fit folding, not bare S2/year/unit model qualifiers', () => {
 		const { products, rows } = fixture([
 			'Model',

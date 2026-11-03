@@ -63,7 +63,8 @@ export function mergeDescriptorIdentities(
 					labels.push(label);
 			m.productId = parent.id;
 			m.variant.label = labels.filter(Boolean).join(' · ');
-			m.variant.kind = kind === 'sample/unit' ? 'unit' : previous === 'tuning' ? 'tuning' : 'fit';
+			m.variant.kind =
+				kind === 'sample/unit' || previous === 'unit' ? 'unit' : previous === 'tuning' ? 'tuning' : 'fit';
 			m.variant.isDefault = false;
 			m.provenance.processing.push(
 				`recognized ${kind} identity: ${p.brand} ${p.model} -> ${parent.brand} ${parent.model}; ${suffix.label}; previous kind ${previous}; original file and label retained`
