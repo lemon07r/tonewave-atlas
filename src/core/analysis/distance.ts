@@ -161,6 +161,24 @@ export interface RankingResult {
 	insufficient: number;
 }
 
+/** Full scalar ranking for bounded service caches; explanations remain a winner-only operation. */
+export function scorePacked(
+	matrix: Float32Array,
+	reference: Curve,
+	options: DistanceOptions = {}
+): { index: number; distance: number }[] {
+	if (reference.length !== RANK_SIZE || matrix.length % RANK_SIZE)
+		throw new RangeError('Expected N × 120 ranking matrix');
+	if (options.weights) sameLength(reference, options.weights);
+	const f = frequenciesFor(reference, options.frequencies ?? RANK_GRID);
+	const scores: { index: number; distance: number }[] = [];
+	for (let index = 0; index < matrix.length / RANK_SIZE; index++) {
+		const summary = scalar(matrix, index * RANK_SIZE, reference, f, options);
+		if (summary) scores.push({ index, distance: summary.distance });
+	}
+	return scores.sort((a, b) => a.distance - b.distance || a.index - b.index);
+}
+
 /** O(N log K), no row views or objects allocated in the N-row scan. Detailed stats only for K winners. */
 export function rankPacked(
 	matrix: Float32Array,
@@ -232,10 +250,12 @@ export function rankPacked(
 		scores[pos] = score;
 		if (pos) {
 			while (pos > 0) {
-				const parent = (pos - 1) >> 1;
-				if ((scores[parent] ?? 0) >= score) break;
-				scores[pos] = scores[parent] ?? 0;
-				indices[pos] = indices[parent] ?? 0;
+				const parent = (pos - 1) >> 1,
+					parentScore = scores[parent] ?? 0,
+					parentIndex = indices[parent] ?? 0;
+				if (parentScore > score || (parentScore === score && parentIndex > row)) break;
+				scores[pos] = parentScore;
+				indices[pos] = parentIndex;
 				pos = parent;
 			}
 			scores[pos] = score;
@@ -243,10 +263,19 @@ export function rankPacked(
 		} else {
 			while (2 * pos + 1 < size) {
 				let child = 2 * pos + 1;
-				if (child + 1 < size && (scores[child + 1] ?? 0) > (scores[child] ?? 0)) child++;
-				if ((scores[child] ?? 0) <= score) break;
-				scores[pos] = scores[child] ?? 0;
-				indices[pos] = indices[child] ?? 0;
+				const leftScore = scores[child] ?? 0,
+					rightScore = scores[child + 1] ?? 0;
+				if (
+					child + 1 < size &&
+					(rightScore > leftScore ||
+						(rightScore === leftScore && (indices[child + 1] ?? 0) > (indices[child] ?? 0)))
+				)
+					child++;
+				const childScore = scores[child] ?? 0,
+					childIndex = indices[child] ?? 0;
+				if (childScore < score || (childScore === score && childIndex < row)) break;
+				scores[pos] = childScore;
+				indices[pos] = childIndex;
 				pos = child;
 			}
 			scores[pos] = score;

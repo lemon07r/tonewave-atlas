@@ -18,6 +18,8 @@ export interface AtlasCandidate {
 	values: Float64Array;
 	/** One aligned default consensus per reviewer, or the tuning measurement alone. */
 	perSource: Float64Array[];
+	/** Unaligned, already source-corrected defaults, retained for exact reviewer omission pooling. */
+	consensusInputs?: readonly IndexedCurve[];
 }
 export interface PartitionIndex {
 	partition: Partition;
@@ -36,7 +38,12 @@ export interface PartitionIndex {
  * then self coverage, then measurement id. Stable accumulation order makes permutations identical.
  * No extrapolation, and curves without adequate anchor overlap remain excluded.
  */
-export function consensus(curves: readonly IndexedCurve[], frequencies: Curve): Consensus | null {
+export function consensus(
+	curves: readonly IndexedCurve[],
+	frequencies: Curve,
+	/** Optional memo for omissions of the same immutable curve pool on the same frequency grid. */
+	pairDistances?: WeakMap<IndexedCurve, WeakMap<IndexedCurve, number | null>>
+): Consensus | null {
 	const options = { frequencies };
 	const eligible = curves
 		.filter((curve) => distanceSummary(curve.values, curve.values, options))
@@ -49,10 +56,21 @@ export function consensus(curves: readonly IndexedCurve[], frequencies: Curve): 
 		for (let j = i + 1; j < scores.length; j++) {
 			const b = scores[j];
 			if (!b) continue;
-			const d = distanceSummary(a.curve.values, b.curve.values, options);
-			if (d) {
-				a.distances.push(d.distance);
-				b.distances.push(d.distance);
+			let partners = pairDistances?.get(a.curve);
+			let distance = partners?.get(b.curve);
+			if (distance === undefined) {
+				distance = distanceSummary(a.curve.values, b.curve.values, options)?.distance ?? null;
+				if (pairDistances) {
+					if (!partners) {
+						partners = new WeakMap();
+						pairDistances.set(a.curve, partners);
+					}
+					partners.set(b.curve, distance);
+				}
+			}
+			if (distance !== null) {
+				a.distances.push(distance);
+				b.distances.push(distance);
 			}
 		}
 	}
@@ -100,7 +118,14 @@ function info(
 	const prices = measurements.flatMap((m) => (m.price ? [m.price] : []));
 	return {
 		id: kind === 'default' ? product.id : (first?.id ?? product.id),
-		product: { id: product.id, brand: product.brand, model: product.model, form: product.form },
+		product: {
+			id: product.id,
+			brand: product.brand,
+			model: product.model,
+			form: product.form,
+			...(product.modified ? { modified: product.modified } : {}),
+			...(product.baseProductId ? { baseProductId: product.baseProductId } : {})
+		},
 		kind,
 		variantLabel: kind === 'tuning' ? (first?.variant.label ?? '') : null,
 		measurementIds: measurements.map((m) => m.id),
@@ -170,7 +195,8 @@ export function buildPartitionIndex(
 					'default'
 				),
 				values: pooled.values,
-				perSource
+				perSource,
+				consensusInputs: defaults
 			};
 			candidates.push(candidate);
 			products.set(product.id, candidate);

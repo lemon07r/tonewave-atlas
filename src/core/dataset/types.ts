@@ -42,6 +42,8 @@ export interface Product {
 	model: string;
 	form: Form;
 	measurementIds: string[];
+	modified?: true;
+	baseProductId?: string;
 }
 
 export interface Variant {

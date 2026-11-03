@@ -4,7 +4,7 @@ import type { DistanceOptions } from '../analysis/distance.ts';
 import { makeWeights } from '../analysis/weights.ts';
 import { RANK_GRID, RANK_SIZE } from '../grid.ts';
 import type { AtlasCandidate, PartitionIndex } from './index.ts';
-import type { RankFilters, SimilarRequest, SourceMode } from './types.ts';
+import type { CandidateInfo, RankFilters, SimilarRequest, SourceMode } from './types.ts';
 
 export function topK(value = 20): number {
 	if (!Number.isInteger(value) || value < 0) throw new RangeError('topK must be a nonnegative integer');
@@ -36,6 +36,21 @@ export function scoredCurve(values: Curve): Float64Array {
 }
 export function alignedCurve(values: Curve, offset: number): Float64Array {
 	return Float64Array.from(values, (value) => (Number.isFinite(value) ? value - offset : NaN));
+}
+function isModified(product: CandidateInfo['product']): boolean {
+	// The model marker is the fallback for older datasets without the explicit flag.
+	return product.modified === true || product.model.includes('[modified:');
+}
+export function relatedToReference(
+	product: CandidateInfo['product'],
+	references: readonly CandidateInfo['product'][]
+): boolean {
+	if (!isModified(product)) return false;
+	return references.some((reference) =>
+		product.baseProductId
+			? product.baseProductId === reference.id
+			: product.brand === reference.brand && product.model.split(' [modified')[0] === reference.model
+	);
 }
 export function rankingCaveats(
 	index: PartitionIndex,
@@ -108,9 +123,14 @@ export function selection(
 		throw new RangeError('Price bounds are reversed');
 	const candidates: AtlasCandidate[] = [],
 		indices: number[] = [];
+	const minReviewers = filters.minReviewers ?? 1;
+	if (!Number.isInteger(minReviewers) || minReviewers < 1)
+		throw new RangeError('minReviewers must be a positive integer');
 	index.candidates.forEach((c, i) => {
 		if (excludedMeasurementId && c.info.measurementIds.includes(excludedMeasurementId)) return;
 		if (c.info.kind === 'tuning' && !filters.includeTunings) return;
+		if (!filters.includeModified && isModified(c.info.product)) return;
+		if (c.info.sources.length < minReviewers) return;
 		if (
 			excluded.has(c.info.product.id) &&
 			!(ownTunings && c.info.kind === 'tuning' && filters.includeTunings)

@@ -63,10 +63,23 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
   are never sent to a server. Upload-to-dataset comparisons require the caller to choose the rig.
 - **Caching.** Dataset files live under a content-hashed version path and are served immutable (`static/_headers`);
   `manifest.json` is revalidated by the browser HTTP cache. The service pins its first manifest for
-  its lifetime; dispose/recreate to pick up a new dataset. Decoded reference targets, catalogs, rank packs and indexes
+  its lifetime; dispose/recreate to pick up a new dataset. A failed versioned-file fetch/status/body/decompression
+  triggers a shared `manifest.json` refresh with `cache: 'no-store'`. If its version changed, the service
+  raises a sticky `DatasetUpdatedError`, never adopts the new manifest or mixes versions. An unchanged
+  or unavailable refresh preserves the original file failure and permits retry. Retained old-version
+  files remain usable without a refresh. Decoded reference targets, catalogs, rank packs and indexes
   stay in worker memory; decoded detail shards use an eight-shard LRU (configurable in the pure
   service). Concurrent requests share pending loads; failed loads can be retried. No decoded-pack
   IndexedDB cache is implemented.
+- **Scoring caches.** Similar, compare and taste each retain one full scoring computation, sharing
+  concurrent requests and evicting their previous key; rejected computations are retriable. The key is
+  the pinned dataset version plus the recursively property-sorted request after identity resolution,
+  excluding only top-level `sort`, `paretoOnly` and `topK`; array order is retained. References/exact
+  measurements/uploads, partition, all filters/source settings, focus/custom bands, treble penalty,
+  harmonisation, ratings and corrections therefore participate. Compare re-filters/re-sorts the
+  **entire** cached objective/Pareto list before slicing. Similar/taste cache all scalar scores;
+  winner explanations are rebuilt. Similar/compare rebuild stability for the new topK+10 set from
+  cached reviewer variants. Returned ranking results are copied to isolate cache-owned data.
 
 ## Atlas service
 
@@ -76,6 +89,14 @@ Node runs the `.ts` tools directly (type stripping), so imports use explicit `.t
 `parseUpload` is synchronous locally (async through Comlink). Missing identities/rig support return
 `{ ok: false, error, message }`; invalid numeric settings throw `RangeError`, and failed dataset
 requests reject. `curves` preserves request order and returns missing-channel/identity errors per row.
+The additive `DatasetUpdatedError` in `src/core/atlas/errors.ts` rejects with `name: 'DatasetUpdatedError'`,
+`code: 'dataset-updated'`, string `previousVersion`/`newVersion`, and
+`reloadMessage: 'The dataset was updated. Reload to continue.'`. Its `message` is that text, a newline,
+then JSON `{ "previousVersion": "…", "newVersion": "…" }`. Comlink preserves only Error name/message/stack,
+so callers use `DatasetUpdatedError.from(caught)` to recover these fields across the existing worker
+transport (null for unrelated errors). No method signatures/result unions or client handling changed;
+after an update is detected, dataset access including cached ranking requests rejects until the
+service is disposed/recreated or the page reloaded.
 Taste results include unused ratings and their reasons, qualitative confidence, conflicts and
 winner explanations. Price filters require at least one observed USD price inside both bounds;
 unknown prices do not pass a price bound. Source filters select candidates with an attributed source

@@ -87,7 +87,7 @@ export interface ProductListItem {
 }
 export interface CandidateInfo {
 	id: string;
-	product: Pick<Product, 'id' | 'brand' | 'model' | 'form'>;
+	product: Pick<Product, 'id' | 'brand' | 'model' | 'form' | 'modified' | 'baseProductId'>;
 	kind: 'default' | 'tuning';
 	variantLabel: string | null;
 	measurementIds: string[];
@@ -110,6 +110,17 @@ export interface RankFilters {
 	sourceMode?: SourceMode;
 	/** Include tuning candidates, including the reference product's tunings in similar(). */
 	includeTunings?: boolean;
+	/** Include modified, DIY and prototype products. Default false. */
+	includeModified?: boolean;
+	/** Minimum distinct contributing reviewers on the active rig/source pool. Default 1. */
+	minReviewers?: number;
+}
+/** Leave-one-reviewer-out sensitivity within the evaluated topK + 10 rows, not a confidence interval. */
+export interface RankStability {
+	scoreRange: [number, number];
+	rankRange: [number, number];
+	referenceSide: boolean;
+	candidateSide: boolean;
 }
 interface SimilarSettings {
 	partition?: string;
@@ -138,6 +149,8 @@ export interface SimilarMatch extends DistanceResult {
 	/** Sources with adequate overlap for this query's per-source distance, not all catalog sources. */
 	sourceCount: number;
 	sameProduct: boolean;
+	stability?: RankStability;
+	relatedToReference?: true;
 }
 export interface SimilarResult extends ResolvedIds {
 	ok: true;
@@ -198,6 +211,7 @@ export interface TasteResult extends ResolvedIds {
 		/** Scored packed values aligned to this taste centre with ordinary rankWeights. */
 		rankCurve: Float64Array;
 		offsetDb: number;
+		relatedToReference?: true;
 	}[];
 	caveats: string[];
 }
@@ -227,6 +241,8 @@ export interface CompareResult extends ResolvedIds {
 		offsetDb: number;
 		/** Index into references; null means rankCurve is unaligned and must not be overlaid as aligned. */
 		alignedTo: number | null;
+		stability?: RankStability;
+		relatedToReference?: true;
 	}[];
 	/** Counts before paretoOnly/topK, after candidate filters and reference-product exclusion. */
 	counts: { candidates: number; pareto: number };
