@@ -33,7 +33,7 @@ test('a pending migration snapshot is recalled until it is cleared, and malforme
 	});
 	const before = { profile: emptyProfile(), url: 'https://example.org/?rig=iem-711' };
 	expect(recallMigration(storage)).toBeUndefined();
-	rememberMigration(storage, before);
+	expect(rememberMigration(storage, before)).toBe(true);
 	expect(recallMigration(storage)).toEqual(before);
 	rememberMigration(storage, undefined);
 	expect(recallMigration(storage)).toBeUndefined();
@@ -42,6 +42,6 @@ test('a pending migration snapshot is recalled until it is cleared, and malforme
 	const blocked = () => {
 		throw new Error('blocked');
 	};
-	rememberMigration(blocked, before);
+	expect(rememberMigration(blocked, before)).toBe(false);
 	expect(recallMigration(blocked)).toBeUndefined();
 });

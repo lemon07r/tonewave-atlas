@@ -67,7 +67,9 @@
 	let migrationUndone = false;
 	function keepMigration(before: { profile: Profile; url: string } | undefined) {
 		migrationBefore = before;
-		rememberMigration(() => sessionStorage, before);
+		const notice = 'Tab storage is unavailable, so this Undo lasts only until you leave or reload this page.';
+		if (!rememberMigration(() => sessionStorage, before) && before && !migrationNote.includes(notice))
+			migrationNote = [...migrationNote, notice];
 	}
 	let locationVersion = 0;
 	let catalogLoading = $state(true);
@@ -368,8 +370,8 @@
 		const pending = takeMigration(page.url.href);
 		if (pending?.restored) store.restoreSession(pending.restored);
 		migrationUndone = store.restoredSession || (pending?.undone ?? false);
-		keepMigration(pending?.before ?? (migrationUndone ? undefined : recallMigration(() => sessionStorage)));
 		migrationNote = pending?.messages ?? [];
+		keepMigration(pending?.before ?? (migrationUndone ? undefined : recallMigration(() => sessionStorage)));
 		profile = store.value;
 		storageError = store.error;
 		ready = true;

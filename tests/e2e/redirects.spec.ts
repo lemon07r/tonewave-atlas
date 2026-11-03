@@ -320,8 +320,8 @@ test('a pending migration Undo survives reloads and remounts until it is dismiss
 	await undo.click();
 	await expect(page.locator('.profile-row')).toHaveCount(2);
 	await page.reload();
-	await expect(undo).toHaveCount(0);
 	await expect(page.locator('.profile-row')).toHaveCount(2);
+	await expect(undo).toHaveCount(0);
 });
 
 test('a dismissed migration note does not bring Undo back after a reload', async ({ page }) => {
@@ -363,4 +363,33 @@ test('import Undo restores the visible shared workspace, not the saved profile',
 		.poll(() => JSON.parse(new URL(page.url()).searchParams.get('ratings') ?? '[]') as unknown)
 		.toEqual(shared);
 	await expect(page.locator('.profile-row')).toHaveCount(1);
+});
+
+test('blocked tab storage says a migration Undo lasts only for this page', async ({ page }) => {
+	await page.addInitScript(
+		({ key, text }) => {
+			localStorage.setItem(key, text);
+			const setItem = Object.getOwnPropertyDescriptor(Storage.prototype, 'setItem')?.value as (
+				this: Storage,
+				key: string,
+				value: string
+			) => void;
+			Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+				if (this === sessionStorage) throw new DOMException('blocked', 'SecurityError');
+				setItem.call(this, key, value);
+			};
+		},
+		{
+			key: PROFILE_KEY,
+			text: JSON.stringify({
+				version: 2,
+				profiles: { iem: [like('legacy-product'), dislike(reference)], headphone: [] }
+			})
+		}
+	);
+	await page.goto('/');
+	const note = page.getByRole('complementary', { name: 'Catalog update' });
+	await expect(note).toContainText('a duplicate rating from an older link was dropped');
+	await expect(note).toContainText('this Undo lasts only until you leave or reload this page');
+	await expect(note.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
 });

@@ -28,12 +28,14 @@ const PENDING_KEY = 'tonewave.migration.pending.v1';
 export function rememberMigration(
 	storage: () => TabStorage,
 	before: { profile: Profile; url: string } | undefined
-): void {
+): boolean {
 	try {
 		if (before) storage().setItem(PENDING_KEY, JSON.stringify(before));
 		else storage().removeItem(PENDING_KEY);
+		return true;
 	} catch {
-		/* Without tab storage the snapshot lasts for this page only. */
+		// Without tab storage the snapshot lasts for this page only; the caller says so.
+		return false;
 	}
 }
 
