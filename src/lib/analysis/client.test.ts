@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { releaseProxy } from 'comlink';
 import { dispose, getAnalysis } from './client.ts';
 
 const rpc = vi.hoisted(() => ({
@@ -55,6 +56,30 @@ afterEach(() => {
 });
 
 describe('analysis client lifecycle', () => {
+	it.each(['error', 'messageerror', 'dispose'])(
+		'rejects in-flight RPCs after initialization on %s and replaces the worker',
+		async (event) => {
+			const pending = deferred();
+			const similar = vi.fn(() => pending.promise);
+			const summary = vi.fn(() => pending.promise);
+			rpc.create.mockResolvedValueOnce({ similar, summary }).mockResolvedValueOnce({});
+			const service = await getAnalysis('/data/');
+			const request = { productId: 'fixture' };
+			const first = service.similar(request);
+			const second = service.summary();
+			const rejected = expect(first).rejects.toThrow(/Please try again/);
+			const alsoRejected = expect(second).rejects.toThrow(/Please try again/);
+			expect(similar).toHaveBeenCalledWith(request);
+			if (event === 'dispose') dispose();
+			else rpc.instances[0]?.dispatchEvent(new Event(event, { cancelable: true }));
+			await Promise.all([rejected, alsoRejected]);
+			await expect(service.summary()).rejects.toThrow(/Please try again/);
+			expect(summary).toHaveBeenCalledOnce();
+			await getAnalysis('/data/');
+			expect(rpc.worker).toHaveBeenCalledTimes(2);
+			expect(rpc.events).toEqual(['release-root', 'terminate']);
+		}
+	);
 	it.each(['error', 'messageerror'])(
 		'rejects every pending caller on worker %s and retries with a fresh worker',
 		async (event) => {
@@ -103,7 +128,8 @@ describe('analysis client lifecycle', () => {
 	it('does not release a resolved child proxy after the worker has terminated', async () => {
 		const child = { [rpc.releaseProxy]: rpc.childRelease };
 		rpc.create.mockResolvedValue(child);
-		expect(await getAnalysis('/data/')).toBe(child);
+		const service = await getAnalysis('/data/');
+		expect(service[releaseProxy]).toBe(rpc.childRelease);
 		expect(rpc.create).toHaveBeenCalledWith('https://atlas.example/data/');
 		expect(() => getAnalysis('/other-data/')).toThrow(/Dispose/);
 		dispose();
@@ -125,7 +151,8 @@ describe('analysis client lifecycle', () => {
 		expect(getAnalysis('/next/')).toBe(replacement);
 		const child = { [rpc.releaseProxy]: rpc.childRelease };
 		second.resolve(child);
-		expect(await replacement).toBe(child);
+		const service = await replacement;
+		expect(service[releaseProxy]).toBe(rpc.childRelease);
 		expect(rpc.worker).toHaveBeenCalledTimes(2);
 		expect(rpc.childRelease).not.toHaveBeenCalled();
 	});

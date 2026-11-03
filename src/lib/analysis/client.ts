@@ -8,7 +8,7 @@ let singleton:
 			worker: Worker;
 			root: Comlink.Remote<AnalysisWorker>;
 			remote: Promise<Comlink.Remote<Analysis>>;
-			cancelInitialization: () => void;
+			rejectPending: (cause: unknown) => void;
 			cleanup: () => void;
 	  }
 	| undefined;
@@ -27,16 +27,25 @@ export function getAnalysis(baseUrl: string): Promise<Comlink.Remote<Analysis>> 
 		return Promise.reject(new Error('Analysis worker failed to load. Please try again.', { cause }));
 	}
 	const root = Comlink.wrap<AnalysisWorker>(worker);
-	let cancelInitialization!: () => void;
 	let resolveInitialization!: (service: Comlink.Remote<Analysis>) => void;
 	let rejectInitialization!: (cause: unknown) => void;
+	let rejectCalls!: (cause: unknown) => void;
+	let stopped = false;
+	const failure = new Promise<never>((_, reject) => {
+		rejectCalls = reject;
+	});
+	// A worker can fail while no RPC is waiting; each RPC still observes the original rejection.
+	void failure.catch(() => {});
 	const remote = new Promise<Comlink.Remote<Analysis>>((resolve, reject) => {
 		resolveInitialization = resolve;
 		rejectInitialization = reject;
-		cancelInitialization = () => {
-			reject(new Error('Analysis worker disposed before initialization completed.'));
-		};
 	});
+	function rejectPending(cause: unknown) {
+		if (stopped) return;
+		stopped = true;
+		rejectInitialization(cause);
+		rejectCalls(cause);
+	}
 	const failed = (event: Event) => {
 		event.preventDefault();
 		fail(new Error('Analysis worker failed to load. Please try again.', { cause: event }));
@@ -46,20 +55,36 @@ export function getAnalysis(baseUrl: string): Promise<Comlink.Remote<Analysis>> 
 		worker,
 		root,
 		remote,
-		cancelInitialization,
+		rejectPending,
 		cleanup: () => {
 			worker.removeEventListener('error', failed);
 			worker.removeEventListener('messageerror', failed);
 		}
 	};
 	function fail(cause: unknown) {
-		rejectInitialization(cause);
+		rejectPending(cause);
 		if (singleton === current) dispose();
 	}
 	worker.addEventListener('error', failed);
 	worker.addEventListener('messageerror', failed);
 	singleton = current;
-	void root.create(new URL(baseUrl, globalThis.location.href).href).then(resolveInitialization, fail);
+	void root.create(new URL(baseUrl, globalThis.location.href).href).then((service) => {
+		if (stopped) return;
+		resolveInitialization(
+			new Proxy(service, {
+				get(target, property, receiver) {
+					const method: unknown = Reflect.get(target, property, receiver);
+					if (typeof method !== 'function' || property === 'then' || property === Comlink.releaseProxy)
+						return method;
+					return (...args: unknown[]) => {
+						if (stopped) return failure;
+						const call: unknown = Reflect.apply(method, target, args);
+						return Promise.race([call, failure]);
+					};
+				}
+			})
+		);
+	}, fail);
 	return remote;
 }
 
@@ -68,7 +93,7 @@ export function dispose(): void {
 	if (!current) return;
 	singleton = undefined;
 	current.cleanup();
-	current.cancelInitialization();
+	current.rejectPending(new Error('Analysis worker disposed. Please try again.'));
 	current.root[Comlink.releaseProxy]();
 	current.worker.terminate();
 }
