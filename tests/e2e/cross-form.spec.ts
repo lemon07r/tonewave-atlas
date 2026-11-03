@@ -246,16 +246,17 @@ test('failed optional other-catalog metadata keeps an unresolved link intact and
 	page
 }) => {
 	let requests = 0;
+	// Older manifests make the summary read both catalogs first; only the UI metadata request is optional.
+	const summaryRequests = manifest.partitions ? 0 : 1;
 	await page.route('**/catalog-headphone.json.gz', async (route) => {
-		// Summary needs the first engine catalog. The separate UI metadata request is optional.
-		if (++requests > 1) await route.abort('failed');
+		if (++requests > summaryRequests) await route.abort('failed');
 		else await route.fallback();
 	});
 	await page.goto('/?ref=misfiled-hd600');
 	await expect(page.getByRole('complementary', { name: 'Catalog update' })).toContainText(
 		'could not be resolved'
 	);
-	expect(requests).toBeGreaterThanOrEqual(2);
+	expect(requests).toBeGreaterThan(summaryRequests);
 	expect(new URL(page.url()).searchParams.get('ref')).toBe('misfiled-hd600');
 	expect(new URL(page.url()).searchParams.has('form')).toBe(false);
 	const search = page.getByRole('combobox', { name: 'Add an IEM', exact: true });
