@@ -8,17 +8,19 @@ interface Changes {
 export function rankChanges() {
 	let previous: Map<string, number> | undefined;
 	let workspace = '';
+	let context = '';
 	let changes: Changes = { markers: new Map(), summary: '' };
-	return (key: string, productIds: readonly string[]): Changes => {
+	return (key: string, productIds: readonly string[], contextKey = ''): Changes => {
 		const ranks = new Map<string, number>();
 		productIds.forEach((id, index) => {
 			if (!ranks.has(id)) ranks.set(id, index + 1);
 		});
-		if (key !== workspace) {
+		if (key !== workspace || contextKey !== context) {
 			const markers = new Map<string, RankChange>();
 			let added = 0,
 				moved = 0;
-			if (previous?.size && ranks.size) {
+			const comparable = key !== workspace && contextKey === context && previous?.size && ranks.size;
+			if (comparable && previous) {
 				for (const [id, rank] of ranks) {
 					const before = previous.get(id);
 					if (before === undefined) {
@@ -32,9 +34,10 @@ export function rankChanges() {
 			}
 			changes = {
 				markers,
-				summary: previous?.size && ranks.size ? `${added} new matches, ${moved} moved` : ''
+				summary: comparable ? `${added} new matches, ${moved} moved` : ''
 			};
 			workspace = key;
+			context = contextKey;
 		}
 		// Sort/filter runs become the baseline for the next preference edit, but never create markers.
 		previous = ranks;

@@ -410,6 +410,73 @@ test('quick Like moves similar matches to compare, explains deterministic rank c
 	).toHaveAttribute('aria-pressed', 'false');
 });
 
+for (const order of ['filter then rating', 'rating then filter']) {
+	test(`coalesced ${order} does not attribute ranking-context movement to quick Like`, async ({ page }) => {
+		await page.addInitScript(() => {
+			const pending: (() => void)[] = [];
+			Object.assign(window, {
+				rankingGate: {
+					pending,
+					release: () => {
+						document.documentElement.dataset.holdRanking = 'false';
+						for (const send of pending.splice(0)) send();
+					}
+				}
+			});
+			// eslint-disable-next-line @typescript-eslint/unbound-method -- called with the original port receiver.
+			const post = MessagePort.prototype.postMessage;
+			MessagePort.prototype.postMessage = function (
+				message: unknown,
+				transfer?: Transferable[] | StructuredSerializeOptions
+			) {
+				const options = Array.isArray(transfer) ? { transfer } : transfer;
+				const path = message && typeof message === 'object' && 'path' in message ? message.path : [];
+				if (
+					document.documentElement.dataset.holdRanking === 'true' &&
+					Array.isArray(path) &&
+					['similar', 'compare', 'taste'].includes(String(path[0]))
+				)
+					pending.push(() => {
+						post.call(this, message, options);
+					});
+				else post.call(this, message, options);
+			};
+		});
+		await page.goto(shared([reference]));
+		await expect(page.locator('.result-row')).toHaveCount(20);
+		await settled(page);
+		await page.locator('.refine > summary').click();
+		const first = page.locator('.result-row').first();
+		const name = (await first.getByRole('heading').innerText()).replace(/\s+/g, ' ').trim();
+		await page.evaluate(() => {
+			document.documentElement.dataset.holdRanking = 'true';
+		});
+		const filter = () =>
+			page.getByRole('combobox', { name: 'At least N reviewers', exact: true }).selectOption('3');
+		const rate = () => first.getByRole('button', { name: `Like ${name}`, exact: true }).click();
+		const actions = order === 'filter then rating' ? [filter, rate] : [rate, filter];
+		for (const [index, action] of actions.entries()) {
+			await action();
+			await expect
+				.poll(() =>
+					page.evaluate(
+						() => (window as unknown as { rankingGate: { pending: unknown[] } }).rankingGate.pending.length
+					)
+				)
+				.toBe(index + 1);
+		}
+		await page.evaluate(() => {
+			(window as unknown as { rankingGate: { release: () => void } }).rankingGate.release();
+		});
+		await expect(page.getByRole('heading', { name: 'Reference trade-offs', exact: true })).toBeVisible();
+		await settled(page);
+		await expect(page).toHaveURL(/minReviewers=3/);
+		await expect(page.locator('.profile-row')).toHaveCount(2);
+		await expect(page.locator('.rank-change')).toHaveCount(0);
+		await expect(page.locator('.update-slot > [role="status"]')).toHaveText('');
+	});
+}
+
 test('Hexa measurement selection narrows by reviewer, restores exact measurements and retains another-rig selection', async ({
 	page
 }) => {

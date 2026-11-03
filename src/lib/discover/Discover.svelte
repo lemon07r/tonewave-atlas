@@ -98,7 +98,14 @@
 	function recordRanks(spec: QuerySpec, next?: DiscoveryResult) {
 		const changes = trackRanks(
 			JSON.stringify([form, spec.items, spec.upload ?? null]),
-			next?.data.results.map((row) => row.candidate.product.id) ?? []
+			next?.data.results.map((row) => row.candidate.product.id) ?? [],
+			JSON.stringify({
+				...spec.state,
+				items: undefined,
+				overlays: undefined,
+				issue: undefined,
+				topK: spec.topK
+			})
 		);
 		rankMarkers = changes.markers;
 		rankSummary = changes.summary;

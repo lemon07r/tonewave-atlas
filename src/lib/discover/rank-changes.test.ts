@@ -27,3 +27,27 @@ test('sort/filter/depth responses do not create changes and empty workspaces cle
 	expect(track('empty', []).summary).toBe('');
 	expect(track('restart', ['z']).markers.size).toBe(0);
 });
+
+test.each(['filter then rating', 'rating then filter'])(
+	'coalesced %s changes cannot attribute filter movement to a preference',
+	() => {
+		const track = rankChanges();
+		track('one', ['a', 'b', 'c'], 'all reviewers');
+		// Only the final response is accepted, regardless of which action was started first.
+		const coalesced = track('two', ['c', 'd', 'a'], 'at least 3 reviewers');
+		expect([...coalesced.markers]).toEqual([]);
+		expect(coalesced.summary).toBe('');
+		expect([...track('three', ['a', 'c', 'e'], 'at least 3 reviewers').markers]).toEqual([
+			['a', 2],
+			['c', -1],
+			['e', 'new']
+		]);
+	}
+);
+
+test('a changed ranking context clears old preference markers and becomes the accepted baseline', () => {
+	const track = rankChanges();
+	track('one', ['a', 'b'], 'mean');
+	expect(track('two', ['b', 'a'], 'mean').markers.size).toBe(2);
+	expect(track('two', ['a', 'b'], 'minimax')).toEqual({ markers: new Map(), summary: '' });
+});

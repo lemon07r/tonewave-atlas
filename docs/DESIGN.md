@@ -95,7 +95,10 @@ rig. “How this ranking works” explains the method and lists participating an
 references using the existing measurement diagnostics and engine taste exclusions. After a workspace
 preference edit, accepted results are compared by product with the previous displayed list: “New”,
 “↑N” and “↓N” markers accompany one polite count summary. First loads have no markers. Sort, filters,
-pagination and chart/view changes never create markers; existing markers last until the next workspace change.
+pagination and chart/view changes never create markers. Accepted responses track workspace and
+ranking context separately: a preference edit produces markers only if filters, sort, rig and other
+ranking settings match the preceding accepted response, even when actions coalesce. A changed
+ranking context clears old markers; chart-only changes preserve them.
 
 Similar and trade-off rows add leave-one-reviewer-out rank ranges to the reviewer line when assessed,
 or “Rank holds” for an assessed unchanged rank. This is sensitivity among the returned matches plus
