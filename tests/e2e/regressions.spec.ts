@@ -352,3 +352,20 @@ test('pending results retain their returned reference headings, evidence and Com
 	await expect(results).toHaveAttribute('aria-busy', 'false');
 	await expect(first.getByRole('columnheader', { name: /Softears Volume S/ })).toHaveCount(0);
 });
+
+test('text typed before hydration still opens search results', async ({ page }) => {
+	let release = () => {};
+	const scripts = new Promise<void>((resolve) => (release = resolve));
+	await page.route('**/_app/immutable/**/*.js', async (route) => {
+		await scripts;
+		await route.continue();
+	});
+	await page.goto('/compare', { waitUntil: 'commit' });
+	await page.getByRole('combobox', { name: 'Add to comparison', exact: true }).fill('Truthear Hexa');
+	release();
+	await expect(
+		page
+			.getByRole('option')
+			.filter({ has: page.locator('.option-title').filter({ hasText: /^Truthear Hexa$/i }) })
+	).toBeVisible();
+});
