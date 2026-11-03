@@ -133,7 +133,11 @@
 		>
 	</div>
 	<p class="reviewers">
-		{reviewerSummary(match?.perSourceRange ?? null, match?.sourceCount ?? candidate.sources.length)}
+		{reviewerSummary(
+			match?.perSourceRange ?? null,
+			match?.sourceCount ?? candidate.sources.length,
+			match?.rangeSourceCount
+		)}
 		{#if stability && (stability.referenceSide || stability.candidateSide)}<span class="rank-range">
 				· {stability.rankRange[0] === stability.rankRange[1]
 					? 'Rank holds if one reviewer is left out'

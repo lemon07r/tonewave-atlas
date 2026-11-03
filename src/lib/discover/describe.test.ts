@@ -74,6 +74,19 @@ test('never converts raw prices or prints an unattributed amount', () => {
 	expect(priceLines(candidate)).toEqual([]);
 });
 
+test('distinguishes consensus contributors from reviewers covered by the reference distance range', () => {
+	expect(reviewerSummary([0.4, 0.9], 5, 3)).toBe(
+		'Measured by 5 reviewers · 0.4–0.9 dB to the reference across 3 of them'
+	);
+	expect(reviewerSummary([0.4, 0.9], 3, 3)).toBe(
+		'Measured by 3 reviewers · 0.4–0.9 dB to the reference across reviewers'
+	);
+	expect(reviewerSummary(null, 5, 1)).toBe('Measured by 5 reviewers');
+	expect(reviewerSummary([0.66, 0.74], 5, 2)).toBe(
+		'Measured by 5 reviewers · 0.7 dB to the reference across 2 of them'
+	);
+});
+
 test('labels closest and furthest references without making quality judgements', () => {
 	expect(distanceExtremes([2, null, 1, 3])).toEqual(['', 'No coverage', 'closest', 'furthest']);
 });

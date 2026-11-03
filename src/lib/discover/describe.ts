@@ -52,9 +52,14 @@ function roundedRange(range: readonly [number, number]): string {
 	return low === high ? low : `${low}–${high}`;
 }
 
-export function reviewerSummary(range: readonly [number, number] | null, count: number): string {
+export function reviewerSummary(
+	range: readonly [number, number] | null,
+	count: number,
+	rangeSourceCount = count
+): string {
 	const reviewers = `${count} ${count === 1 ? 'reviewer' : 'reviewers'}`;
-	return `Measured by ${reviewers}${range && count > 1 ? ` · ${roundedRange(range)} dB to the reference across reviewers` : ''}`;
+	const coverage = rangeSourceCount < count ? `${rangeSourceCount} of them` : 'reviewers';
+	return `Measured by ${reviewers}${range && count > 1 ? ` · ${roundedRange(range)} dB to the reference across ${coverage}` : ''}`;
 }
 
 export function priceLines(candidate: CandidateInfo, now = Date.now()): string[] {
