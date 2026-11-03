@@ -174,7 +174,7 @@ normalization, so cross-table conflicts and brand-hidden product chains are reje
 duplicate, cyclic or chained mappings stop ingestion. Numeral, MEMS and collaboration-spelling aliases
 require explicit reviewed mappings, with evidence in the input notes; such descriptors are not stripped
 generically. Response distances corroborate identity evidence, never authorize automatic merges.
-Only recognized switch/cable/tip suffixes below are folded; sample/revision labels remain separate.
+Only the recognized sample/unit and switch/cable/tip rules below fold descriptors; revisions remain separate.
 `identityMerges.productsBefore` counts globally unique original keys; `productsAfter` is the final
 count and `merged` is their net difference. Separately, `groupwiseMerges` lists each many-to-one group's
 original keys and reduction plus their total; this can differ from net reduction when an original key
@@ -209,6 +209,26 @@ labels/descriptors, retained verbatim in original filenames. Heuristic kinds can
 processing provenance retain the evidence rather than claiming a verified physical configuration.
 Every non-default measurement must have a non-empty label, using its filename when an originally
 unlabelled default is demoted; an empty non-default label stops publication.
+
+### Review sample identities
+
+In both catalogs, a trailing `Sample N`/`Unit N` (including zero-padded numbers and `Sample1`),
+or an exact parenthesized `(sample N)`/`(unit N)`/`(SN)`, identifies a review unit, not a product.
+The marker is removed from the maker/model identity. Sample-only products create the same base identity
+even when no unsuffixed entry exists; an empty remaining model is not invented. Bare model tokens such
+as Moondrop S8, Letshuoer S12, Simgot EA500 S and B&W Px8 S2 do not match this identity rule.
+Mixed, uninterpreted descriptors such as `Sample 3L + 4R` or `(sample 02 golden)` remain separate.
+An explicit sample/unit number immediately before a modification marker is also removed, but the mod,
+DIY, prototype or reshell descriptor stays in the identity: a modded sample never joins stock.
+
+Folding happens after curve acceptance, without shape deduplication: original measurement IDs, files,
+URLs and curve values survive. Folded measurements start as `unit`, with sample and tip/fit labels
+preserved from the original file, suffix and model marker, plus the identity move and previous kind
+in processing provenance. An existing base default from the same source/partition wins. A sample-only
+source/partition receives one default under final coverage, preferring the lowest sample number
+(explicit sample/unit numbers before parenthesized shorthand, never an S8 model token). Its label and
+previous `unit` kind remain recorded; default does not mean verified stock. Retired product IDs redirect
+to the base, and inherited product/measurement redirects continue to resolve.
 
 ### Switch and accessory folding
 
@@ -261,7 +281,7 @@ selects one default (lowest stable ID only if that order is unavailable); the re
 After final rig/partition assignment, **every measured (product, partition) must have a default**.
 Every (product, source, partition) must also have one except when a selected labelled switch state is
 absent at that source and another source supplies defaults for that product in the **same partition**.
-Singleton unit/fit/unknown groups always become default. Otherwise missing defaults use the lowest
+Sample-only groups and singleton fit/unknown groups always receive a default. Otherwise missing defaults use the lowest
 numbered sample (or first unit), stock/neutral fit first, or the existing tuning/default tie-break and
 source order. Every selected default has **`kind: 'default'` and `isDefault: true`**, retaining its
 label and recording the previous kind in provenance. This makes a measurement usable without claiming
@@ -322,6 +342,7 @@ category/marker changes, variant corrections and per-database form counts are re
 `pnpm data:build` writes machine-readable evidence to `.cache/ingest/report.json`: `variantReview`
 lists products with state/accessory descriptors, including every source variant's ID, partition,
 filename, label and kind;
+`sampleIdentity` contains unit identity moves and newly created bases;
 `switchIdentity`/`switchDefaults` contain moves, ambiguities, votes and source choices; `defaultCoverage`
 contains before/after counts, selections, exceptions, `unresolvedStates` and `unresolvedMultipleDefaults`, with provisional
 coverage in `rigDefaultCoverage`; `unknownVariants`, `rigEvidence`, `sourceEvidence`, `quality`,
@@ -334,7 +355,7 @@ Switch-state ties and incompatible encodings (including Quartet, Canon Pro and B
 leave unresolved state choices or justified source-level gaps; source-order selection is not successful state
 reconciliations. Opaque colors, positions and multi-position codes remain uninterpreted, and suffixes
 without an accepted exact parent remain separate. Abbreviations, real model families, revisions and
-samples are not fuzzy aliases. Cross-form names can genuinely name both forms, as with 1MORE Triple
+ambiguous sample descriptors are not fuzzy aliases. Cross-form names can genuinely name both forms, as with 1MORE Triple
 Driver; mixed-index earbud/open-ear candidates such as QKZ MDR, Yuin PK1 and TrueFree O1 remain reported
 pending a supported form policy rather than inventing a third `Form`. Newer index schemas without
 `file` lists are reported as unsupported, not guessed. Source hardware, raw calibration, insertion,

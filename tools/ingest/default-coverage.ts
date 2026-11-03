@@ -71,7 +71,10 @@ function fallback(product: Product, ms: readonly Measurement[]): Measurement {
 	const fitOnly = ms.every((m) => m.variant.kind === 'fit');
 	const sampleNumber = (m: Measurement) =>
 		Number(
-			`${m.variant.file} ${m.variant.label}`.match(/\b(?:sample|unit|s)\s*[:#-]?\s*(\d+)\b/i)?.[1] ?? Infinity
+			`${m.variant.file} ${m.variant.label}`.match(/\b(?:sample|unit)\s*[:#-]?\s*(\d+)\b/i)?.[1] ??
+				`${m.variant.file} ${m.variant.label}`.match(/\(\s*s(\d+)\s*\)/i)?.[1] ??
+				`${m.variant.file} ${m.variant.label}`.match(/\bs([1-9])\b/i)?.[1] ??
+				Infinity
 		);
 	const selected = unitsOnly
 		? [...ms].sort((a, b) => sampleNumber(a) - sampleNumber(b))[0]
@@ -110,8 +113,11 @@ function groups(
 	});
 }
 
-function singletonFallback(ms: readonly Measurement[]): boolean {
-	return ms.length === 1 && ms.some((m) => ['unit', 'fit', 'unknown'].includes(m.variant.kind));
+function requiredFallback(ms: readonly Measurement[]): boolean {
+	return (
+		ms.every((m) => m.variant.kind === 'unit') ||
+		(ms.length === 1 && ms.some((m) => ['fit', 'unknown'].includes(m.variant.kind)))
+	);
 }
 
 /** Fatal publication gate, including the sole permitted source-coverage exception. */
@@ -136,7 +142,7 @@ export function assertDefaultCoverage(
 				);
 			if (ms.some((m) => m.variant.kind === 'default')) continue;
 			if (
-				!singletonFallback(ms) &&
+				!requiredFallback(ms) &&
 				g.preferred &&
 				!ms.some((m) => g.state(m) === g.preferred) &&
 				g.partitionRows.some((m) => m.sourceId !== source && m.variant.kind === 'default')
@@ -223,7 +229,7 @@ export function finaliseDefaults(
 			if (ms.some((m) => m.variant.kind === 'default')) continue;
 			const matches = g.preferred ? ms.filter((m) => g.state(m) === g.preferred) : [];
 			if (
-				!singletonFallback(ms) &&
+				!requiredFallback(ms) &&
 				g.preferred &&
 				!matches.length &&
 				g.partitionRows.some((m) => m.sourceId !== source && m.variant.kind === 'default')
